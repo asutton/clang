@@ -1961,6 +1961,13 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.DollarIdents = Args.hasFlag(OPT_fdollars_in_identifiers,
                                    OPT_fno_dollars_in_identifiers,
                                    Opts.DollarIdents);
+
+  // [PIM] Determine if reflection is supported. If so, disable 
+  // -fdollar-in-identifiers.
+  Opts.Reflection = Args.hasArg(OPT_freflection);
+  if (Opts.Reflection)
+    Opts.DollarIdents = false;
+
   Opts.PascalStrings = Args.hasArg(OPT_fpascal_strings);
   Opts.VtorDispMode = getLastArgIntValue(Args, OPT_vtordisp_mode_EQ, 1, Diags);
   Opts.Borland = Args.hasArg(OPT_fborland_extensions);
