@@ -8184,6 +8184,11 @@ public:
   void CheckCompletedCoroutineBody(FunctionDecl *FD, Stmt *&Body);
 
   //===--------------------------------------------------------------------===//
+  // C++ Reflection [PIM]
+  //
+  ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Expr *Id);
+
+  //===--------------------------------------------------------------------===//
   // OpenCL extensions.
   //
 private:

@@ -689,6 +689,9 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 /// [Embarcadero] expression-trait:
 ///                   '__is_lvalue_expr'
 ///                   '__is_rvalue_expr'
+///
+/// [PIM]   '$' id-expression 
+///         '$' type-id
 /// \endverbatim
 ///
 ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
@@ -1316,6 +1319,13 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
       Result = Actions.ActOnNoexceptExpr(KeyLoc, T.getOpenLocation(), 
                                          Result.get(), T.getCloseLocation());
     return Result;
+  }
+
+  case tok::dollar: { // [PIM] '$' [id-expression | type-id]
+    // TODO: Tentatively parse and handle the type-id case.
+    SourceLocation OpLoc = ConsumeToken();
+    ExprResult Id = ParseCXXIdExpression(false);
+    return Actions.ActOnCXXReflectExpr(OpLoc, Id.get());
   }
 
 #define TYPE_TRAIT(N,Spelling,K) \

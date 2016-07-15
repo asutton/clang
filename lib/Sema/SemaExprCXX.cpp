@@ -7555,3 +7555,12 @@ Sema::CheckMicrosoftIfExistsSymbol(Scope *S, SourceLocation KeywordLoc,
 
   return CheckMicrosoftIfExistsSymbol(S, SS, TargetNameInfo);
 }
+
+ExprResult
+Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* Id)
+{
+  // FIXME: This is clearly not correct. Synthesize an object that
+  // describes the variable or function named by Id.
+  llvm::APInt Zero(Context.getTypeSize(Context.IntTy), 0);
+  return IntegerLiteral::Create(Context, Zero, Context.IntTy, OpLoc);
+}

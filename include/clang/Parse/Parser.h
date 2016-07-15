@@ -2536,7 +2536,8 @@ private:
                                   UnqualifiedId &Result);
 
   //===--------------------------------------------------------------------===//
-  // PIM: Metaclasses
+  // C++ Reflection [PIM]
+  
   DeclGroupPtrTy ParseMetaClassDefinition();
 
   //===--------------------------------------------------------------------===//
