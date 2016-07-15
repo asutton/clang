@@ -3218,16 +3218,18 @@ LexNextToken:
     MIOpt.ReadToken();
     return LexIdentifier(Result, CurPtr);
 
-  case '$':   // $ in identifiers.
+  case '$':   // $ in identifiers or [PIM] as punctuator.
     if (LangOpts.DollarIdents) {
       if (!isLexingRawMode())
         Diag(CurPtr-1, diag::ext_dollar_in_identifier);
       // Notify MIOpt that we read a non-whitespace/non-comment token.
       MIOpt.ReadToken();
       return LexIdentifier(Result, CurPtr);
+    } else if (LangOpts.Reflection) {
+      Kind = tok::dollar;
+    } else {
+      Kind = tok::unknown;
     }
-
-    Kind = tok::unknown;
     break;
 
   // C99 6.4.4: Character Constants.

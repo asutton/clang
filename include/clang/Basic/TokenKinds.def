@@ -215,6 +215,9 @@ PUNCTUATOR(periodstar,          ".*")
 PUNCTUATOR(arrowstar,           "->*")
 PUNCTUATOR(coloncolon,          "::")
 
+// [PIM] C++ Reflection support.
+PUNCTUATOR(dollar,              "$")
+
 // Objective C support.
 PUNCTUATOR(at,                  "@")
 
