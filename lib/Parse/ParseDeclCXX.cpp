@@ -4218,3 +4218,35 @@ void Parser::ParseMicrosoftIfExistsClassDeclaration(DeclSpec::TST TagType,
   
   Braces.consumeClose();
 }
+
+/// Parse a metaclass definition.
+///
+///     metaclass-definition:
+///       '$class' identifier metaclass-body
+///
+///     metaclass-body:
+///       '{' '}'
+///
+/// FIXME: [PIM] Actually define the grammar for this thing. Note that
+/// returning nullptr will allow parsing to continue after the tokens
+/// have been consumed.
+Parser::DeclGroupPtrTy Parser::ParseMetaClassDefinition()
+{
+  // We should have matched the `$class` identifier in 
+  // ParseExternalDeclaration.
+  assert(Tok.is(tok::dollar));
+  ConsumeToken();
+  assert(Tok.is(tok::kw_class));
+  ConsumeToken();
+  assert(Tok.is(tok::identifier));
+
+  // Save the identifier and source location.
+  // IdentifierInfo* = Tok.getIdentifierInfo();
+  ConsumeToken();
+
+  BalancedDelimiterTracker T(*this, tok::l_brace);
+  T.consumeOpen();
+  T.consumeClose();
+
+  return nullptr;
+}

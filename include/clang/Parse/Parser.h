@@ -2536,6 +2536,10 @@ private:
                                   UnqualifiedId &Result);
 
   //===--------------------------------------------------------------------===//
+  // PIM: Metaclasses
+  DeclGroupPtrTy ParseMetaClassDefinition();
+
+  //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
   /// Parse clauses for '#pragma omp declare simd'.
   DeclGroupPtrTy ParseOMPDeclareSimdClauses(DeclGroupPtrTy Ptr,

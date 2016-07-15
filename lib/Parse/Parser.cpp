@@ -649,6 +649,7 @@ bool Parser::ParseTopLevelDecl(DeclGroupPtrTy &Result) {
 ///
 /// [C++11] empty-declaration:
 ///           ';'
+/// [PIM]   metaclass-definition
 ///
 /// [C++0x/GNU] 'extern' 'template' declaration
 Parser::DeclGroupPtrTy
@@ -833,6 +834,15 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
                   ParseExplicitInstantiation(Declarator::FileContext,
                                              ExternLoc, TemplateLoc, DeclEnd));
     }
+    goto dont_know;
+
+  case tok::dollar:
+    // If we get '$' as a token, then -freflection must be enabled.
+    // This this can be disambiguated from an expression-statement since 
+    // an identifier must follow.
+    if (NextToken().is(tok::kw_class) && 
+        GetLookAheadToken(2).is(tok::identifier))
+      return ParseMetaClassDefinition();
     goto dont_know;
 
   case tok::kw___if_exists:
