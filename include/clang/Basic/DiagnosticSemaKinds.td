@@ -8832,6 +8832,13 @@ def err_coroutine_promise_return_ill_formed : Error<
   "%0 declares both 'return_value' and 'return_void'">;
 }
 
+let CategoryName = "Reflection Issue" in {
+def err_not_implemented : Error<
+  "feature not implemented">;
+def err_need_header_before_dollar : Error<
+  "you need to include <experimental/meta> before using the '$' operator">;
+} // end of reflection issue category
+
 let CategoryName = "Documentation Issue" in {
 def warn_not_a_doxygen_trailing_member_comment : Warning<
   "not a Doxygen trailing comment">, InGroup<Documentation>, DefaultIgnore;

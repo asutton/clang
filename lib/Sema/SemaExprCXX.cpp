@@ -7556,11 +7556,25 @@ Sema::CheckMicrosoftIfExistsSymbol(Scope *S, SourceLocation KeywordLoc,
   return CheckMicrosoftIfExistsSymbol(S, SS, TargetNameInfo);
 }
 
+// The expression '$x' returns an object describing the reflected entity.
+// The type of that object depends on the type of the thing reflected.
 ExprResult
 Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* Id)
 {
-  // FIXME: This is clearly not correct. Synthesize an object that
-  // describes the variable or function named by Id.
-  llvm::APInt Zero(Context.getTypeSize(Context.IntTy), 0);
-  return IntegerLiteral::Create(Context, Zero, Context.IntTy, OpLoc);
+  // Find the std::type_info type.
+  if (!getStdNamespace())
+    return ExprError(Diag(OpLoc, diag::err_need_header_before_dollar));
+
+  // TODO: Look at ActOnCXXTypeid. That function caches the type_info class 
+  // found by lookup. We need to do the same.
+
+  // As a test, look for a simple, known entity.
+  IdentifierInfo *TypeInfoII = &PP.getIdentifierTable().get("variable");
+  LookupResult R(*this, TypeInfoII, SourceLocation(), LookupTagName);
+  LookupQualifiedName(R, getStdNamespace());
+  CXXTypeInfoDecl = R.getAsSingle<RecordDecl>();
+  if (!CXXTypeInfoDecl)
+    return ExprError(Diag(OpLoc, diag::err_need_header_before_dollar));
+
+  return ExprError(Diag(OpLoc, diag::err_not_implemented));
 }
