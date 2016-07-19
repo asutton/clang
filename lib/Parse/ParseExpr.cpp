@@ -1325,7 +1325,10 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     // TODO: Tentatively parse and handle the type-id case.
     SourceLocation OpLoc = ConsumeToken();
     ExprResult Id = ParseCXXIdExpression(false);
-    return Actions.ActOnCXXReflectExpr(OpLoc, Id.get());
+    if (Id.isInvalid())
+      return Id;
+    else
+      return Actions.ActOnCXXReflectExpr(OpLoc, Id.get());
   }
 
 #define TYPE_TRAIT(N,Spelling,K) \
