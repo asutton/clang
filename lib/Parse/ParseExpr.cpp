@@ -1327,8 +1327,8 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     ExprResult Id = ParseCXXIdExpression(false);
     if (Id.isInvalid())
       return Id;
-    else
-      return Actions.ActOnCXXReflectExpr(OpLoc, Id.get());
+    Res = Actions.ActOnCXXReflectExpr(OpLoc, Id.get());
+    break;
   }
 
 #define TYPE_TRAIT(N,Spelling,K) \
