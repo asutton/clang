@@ -8191,6 +8191,8 @@ public:
   ExprResult BuildFunctionReflection(SourceLocation Loc, FunctionDecl* Fn);
   ExprResult BuildEnumeratorReflection(SourceLocation Loc, EnumConstantDecl* Enum);
   
+  Expr* GetReflectedNode(ValueDecl*);
+
   NamespaceDecl* RequireStdExperimentalNamespace(SourceLocation Loc);
   NamespaceDecl* RequireStdMetaNamespace(SourceLocation Loc);
   RecordDecl* RequireReflectionType(SourceLocation Loc, char const* Name);

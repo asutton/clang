@@ -7581,6 +7581,18 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* Id)
   return ExprError(Diag(OpLoc, diag::err_not_implemented));
 }
 
+// Returns an expression (but not to the parser) describing the
+// reflected entity.
+Expr*
+Sema::GetReflectedNode(ValueDecl* D)
+{
+  QualType IntPtrTy = Context.getIntPtrType();
+  // FIXME: Choose a compile-time integer representation whose size
+  // is as large as std::intptr_t in the host environment.
+  llvm::APInt NodeRef(Context.getTypeSize(IntPtrTy), (std::intptr_t)D);
+  return IntegerLiteral::Create(Context, NodeRef, IntPtrTy, SourceLocation());
+}
+
 // NOTE: When building reflections in non-dependent contexts, we don't
 // maintain the expression as a new kind of AST node. Instead, we directly
 // produce the object as if the expression had been `Type { args... }`.
@@ -7615,7 +7627,7 @@ Sema::BuildVariableReflection(SourceLocation Loc, VarDecl* Var)
   InitializationKind Kind = InitializationKind::CreateValue(Loc, 
                                                             SourceLocation(), 
                                                             SourceLocation());
-  SmallVector<Expr*, 4> Args;
+  SmallVector<Expr*, 4> Args { GetReflectedNode(Var) };
   InitializationSequence InitSeq(*this, Entity, Kind, Args);
   ExprResult Result = InitSeq.Perform(*this, Entity, Kind, Args);
   return Result;
@@ -7634,7 +7646,7 @@ Sema::BuildFunctionReflection(SourceLocation Loc, FunctionDecl* Fn)
   InitializationKind Kind = InitializationKind::CreateValue(Loc, 
                                                             SourceLocation(), 
                                                             SourceLocation());
-  SmallVector<Expr*, 4> Args;
+  SmallVector<Expr*, 4> Args{ GetReflectedNode(Fn) };
   InitializationSequence InitSeq(*this, Entity, Kind, Args);
   ExprResult Result = InitSeq.Perform(*this, Entity, Kind, Args);
   return Result;
@@ -7653,7 +7665,7 @@ Sema::BuildEnumeratorReflection(SourceLocation Loc, EnumConstantDecl* Enum)
   InitializationKind Kind = InitializationKind::CreateValue(Loc, 
                                                             SourceLocation(), 
                                                             SourceLocation());
-  SmallVector<Expr*, 4> Args;
+  SmallVector<Expr*, 4> Args { GetReflectedNode(Enum) };
   InitializationSequence InitSeq(*this, Entity, Kind, Args);
   ExprResult Result = InitSeq.Perform(*this, Entity, Kind, Args);
   return Result;
