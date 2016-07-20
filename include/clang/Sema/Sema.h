@@ -8187,6 +8187,13 @@ public:
   // C++ Reflection [PIM]
   //
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Expr *Id);
+  ExprResult BuildVariableReflection(SourceLocation Loc, VarDecl *Var);
+  ExprResult BuildFunctionReflection(SourceLocation Loc, FunctionDecl* Fn);
+  ExprResult BuildEnumeratorReflection(SourceLocation Loc, EnumConstantDecl* Enum);
+  
+  NamespaceDecl* RequireStdExperimentalNamespace(SourceLocation Loc);
+  NamespaceDecl* RequireStdMetaNamespace(SourceLocation Loc);
+  RecordDecl* RequireReflectionType(SourceLocation Loc, char const* Name);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

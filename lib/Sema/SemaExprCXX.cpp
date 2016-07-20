@@ -7558,23 +7558,182 @@ Sema::CheckMicrosoftIfExistsSymbol(Scope *S, SourceLocation KeywordLoc,
 
 // The expression '$x' returns an object describing the reflected entity.
 // The type of that object depends on the type of the thing reflected.
+//
+// The Id argument is not null.
 ExprResult
 Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* Id)
 {
-  // Find the std::type_info type.
-  if (!getStdNamespace())
-    return ExprError(Diag(OpLoc, diag::err_need_header_before_dollar));
+  // TODO: Handle the case where Id is dependent (type? value?). We
+  // just want to return a dependent expression that we can substitute
+  // into later.
 
-  // TODO: Look at ActOnCXXTypeid. That function caches the type_info class 
-  // found by lookup. We need to do the same.
+  // For non-dependent expressions, the result of reflection depends
+  // on the kind of entity.
+  ValueDecl* Value = cast<DeclRefExpr>(Id)->getDecl();
+  if (VarDecl* Var = dyn_cast<VarDecl>(Value))
+    return BuildVariableReflection(OpLoc, Var);
+  if (FunctionDecl* Fn = dyn_cast<FunctionDecl>(Value))
+    return BuildFunctionReflection(OpLoc, Fn);
+  if (EnumConstantDecl* Enum = dyn_cast<EnumConstantDecl>(Value))
+    return BuildEnumeratorReflection(OpLoc, Enum);
 
-  // As a test, look for a simple, known entity.
-  IdentifierInfo *TypeInfoII = &PP.getIdentifierTable().get("variable");
-  LookupResult R(*this, TypeInfoII, SourceLocation(), LookupTagName);
-  LookupQualifiedName(R, getStdNamespace());
-  CXXTypeInfoDecl = R.getAsSingle<RecordDecl>();
-  if (!CXXTypeInfoDecl)
-    return ExprError(Diag(OpLoc, diag::err_need_header_before_dollar));
-
+  // FIXME: Get a better diagnostics for this.
   return ExprError(Diag(OpLoc, diag::err_not_implemented));
 }
+
+// NOTE: When building reflections in non-dependent contexts, we don't
+// maintain the expression as a new kind of AST node. Instead, we directly
+// produce the object as if the expression had been `Type { args... }`.
+//
+// The alternative would be to produce a new AST node denoting the object.
+// However, this seems a bit repetitive since all we're doing is producing
+// an object.
+//
+// In dependent code, we absolutely must produce the a new AST node. That
+// would resolve to an type construction expression during substitution.
+
+// TODO: If we want to reflect the names of declarations, we need to
+// create string literals at reasonable points in the program. These may
+// need to become implicit global or local variables (like __func__).
+// Note that we only need to generate these if we request the name
+// property.
+
+ExprResult
+Sema::BuildVariableReflection(SourceLocation Loc, VarDecl* Var)
+{
+  RecordDecl* Refl = RequireReflectionType(Loc, "variable");
+  if (!Refl)
+    return ExprError();
+  QualType Type = Context.getRecordType(Refl);
+
+  // TODO: When we actually have values to put into the variable,
+  // we need to change the Kind to CreateValueDirectList. For now,
+  // we're just producing a temporary of the specified type.
+  //
+  // See BuildCXXTypeConstructExpr.
+  InitializedEntity Entity = InitializedEntity::InitializeTemporary(Type);
+  InitializationKind Kind = InitializationKind::CreateValue(Loc, 
+                                                            SourceLocation(), 
+                                                            SourceLocation());
+  SmallVector<Expr*, 4> Args;
+  InitializationSequence InitSeq(*this, Entity, Kind, Args);
+  ExprResult Result = InitSeq.Perform(*this, Entity, Kind, Args);
+  return Result;
+}
+
+ExprResult
+Sema::BuildFunctionReflection(SourceLocation Loc, FunctionDecl* Fn)
+{
+  RecordDecl* Refl = RequireReflectionType(Loc, "function");
+  if (!Refl)
+    return ExprError();
+  QualType Type = Context.getRecordType(Refl);
+
+  // TODO: Initialize with actual arguments.
+  InitializedEntity Entity = InitializedEntity::InitializeTemporary(Type);
+  InitializationKind Kind = InitializationKind::CreateValue(Loc, 
+                                                            SourceLocation(), 
+                                                            SourceLocation());
+  SmallVector<Expr*, 4> Args;
+  InitializationSequence InitSeq(*this, Entity, Kind, Args);
+  ExprResult Result = InitSeq.Perform(*this, Entity, Kind, Args);
+  return Result;
+}
+
+ExprResult
+Sema::BuildEnumeratorReflection(SourceLocation Loc, EnumConstantDecl* Enum)
+{
+  RecordDecl* Refl = RequireReflectionType(Loc, "enumerator");
+  if (!Refl)
+    return ExprError();
+  QualType Type = Context.getRecordType(Refl);
+
+  // TODO: Initialize with actual arguments.
+  InitializedEntity Entity = InitializedEntity::InitializeTemporary(Type);
+  InitializationKind Kind = InitializationKind::CreateValue(Loc, 
+                                                            SourceLocation(), 
+                                                            SourceLocation());
+  SmallVector<Expr*, 4> Args;
+  InitializationSequence InitSeq(*this, Entity, Kind, Args);
+  ExprResult Result = InitSeq.Perform(*this, Entity, Kind, Args);
+  return Result;
+}
+
+// Returns the std::experimental namespace if a suitable header has
+// been included. If not, a diagnostic is emitted, and nullptr is returned.
+//
+// TODO: We should probably cache this the same way that we do
+// with typeid (see CXXTypeInfoDecl in Sema.h).
+NamespaceDecl*
+Sema::RequireStdExperimentalNamespace(SourceLocation Loc)
+{
+  // Ensure std is available.
+  NamespaceDecl* Std = getStdNamespace();
+  if (!Std) {
+    Diag(Loc, diag::err_need_header_before_dollar);
+    return nullptr;
+  }
+
+  // Get the std::experimental namespace.
+  IdentifierInfo *ExperimentalII = &PP.getIdentifierTable().get("experimental");
+  LookupResult R(*this, ExperimentalII, SourceLocation(), LookupNamespaceName);
+  LookupQualifiedName(R, Std);
+  if (!R.isSingleResult()) {
+    Diag(Loc, diag::err_need_header_before_dollar);
+    return nullptr;
+  }
+  NamespaceDecl* Experimental = R.getAsSingle<NamespaceDecl>();
+  assert(Experimental && "experimental is not a namespace");
+  return Experimental;
+}
+
+// TODO: For now, the meta namespace is in std::experimental. In future
+// versions (presumably), it will move into std. That can probably be
+// determined by the language flags.
+//
+// TODO: Same notes about caching the results as the 
+// RequireStdExperimentalNamespace() function.
+NamespaceDecl*
+Sema::RequireStdMetaNamespace(SourceLocation Loc)
+{
+  NamespaceDecl* Experimental = RequireStdExperimentalNamespace(Loc);
+  if (!Experimental)
+    return nullptr;
+
+  // Get the std::experimental::meta namespace.
+  IdentifierInfo *MetaII = &PP.getIdentifierTable().get("meta");
+  LookupResult R(*this, MetaII, SourceLocation(), LookupNamespaceName);
+  LookupQualifiedName(R, Experimental);
+  if (!R.isSingleResult()) {
+    Diag(Loc, diag::err_need_header_before_dollar);
+    return nullptr;
+  }
+  NamespaceDecl* Meta = R.getAsSingle<NamespaceDecl>();
+  assert(Meta && "meta is not a namespace");
+  return Meta;
+}
+
+// Returns the class with the given name in the std::[experimental::]meta
+// namespaace. If no such class can be found, a diagnostic is emitted,
+// and nullptr returned.
+//
+// TODO: Cache these types so we don't keep doing lookup.
+RecordDecl*
+Sema::RequireReflectionType(SourceLocation Loc, char const* Name)
+{
+  NamespaceDecl* Meta = RequireStdMetaNamespace(Loc);
+  if (!Meta)
+    return nullptr;
+
+  // Get the corresponding reflection class.
+  IdentifierInfo *VariableII = &PP.getIdentifierTable().get(Name);
+  LookupResult R(*this, VariableII, SourceLocation(), LookupTagName);
+  LookupQualifiedName(R, Meta);
+  RecordDecl* Decl = R.getAsSingle<RecordDecl>();
+  if (!Decl) {
+    Diag(Loc, diag::err_need_header_before_dollar);
+    return nullptr;
+  }
+  return Decl;
+}
+
