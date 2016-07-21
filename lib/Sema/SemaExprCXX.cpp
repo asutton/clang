@@ -7633,18 +7633,19 @@ Sema::BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D, char const* K
 
   // Build an initializer list as the argument for initialization.
   SmallVector<Expr*, 4> Inits { N };
-  Expr *E = new (Context) InitListExpr(Context, Loc, Inits, Loc);
-  E->setType(Context.VoidTy);
-  MultiExprArg Arg(&E, 1);
 
   // Produce an initialized temporary via direct list-initialization.
+  //
+  // TODO: This must be kept in sync with the constructors of reflected
+  // types. I'm currently doing this using constexpr constructors, but
+  // the ideal would be to make those data types aggregates, but for some
+  // reason, the compiler is rejecting the constexpr-ness of 
+  // std::intializer_list. Not sure why.
   InitializedEntity Entity = InitializedEntity::InitializeTemporary(Type);
-  InitializationKind Kind = InitializationKind::CreateDirectList(Loc);
-  InitializationSequence InitSeq(*this, Entity, Kind, Arg);
-  return InitSeq.Perform(*this, Entity, Kind, Arg);
+  InitializationKind Kind = InitializationKind::CreateDirect(Loc, Loc, Loc);
+  InitializationSequence InitSeq(*this, Entity, Kind, Inits);
+  return InitSeq.Perform(*this, Entity, Kind, Inits);
 }
-
-
 
 // TODO: There's a lot of duplication in the following functions. I would
 
