@@ -7566,6 +7566,8 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* Id)
   // TODO: Handle the case where Id is dependent (type? value?). We
   // just want to return a dependent expression that we can substitute
   // into later.
+  if (Id->isTypeDependent() || Id->isValueDependent())
+    return ExprError(Diag(OpLoc, diag::err_not_implemented));
 
   // For non-dependent expressions, the result of reflection depends
   // on the kind of entity.
@@ -7577,98 +7579,91 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* Id)
   if (EnumConstantDecl* Enum = dyn_cast<EnumConstantDecl>(Value))
     return BuildEnumeratorReflection(OpLoc, Enum);
 
-  // FIXME: Get a better diagnostics for this.
-  return ExprError(Diag(OpLoc, diag::err_not_implemented));
+  llvm_unreachable("unhandled reflected declaration");
 }
 
-// Returns an expression (but not to the parser) describing the
-// reflected entity.
-Expr*
-Sema::GetReflectedNode(ValueDecl* D)
-{
-  QualType IntPtrTy = Context.getIntPtrType();
-  // FIXME: Choose a compile-time integer representation whose size
-  // is as large as std::intptr_t in the host environment.
-  llvm::APInt NodeRef(Context.getTypeSize(IntPtrTy), (std::intptr_t)D);
-  return IntegerLiteral::Create(Context, NodeRef, IntPtrTy, SourceLocation());
-}
-
-// NOTE: When building reflections in non-dependent contexts, we don't
-// maintain the expression as a new kind of AST node. Instead, we directly
-// produce the object as if the expression had been `Type { args... }`.
-//
-// The alternative would be to produce a new AST node denoting the object.
-// However, this seems a bit repetitive since all we're doing is producing
-// an object.
+// Returns a constructed temporary aggregate describing the declaration D.
+// 
+// When building reflections in non-dependent contexts, we don't maintain 
+// the expression as a new kind of AST node. Instead, we directly produce 
+// a temporary if the expression had been `Type { args... }`. The alternative 
+// would be to produce a new AST node denoting temporary. However, that would
+// require special handling in all cases.
 //
 // In dependent code, we absolutely must produce the a new AST node. That
 // would resolve to an type construction expression during substitution.
-
-// TODO: If we want to reflect the names of declarations, we need to
+// 
+// NOTE: If we want to reflect the names of declarations, we need to
 // create string literals at reasonable points in the program. These may
 // need to become implicit global or local variables (like __func__).
 // Note that we only need to generate these if we request the name
 // property.
-
+//
+// TODO: This assumes that all reflections have the same internal structure.
+// If they don't, which will probably happen at some point, then we'll
+// need to push this code down into the other Build* functions.
 ExprResult
-Sema::BuildVariableReflection(SourceLocation Loc, VarDecl* Var)
+Sema::BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D, char const* K)
 {
-  RecordDecl* Refl = RequireReflectionType(Loc, "variable");
+  // Get the declaration
+  RecordDecl* Refl = RequireReflectionType(Loc, K);
   if (!Refl)
     return ExprError();
   QualType Type = Context.getRecordType(Refl);
 
-  // TODO: When we actually have values to put into the variable,
-  // we need to change the Kind to CreateValueDirectList. For now,
-  // we're just producing a temporary of the specified type.
+  // Generate the opaque handle to the reflected node. This is simply
+  // it's internal pointer value, stored as a pointer.
   //
-  // See BuildCXXTypeConstructExpr.
+  // FIXME: Cache the integer value to ensure that we don't accept invalid 
+  // arguments in the reflection intrinsics.
+  //
+  // FIXME: I think we may need a discriminator in the reflected class in
+  // order to distinguish between declarations and types in the reflection
+  // intrinsics (i.e., ensure appropriate casting). Note that if we cache
+  // the representation, then we can get the right interpretation every based
+  // on its inclusion in one or more sets of keys.
+  //
+  // For now, because we only reflect declarations, this is adequate.
+  //
+  // FIXME: Choose a compile-time integer representation whose size
+  // is as large as std::intptr_t in the host environment.
+  QualType IntPtrTy = Context.getIntPtrType();
+  llvm::APInt NodeRef(Context.getTypeSize(IntPtrTy), (std::intptr_t)D);
+  Expr* N = IntegerLiteral::Create(Context, NodeRef, IntPtrTy, Loc);
+
+  // Build an initializer list as the argument for initialization.
+  SmallVector<Expr*, 4> Inits { N };
+  Expr *E = new (Context) InitListExpr(Context, Loc, Inits, Loc);
+  E->setType(Context.VoidTy);
+  MultiExprArg Arg(&E, 1);
+
+  // Produce an initialized temporary via direct list-initialization.
   InitializedEntity Entity = InitializedEntity::InitializeTemporary(Type);
-  InitializationKind Kind = InitializationKind::CreateValue(Loc, 
-                                                            SourceLocation(), 
-                                                            SourceLocation());
-  SmallVector<Expr*, 4> Args { GetReflectedNode(Var) };
-  InitializationSequence InitSeq(*this, Entity, Kind, Args);
-  ExprResult Result = InitSeq.Perform(*this, Entity, Kind, Args);
-  return Result;
+  InitializationKind Kind = InitializationKind::CreateDirectList(Loc);
+  InitializationSequence InitSeq(*this, Entity, Kind, Arg);
+  return InitSeq.Perform(*this, Entity, Kind, Arg);
+}
+
+
+
+// TODO: There's a lot of duplication in the following functions. I would
+
+ExprResult
+Sema::BuildVariableReflection(SourceLocation Loc, VarDecl* Var)
+{
+  return BuildDeclarationReflection(Loc, Var, "variable");
 }
 
 ExprResult
 Sema::BuildFunctionReflection(SourceLocation Loc, FunctionDecl* Fn)
 {
-  RecordDecl* Refl = RequireReflectionType(Loc, "function");
-  if (!Refl)
-    return ExprError();
-  QualType Type = Context.getRecordType(Refl);
-
-  // TODO: Initialize with actual arguments.
-  InitializedEntity Entity = InitializedEntity::InitializeTemporary(Type);
-  InitializationKind Kind = InitializationKind::CreateValue(Loc, 
-                                                            SourceLocation(), 
-                                                            SourceLocation());
-  SmallVector<Expr*, 4> Args{ GetReflectedNode(Fn) };
-  InitializationSequence InitSeq(*this, Entity, Kind, Args);
-  ExprResult Result = InitSeq.Perform(*this, Entity, Kind, Args);
-  return Result;
+  return BuildDeclarationReflection(Loc, Fn, "function");
 }
 
 ExprResult
 Sema::BuildEnumeratorReflection(SourceLocation Loc, EnumConstantDecl* Enum)
 {
-  RecordDecl* Refl = RequireReflectionType(Loc, "enumerator");
-  if (!Refl)
-    return ExprError();
-  QualType Type = Context.getRecordType(Refl);
-
-  // TODO: Initialize with actual arguments.
-  InitializedEntity Entity = InitializedEntity::InitializeTemporary(Type);
-  InitializationKind Kind = InitializationKind::CreateValue(Loc, 
-                                                            SourceLocation(), 
-                                                            SourceLocation());
-  SmallVector<Expr*, 4> Args { GetReflectedNode(Enum) };
-  InitializationSequence InitSeq(*this, Entity, Kind, Args);
-  ExprResult Result = InitSeq.Perform(*this, Entity, Kind, Args);
-  return Result;
+  return BuildDeclarationReflection(Loc, Enum, "enumerator");
 }
 
 // Returns the std::experimental namespace if a suitable header has
