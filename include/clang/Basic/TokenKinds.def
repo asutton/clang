@@ -492,6 +492,13 @@ TYPE_TRAIT_2(__is_convertible, IsConvertible, KEYCXX)
 KEYWORD(__array_rank                , KEYCXX)
 KEYWORD(__array_extent              , KEYCXX)
 
+// [PIM]
+// Extensions for Reflection
+KEYWORD(__get_attribute             , KEYCXX)
+KEYWORD(__set_attribute             , KEYCXX)
+KEYWORD(__get_array_element         , KEYCXX)
+KEYWORD(__get_tuple_element         , KEYCXX)
+
 // Apple Extension.
 KEYWORD(__private_extern__          , KEYALL)
 KEYWORD(__module_private__          , KEYALL)

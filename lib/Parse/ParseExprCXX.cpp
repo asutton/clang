@@ -3236,3 +3236,28 @@ Parser::ParseCXXAmbiguousParenExpression(ParenParseOption &ExprType,
   ConsumeAnyToken();
   return Result;
 }
+
+ExprResult
+Parser::ParseGetAttributeTrait()
+{
+  llvm_unreachable("not implemented");
+}
+
+ExprResult
+Parser::ParseSetAttributeTrait()
+{
+  llvm_unreachable("not implemented");
+}
+
+ExprResult
+Parser::ParseGetArrayElementTrait()
+{
+  llvm_unreachable("not implemented");
+}
+
+ExprResult
+Parser::ParseGetTupleElementTrait()
+{
+  llvm_unreachable("not implemented");
+}
+

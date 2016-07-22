@@ -692,6 +692,10 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 ///
 /// [PIM]   '$' id-expression 
 ///         '$' type-id
+///          __get_attribute
+///          __set_attribute
+///          __get_array_element
+///          __get_tuple_element
 /// \endverbatim
 ///
 ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
@@ -1343,7 +1347,16 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___is_lvalue_expr:
   case tok::kw___is_rvalue_expr:
     return ParseExpressionTrait();
-      
+
+  case tok::kw___get_attribute: // [PIM] Reflection traits.
+    return ParseGetAttributeTrait();
+  case tok::kw___set_attribute:
+    return ParseSetAttributeTrait();
+  case tok::kw___get_array_element:
+    return ParseGetArrayElementTrait();
+  case tok::kw___get_tuple_element:
+    return ParseGetTupleElementTrait();
+
   case tok::at: {
     SourceLocation AtLoc = ConsumeToken();
     return ParseObjCAtExpression(AtLoc);

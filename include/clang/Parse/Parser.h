@@ -2538,6 +2538,10 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ Reflection [PIM]
   
+  ExprResult ParseGetAttributeTrait();
+  ExprResult ParseSetAttributeTrait();
+  ExprResult ParseGetArrayElementTrait();
+  ExprResult ParseGetTupleElementTrait();
   DeclGroupPtrTy ParseMetaClassDefinition();
 
   //===--------------------------------------------------------------------===//
