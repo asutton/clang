@@ -3237,10 +3237,35 @@ Parser::ParseCXXAmbiguousParenExpression(ParenParseOption &ExprType,
   return Result;
 }
 
+/// Parse the __get_attribute_trait.
 ExprResult
 Parser::ParseGetAttributeTrait()
 {
-  llvm_unreachable("not implemented");
+  assert(Tok.is(tok::kw___get_attribute));
+  SourceLocation Loc = ConsumeToken();  
+  
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+
+  // TODO: Allow an assignment expression here?
+  ExprResult Object = ParseCastExpression(false);
+  
+  if (ExpectAndConsume(tok::comma))
+    return ExprError();
+  
+  if (Tok.isNot(tok::identifier)) {
+    Diag(diag::err_expected) << tok::identifier;
+    return ExprResult();
+  }
+  IdentifierInfo* Attr = Tok.getIdentifierInfo();
+  SourceLocation IdLoc = ConsumeToken();
+  
+  if (Parens.consumeClose())
+    return ExprError();
+
+  // FIXME: Act on this trait.
+  return ExprResult();
 }
 
 ExprResult
