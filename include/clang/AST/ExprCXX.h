@@ -4235,6 +4235,61 @@ public:
   }
 };
 
+
+/// \brief Represents a '__get_attribute' expression. This packages the
+/// expressions used to resolve to an attribute during evaluation.
+/// The type of the expression is determined by the value of the selector 
+/// operand.
+class GetAttributeTraitExpr : public Expr {
+  friend class ASTStmtReader;
+
+  // TODO: Save the paren locs too.
+  SourceLocation TraitLoc;
+
+  // Stores the node and selector operands to the expression.
+  Stmt* Operands[2];  
+public:
+  GetAttributeTraitExpr(ASTContext& C, SourceLocation Loc, QualType T, 
+                   Expr *Node, Expr *Sel)
+      : Expr(GetAttributeTraitExprClass, T, VK_RValue, OK_Ordinary,
+          // A __get_attribute expression is type dependent only when the
+          // selector is value dependent.
+             Sel->isValueDependent(),
+          // FIXME: When is this expression value dependent?
+             false,
+          // FIXME: When is this expression instantiation dependent?
+             false,
+          // TODO: I don't think that any operands can have unexpanded
+          // parameter packs (there are only two operands).
+             false),
+        TraitLoc(Loc) {
+    Operands[0] = Node;
+    Operands[1] = Sel;
+  }
+
+  GetAttributeTraitExpr(EmptyShell Empty)
+      : Expr(GetAttributeTraitExprClass, Empty) {}
+
+  /// Returns the operand representing the reflected entity.
+  Expr* getReflectedNode() const { return cast<Expr>(Operands[0]); }
+
+  /// Returns the selector operand.
+  Expr* getAttributeSelector() const { return cast<Expr>(Operands[1]); }
+
+  // Source code locations.
+  // TODO: The end locations should be the closing paren.
+  SourceLocation getLocStart() const { return TraitLoc; }
+  SourceLocation getLocEnd() const { return TraitLoc; }
+
+  child_range children() {
+    return child_range(&Operands[0], &Operands[0]+2);
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == GetAttributeTraitExprClass;
+  }
+};
+
 }  // end namespace clang
 
 #endif

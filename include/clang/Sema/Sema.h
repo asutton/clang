@@ -8187,8 +8187,7 @@ public:
   // C++ Reflection [PIM]
   //
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Expr *Id);
-  ExprResult BuildDeclarationReflection(SourceLocation Loc, 
-                                        ValueDecl* D, 
+  ExprResult BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D,
                                         char const* Kind);
   ExprResult BuildVariableReflection(SourceLocation Loc, VarDecl *Var);
   ExprResult BuildFunctionReflection(SourceLocation Loc, FunctionDecl* Fn);
@@ -8197,6 +8196,9 @@ public:
   NamespaceDecl* RequireStdExperimentalNamespace(SourceLocation Loc);
   NamespaceDecl* RequireStdMetaNamespace(SourceLocation Loc);
   RecordDecl* RequireReflectionType(SourceLocation Loc, char const* Name);
+
+  ExprResult ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,
+                                        ExprResult Attr);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

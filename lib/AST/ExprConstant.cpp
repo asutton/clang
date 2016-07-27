@@ -10483,6 +10483,11 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::ChooseExprClass: {
     return CheckICE(cast<ChooseExpr>(E)->getChosenSubExpr(), Ctx);
   }
+  case Expr::GetAttributeTraitExprClass: {
+    // FIXME [PIM]: __get_attribute *is* an ICE iff based on its
+    // selector indicates that it is. 
+    llvm_unreachable("not implemented");
+  }
   }
 
   llvm_unreachable("Invalid StmtClass!");

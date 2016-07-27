@@ -3237,9 +3237,13 @@ Parser::ParseCXXAmbiguousParenExpression(ParenParseOption &ExprType,
   return Result;
 }
 
-/// Parse the __get_attribute_trait.
+/// Parse the __get_attribute_trait invocation.
+///
+///   get-attribute-trait:
+///     __get_attribute ( assignment-expression , constant-expression )
+///
 ExprResult
-Parser::ParseGetAttributeTrait()
+Parser::ParseGetAttributeTraitExpr()
 {
   assert(Tok.is(tok::kw___get_attribute));
   SourceLocation Loc = ConsumeToken();  
@@ -3248,40 +3252,31 @@ Parser::ParseGetAttributeTrait()
   if (Parens.expectAndConsume())
     return ExprError();
 
-  // TODO: Allow an assignment expression here?
-  ExprResult Object = ParseCastExpression(false);
-  
+  ExprResult Node = ParseAssignmentExpression();
   if (ExpectAndConsume(tok::comma))
     return ExprError();
-  
-  if (Tok.isNot(tok::identifier)) {
-    Diag(diag::err_expected) << tok::identifier;
-    return ExprResult();
-  }
-  IdentifierInfo* Attr = Tok.getIdentifierInfo();
-  SourceLocation IdLoc = ConsumeToken();
+  ExprResult Attr = ParseConstantExpression();
   
   if (Parens.consumeClose())
     return ExprError();
 
-  // FIXME: Act on this trait.
-  return ExprResult();
+  return Actions.ActOnGetAttributeTraitExpr(Loc, Node, Attr);
 }
 
 ExprResult
-Parser::ParseSetAttributeTrait()
+Parser::ParseSetAttributeTraitExpr()
 {
   llvm_unreachable("not implemented");
 }
 
 ExprResult
-Parser::ParseGetArrayElementTrait()
+Parser::ParseGetArrayElementTraitExpr()
 {
   llvm_unreachable("not implemented");
 }
 
 ExprResult
-Parser::ParseGetTupleElementTrait()
+Parser::ParseGetTupleElementTraitExpr()
 {
   llvm_unreachable("not implemented");
 }

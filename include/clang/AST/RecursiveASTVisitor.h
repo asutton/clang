@@ -2523,6 +2523,9 @@ DEF_TRAVERSE_STMT(CoyieldExpr, {
   }
 })
 
+// [PIM]
+DEF_TRAVERSE_STMT(GetAttributeTraitExpr, {})
+
 // These literals (all of them) do not need any action.
 DEF_TRAVERSE_STMT(IntegerLiteral, {})
 DEF_TRAVERSE_STMT(CharacterLiteral, {})

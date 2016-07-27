@@ -7582,6 +7582,44 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* Id)
   llvm_unreachable("unhandled reflected declaration");
 }
 
+// Generate the opaque handle to the reflected node. This is simply
+// it's internal pointer value, stored as a pointer.
+//
+// FIXME: Cache the integer value to ensure that we don't accept invalid 
+// arguments in the reflection intrinsics. For now, because we only reflect 
+// declarations, this is sufficient.
+//
+// FIXME: Choose a compile-time integer representation whose size
+// is as large as std::intptr_t in the host environment.
+static Expr*
+GetReflectedNodeValue(Sema& Sema, ValueDecl* D, SourceLocation Loc)
+{
+  QualType IntPtrTy = Sema.Context.getIntPtrType();
+  llvm::APInt NodeRef(Sema.Context.getTypeSize(IntPtrTy), (std::intptr_t)D);
+  return IntegerLiteral::Create(Sema.Context, NodeRef, IntPtrTy, Loc);
+}
+
+// Return a string literal describing the declaration.
+static Expr*
+GetReflectedDeclarationName(Sema& Sema, ValueDecl* D, SourceLocation Loc)
+{
+  // FIXME: This is totally broken. getQualifiedNameAsString is slated
+  // for eventual removal. Unfortunately, I don't if there's a suitable
+  // replacement or if I'm going to have to supply something.
+  std::string Name = D->getQualifiedNameAsString();
+
+  // Type type of C++ string literals is an array of const char that
+  // is big enough to contain the null terminator.
+  QualType CharTyConst = Sema.Context.CharTy;
+  CharTyConst.addConst();
+  llvm::APInt Len(32, Name.size() + 1);
+  QualType StrTy = Sema.Context.getConstantArrayType(CharTyConst, Len,
+                                                     ArrayType::Normal, 0);
+  return StringLiteral::Create(Sema.Context, Name, StringLiteral::Ascii,
+                               false, StrTy, Loc);
+}
+
+
 // Returns a constructed temporary aggregate describing the declaration D.
 // 
 // When building reflections in non-dependent contexts, we don't maintain 
@@ -7611,28 +7649,11 @@ Sema::BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D, char const* K
     return ExprError();
   QualType Type = Context.getRecordType(Refl);
 
-  // Generate the opaque handle to the reflected node. This is simply
-  // it's internal pointer value, stored as a pointer.
-  //
-  // FIXME: Cache the integer value to ensure that we don't accept invalid 
-  // arguments in the reflection intrinsics.
-  //
-  // FIXME: I think we may need a discriminator in the reflected class in
-  // order to distinguish between declarations and types in the reflection
-  // intrinsics (i.e., ensure appropriate casting). Note that if we cache
-  // the representation, then we can get the right interpretation every based
-  // on its inclusion in one or more sets of keys.
-  //
-  // For now, because we only reflect declarations, this is adequate.
-  //
-  // FIXME: Choose a compile-time integer representation whose size
-  // is as large as std::intptr_t in the host environment.
-  QualType IntPtrTy = Context.getIntPtrType();
-  llvm::APInt NodeRef(Context.getTypeSize(IntPtrTy), (std::intptr_t)D);
-  Expr* N = IntegerLiteral::Create(Context, NodeRef, IntPtrTy, Loc);
-
   // Build an initializer list as the argument for initialization.
-  SmallVector<Expr*, 4> Inits { N };
+  SmallVector<Expr*, 4> Args {
+    GetReflectedNodeValue(*this, D, Loc),
+    GetReflectedDeclarationName(*this, D, Loc)
+  };
 
   // Produce an initialized temporary via direct list-initialization.
   //
@@ -7643,8 +7664,8 @@ Sema::BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D, char const* K
   // std::intializer_list. Not sure why.
   InitializedEntity Entity = InitializedEntity::InitializeTemporary(Type);
   InitializationKind Kind = InitializationKind::CreateDirect(Loc, Loc, Loc);
-  InitializationSequence InitSeq(*this, Entity, Kind, Inits);
-  return InitSeq.Perform(*this, Entity, Kind, Inits);
+  InitializationSequence InitSeq(*this, Entity, Kind, Args);
+  return InitSeq.Perform(*this, Entity, Kind, Args);
 }
 
 // TODO: There's a lot of duplication in the following functions. I would
@@ -7725,7 +7746,9 @@ Sema::RequireStdMetaNamespace(SourceLocation Loc)
 // namespaace. If no such class can be found, a diagnostic is emitted,
 // and nullptr returned.
 //
-// TODO: Cache these types so we don't keep doing lookup.
+// TODO: Cache these types so we don't keep doing lookup. In on the first
+// lookup, cache the names of ALL meta types so that we can easily check
+// for appropriate arguments in the reflection traits.
 RecordDecl*
 Sema::RequireReflectionType(SourceLocation Loc, char const* Name)
 {
@@ -7745,3 +7768,15 @@ Sema::RequireReflectionType(SourceLocation Loc, char const* Name)
   return Decl;
 }
 
+// Returns an expression representing the requested attributed.
+ExprResult
+Sema::ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,
+                                 ExprResult Attr)
+{
+  // FIXME: Return a GetAttributeExpr.
+
+
+  // For now, return a literal 0 to (mostly) prevent segfaults.
+  llvm::APInt Zero(Context.getTypeSize(Context.IntTy), 0);
+  return IntegerLiteral::Create(Context, Zero, Context.IntTy, Loc);
+}

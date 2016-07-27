@@ -8837,6 +8837,10 @@ def err_not_implemented : Error<
   "feature not implemented">;
 def err_need_header_before_dollar : Error<
   "you need to include <experimental/meta> before using the '$' operator">;
+def err_not_reflection : Error<
+  "expression does not reflect an entity">;
+def err_no_such_reflected_attribute : Error<
+  "expression does not reflect an entity">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

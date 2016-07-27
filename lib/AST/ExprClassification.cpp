@@ -190,6 +190,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::NoInitExprClass:
   case Expr::DesignatedInitUpdateExprClass:
   case Expr::CoyieldExprClass:
+  case Expr::GetAttributeTraitExprClass: // TODO [PIM]: Is this true?
     return Cl::CL_PRValue;
 
     // Next come the complicated cases.

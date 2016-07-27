@@ -1349,13 +1349,13 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return ParseExpressionTrait();
 
   case tok::kw___get_attribute: // [PIM] Reflection traits.
-    return ParseGetAttributeTrait();
+    return ParseGetAttributeTraitExpr();
   case tok::kw___set_attribute:
-    return ParseSetAttributeTrait();
+    return ParseSetAttributeTraitExpr();
   case tok::kw___get_array_element:
-    return ParseGetArrayElementTrait();
+    return ParseGetArrayElementTraitExpr();
   case tok::kw___get_tuple_element:
-    return ParseGetTupleElementTrait();
+    return ParseGetTupleElementTraitExpr();
 
   case tok::at: {
     SourceLocation AtLoc = ConsumeToken();

@@ -1240,6 +1240,7 @@ CanThrowResult Sema::canThrow(const Expr *E) {
   case Expr::UnresolvedLookupExprClass:
   case Expr::UnresolvedMemberExprClass:
   case Expr::TypoExprClass:
+  case Expr::GetAttributeTraitExprClass:
     // FIXME: Can any of the above throw?  If so, when?
     return CT_Cannot;
 

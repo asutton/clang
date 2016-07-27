@@ -1382,6 +1382,17 @@ public:
     return getSema().BuildCoyieldExpr(CoyieldLoc, Result);
   }
 
+  // [PIM]
+  
+  /// \brief Build a new co_yield expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildGetAttributeTraitExpr(SourceLocation Loc, Expr *Node,
+                                          Expr* Attr) {
+    return getSema().ActOnGetAttributeTraitExpr(Loc, Node, Attr);
+  }
+
   /// \brief Build a new Objective-C \@try statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -6874,6 +6885,25 @@ TreeTransform<Derived>::TransformCoyieldExpr(CoyieldExpr *E) {
   // context or if the promise type has changed.
   return getDerived().RebuildCoyieldExpr(E->getKeywordLoc(), Result.get());
 }
+
+// [PIM]
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformGetAttributeTraitExpr(GetAttributeTraitExpr *E) {
+  ExprResult Node = getDerived().TransformExpr(E->getReflectedNode());
+  if (Node.isInvalid())
+    return ExprError();
+
+  ExprResult Attr = getDerived().TransformExpr(E->getAttributeSelector());
+  if (Attr.isInvalid())
+    return ExprError();
+
+  // Always rebuild; we don't know if this needs to be injected into a new
+  // context or if the promise type has changed.
+  return getDerived().RebuildGetAttributeTraitExpr(E->getLocStart(), 
+                                                   Node.get(), Attr.get());
+}
+
 
 // Objective-C Statements.
 

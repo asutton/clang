@@ -2480,6 +2480,13 @@ void StmtPrinter::VisitCoyieldExpr(CoyieldExpr *S) {
   PrintExpr(S->getOperand());
 }
 
+void StmtPrinter::VisitGetAttributeTraitExpr(GetAttributeTraitExpr *E) {
+  OS << "__get_attribute ";
+  PrintExpr(E->getReflectedNode());
+  OS << " ";
+  PrintExpr(E->getAttributeSelector());
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {
