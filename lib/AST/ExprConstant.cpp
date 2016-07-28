@@ -8966,21 +8966,67 @@ bool IntExprEvaluator::VisitCXXNoexceptExpr(const CXXNoexceptExpr *E) {
 //
 // TODO: Not all properties will be integer expressions. Perhaps we
 // should lift this to the base evaluator.
+//
+// TODO: Factor the reflection lookup into a separate C++ file.
 bool IntExprEvaluator::VisitGetAttributeTraitExpr(const GetAttributeTraitExpr * E) {
   // Don't both evaluating if we're checking for potential. We
   // wouldn't be able to evaluate the first argument anyway.
   if (Info.checkingPotentialConstantExpression())
     return false;
 
-  // TODO: This may not end up being an int, but rather a reflected object
-  // (i.e., one of the meta::* objects).
-  // llvm::APSInt N;
-  // if (!EvaluateInteger(E->getReflectedNode(), N, Info))
-  //   return Error(E);
+  // TODO: This is probably totally incorrect. Why doesn't the evaluation
+  // just result in the integer value of the member? Presumably, there's.
+  llvm::APSInt IntPtr;
+  APValue R;
+  if (!Evaluate(R, Info, E->getReflectedNode())) {
+    // TODO: When used within an __eager function, don't evaluate? 
+    return Error(E);
+  }
+  APValue::LValueBase Base = R.getLValueBase();
+  if (const Expr* E = Base.dyn_cast<const Expr*>()) {
+    // FIXME: This seems totally broken. Apparently evaluation does small
+    // step semantics for lvalues? Or maybe I need to wrap that evaluation
+    // with some kind of a load?
+    if (const CXXTemporaryObjectExpr* C = dyn_cast<CXXTemporaryObjectExpr>(E)) {
+      Expr const* Node = C->getArgs()[0];
+      if (!EvaluateInteger(Node, IntPtr, Info))
+        return Error(E);
+    } else {
+      assert(false && "expression unhandled");
+    }
+  }
+  else if (const ValueDecl* D = Base.dyn_cast<const ValueDecl*>()) {
+    assert(false && "declaration case unhandled");
+  }
 
-  // // FIXME: This is super brittle.
-  // ValueDecl* D = (ValueDecl*)(std::intptr_t)N.getExtValue();
-  // D->dump();
+  // Evaluate the attribute selector -- it must be an ICE anyway.
+  llvm::APSInt Attr;
+  if (!EvaluateInteger(E->getAttributeSelector(), Attr, Info))
+    return Error(E);
+
+  // FIXME: This is super brittle.
+  ValueDecl* D = (ValueDecl*)(std::intptr_t)IntPtr.getExtValue();
+
+  switch (Attr.getExtValue()) {
+    case RAI_Linkage: {
+      Linkage L = D->getFormalLinkage();
+      if (L == NoLinkage)
+        return Success(0, E);
+      if (L == InternalLinkage)
+        return Success(1, E);
+      else
+        return Success(2, E);
+    }
+
+    // TODO: Implement me.
+    case RAI_Storage:
+    case RAI_Constexpr:
+    case RAI_Inline:
+    case RAI_Virtual:
+    case RAI_Type: {
+      return Error(E);
+    }
+  }
 
   return Success(0, E);
 }

@@ -12623,6 +12623,8 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
     if (CheckOtherCall(call, proto))
       return ExprError();
 
+    // TODO: [PIM] If the declaration is eager, then evaluate that here.
+
     return MaybeBindToTemporary(call);
   }
 
@@ -12838,6 +12840,34 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
                          CallCanBeVirtual, /*WarnOnNonAbstractTypes=*/true,
                          MemExpr->getMemberLoc());
   }
+
+  // TODO: [PIM] Factor this into a separate function/C++ file. It's
+  // not the simplest thing to do.
+  if (TheCall->getMethodDecl()->isEager()) {
+    // If the __eager specifier is present, then evaluate the call in
+    // place and return the resulting value.
+    Expr::EvalResult R;
+    SmallVector<PartialDiagnosticAt, 8> Notes;
+    R.Diag = &Notes;
+    if (!TheCall->EvaluateAsRValue(R, Context)) {
+      Diag(TheCall->getLocStart(), diag::err_expr_not_cce) 
+          << 1 << TheCall->getSourceRange();
+      for (const PartialDiagnosticAt &Note : Notes)
+        Diag(Note.first, Note.second);
+      return ExprResult();
+    }
+
+    // Construct a new expression based on the result type. For class types,
+    // we're basically going to construct a temporary just like with
+    // do with $x: set up the constructor call and let the compiler
+    // figure out how to build the expressions.
+    QualType T = TheCall->getType();
+    if (T->isIntegerType())
+      return IntegerLiteral::Create(Context, R.Val.getInt(), T, 
+          TheCall->getLocStart());
+    R.Val.dump();
+  }
+  
 
   return MaybeBindToTemporary(TheCall);
 }

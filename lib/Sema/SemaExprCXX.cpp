@@ -7806,7 +7806,7 @@ ExprResult
 Sema::ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,
                                  ExprResult Attr)
 {
-  // Check some basic properties of the reflection and attribute selector.
+  // TODO: Check some basic properties of the reflection and attribute.
   Expr* Ref = Node.get();
   Expr* Select = Attr.get();
 
