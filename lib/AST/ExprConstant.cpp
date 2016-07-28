@@ -6958,6 +6958,8 @@ public:
   bool VisitCXXNoexceptExpr(const CXXNoexceptExpr *E);
   bool VisitSizeOfPackExpr(const SizeOfPackExpr *E);
 
+  bool VisitGetAttributeTraitExpr(const GetAttributeTraitExpr* E);
+
   // FIXME: Missing: array subscript of vector, member of vector
 };
 } // end anonymous namespace
@@ -8957,6 +8959,30 @@ bool IntExprEvaluator::VisitSizeOfPackExpr(const SizeOfPackExpr *E) {
 
 bool IntExprEvaluator::VisitCXXNoexceptExpr(const CXXNoexceptExpr *E) {
   return Success(E->getValue(), E);
+}
+
+// Lookup the requested property and return an value corresponding
+// to that particular property.
+//
+// TODO: Not all properties will be integer expressions. Perhaps we
+// should lift this to the base evaluator.
+bool IntExprEvaluator::VisitGetAttributeTraitExpr(const GetAttributeTraitExpr * E) {
+  // Don't both evaluating if we're checking for potential. We
+  // wouldn't be able to evaluate the first argument anyway.
+  if (Info.checkingPotentialConstantExpression())
+    return false;
+
+  // TODO: This may not end up being an int, but rather a reflected object
+  // (i.e., one of the meta::* objects).
+  // llvm::APSInt N;
+  // if (!EvaluateInteger(E->getReflectedNode(), N, Info))
+  //   return Error(E);
+
+  // // FIXME: This is super brittle.
+  // ValueDecl* D = (ValueDecl*)(std::intptr_t)N.getExtValue();
+  // D->dump();
+
+  return Success(0, E);
 }
 
 //===----------------------------------------------------------------------===//

@@ -967,6 +967,15 @@ bool DeclSpec::SetConstexprSpec(SourceLocation Loc, const char *&PrevSpec,
   return false;
 }
 
+bool DeclSpec::SetEagerSpec(SourceLocation Loc, const char *&PrevSpec,
+                            unsigned &DiagID) {
+  // TODO: Warn about redundancies?
+  Eager_specified = true;
+  EagerLoc = Loc;
+  return false;
+}
+
+
 bool DeclSpec::SetConceptSpec(SourceLocation Loc, const char *&PrevSpec,
                               unsigned &DiagID) {
   if (Concept_specified) {

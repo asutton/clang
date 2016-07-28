@@ -7768,15 +7768,73 @@ Sema::RequireReflectionType(SourceLocation Loc, char const* Name)
   return Decl;
 }
 
+
+static
+QualType
+GetReflectedAttributeType(ASTContext& C, std::uint64_t N)
+{
+  switch (N) {
+    case RAI_Linkage:
+      return C.IntTy; // FIXME: linkage_t
+      break;
+    case RAI_Storage:
+      return C.IntTy; // FIXME: storage_t
+      break;
+    case RAI_Constexpr:
+      return C.BoolTy;
+      break;
+    case RAI_Inline:
+      return C.BoolTy;
+      break;
+    case RAI_Virtual:
+      return C.IntTy; // FIXME: virtual_t
+      break;
+    case RAI_Type:
+      return C.IntTy; // FIXME: meta::type
+      break;
+    default:
+      return QualType();
+  }
+}
+
+
 // Returns an expression representing the requested attributed.
+//
+// TODO: This expression can appear only in a function with the __eager 
+// specifier.
 ExprResult
 Sema::ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,
                                  ExprResult Attr)
 {
-  // FIXME: Return a GetAttributeExpr.
+  // Check some basic properties of the reflection and attribute selector.
+  Expr* Ref = Node.get();
+  Expr* Select = Attr.get();
 
+  // If the selector is value dependent, we can't compute the type.
+  // Return an un-evaluated, un-interpreted node.
+  if (Select->isValueDependent()) {
+    return new (Context) GetAttributeTraitExpr(Context, Loc, 
+                                               Context.DependentTy,
+                                               Ref, Select);
+  }
+
+  // Otherwise, determine its type.
+  llvm::APSInt Result;
+  if (!Select->isIntegerConstantExpr(Result, Context)) {
+    Diag(Loc, diag::err_expr_not_ice) << 1 << Select->getSourceRange();
+    return ExprResult();
+  }
+
+  // Determine the type of the accessor.
+  QualType Type = GetReflectedAttributeType(Context, Result.getExtValue());
+  if (Type.isNull()) {
+    Diag(Loc, diag::err_no_such_reflected_attribute) << Select;
+    return ExprError();
+  }
+
+  return new (Context) GetAttributeTraitExpr(Context, Loc, Type, Ref, Select);
 
   // For now, return a literal 0 to (mostly) prevent segfaults.
-  llvm::APInt Zero(Context.getTypeSize(Context.IntTy), 0);
-  return IntegerLiteral::Create(Context, Zero, Context.IntTy, Loc);
+  // llvm::APInt Zero(Context.getTypeSize(Context.IntTy), 0);
+  // return IntegerLiteral::Create(Context, Zero, Context.IntTy, Loc);
 }

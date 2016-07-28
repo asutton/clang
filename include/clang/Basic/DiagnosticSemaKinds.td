@@ -8840,7 +8840,7 @@ def err_need_header_before_dollar : Error<
 def err_not_reflection : Error<
   "expression does not reflect an entity">;
 def err_no_such_reflected_attribute : Error<
-  "expression does not reflect an entity">;
+  "%q0 does not name a reflected attribute">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

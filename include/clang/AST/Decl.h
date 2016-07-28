@@ -1624,6 +1624,7 @@ private:
   unsigned HasImplicitReturnZero : 1;
   unsigned IsLateTemplateParsed : 1;
   unsigned IsConstexpr : 1;
+  unsigned IsEager : 1;
 
   /// \brief Indicates if the function uses __try.
   unsigned UsesSEHTry : 1;
@@ -1719,9 +1720,9 @@ protected:
         IsDeleted(false), IsTrivial(false), IsDefaulted(false),
         IsExplicitlyDefaulted(false), HasImplicitReturnZero(false),
         IsLateTemplateParsed(false), IsConstexpr(isConstexprSpecified),
-        UsesSEHTry(false), HasSkippedBody(false), WillHaveBody(false),
-        EndRangeLoc(NameInfo.getEndLoc()), TemplateOrSpecialization(),
-        DNLoc(NameInfo.getInfo()) {}
+        IsEager(false), UsesSEHTry(false), HasSkippedBody(false),
+        WillHaveBody(false), EndRangeLoc(NameInfo.getEndLoc()),
+        TemplateOrSpecialization(), DNLoc(NameInfo.getInfo()) {}
 
   typedef Redeclarable<FunctionDecl> redeclarable_base;
   FunctionDecl *getNextRedeclarationImpl() override {
@@ -1909,6 +1910,10 @@ public:
   /// Whether this is a (C++11) constexpr function or constexpr constructor.
   bool isConstexpr() const { return IsConstexpr; }
   void setConstexpr(bool IC) { IsConstexpr = IC; }
+
+  /// Whether this is an eagerly evaluated constexpr function.
+  bool isEager() const { return IsEager; }
+  void setEager(bool IC) { IsEager = IC; }
 
   /// \brief Indicates the function uses __try.
   bool usesSEHTry() const { return UsesSEHTry; }

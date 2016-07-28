@@ -2688,6 +2688,7 @@ Parser::DiagnoseMissingSemiAfterTagDefinition(DeclSpec &DS, AccessSpecifier AS,
 /// [C99]   'inline'
 /// [C++]   'virtual'
 /// [C++]   'explicit'
+/// [PIM]   '__eager'
 /// [OpenCL] '__kernel'
 ///       'friend': [C++ dcl.friend]
 ///       'constexpr': [C++0x dcl.constexpr]
@@ -3286,6 +3287,11 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
     // constexpr
     case tok::kw_constexpr:
       isInvalid = DS.SetConstexprSpec(Loc, PrevSpec, DiagID);
+      break;
+
+    // [PIM] __eager
+    case tok::kw___eager:
+      isInvalid = DS.SetEagerSpec(Loc, PrevSpec, DiagID);
       break;
 
     // concept

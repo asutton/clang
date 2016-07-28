@@ -4236,6 +4236,22 @@ public:
 };
 
 
+/// \brief The list of queryable attributes supported by reflection.
+///
+/// TODO: Note that this name/value mapping must be kept in sync with
+/// the attribute selectors in the meta namespace. If not, bad things will
+/// happen.
+enum ReflectedAttributeId
+{
+  RAI_Linkage,    // linkage_t (external, internal, none)
+  RAI_Storage,    // storage_t (static, thread, automatic)
+  RAI_Constexpr,  // bool
+  RAI_Inline,     // bool
+  RAI_Virtual,    // virtual_t (virtual, pure virtual)
+  RAI_Type,       // meta::type
+};
+
+
 /// \brief Represents a '__get_attribute' expression. This packages the
 /// expressions used to resolve to an attribute during evaluation.
 /// The type of the expression is determined by the value of the selector 
