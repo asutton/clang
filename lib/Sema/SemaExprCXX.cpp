@@ -7828,7 +7828,7 @@ Sema::ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,
   // Determine the type of the accessor.
   QualType Type = GetReflectedAttributeType(Context, Result.getExtValue());
   if (Type.isNull()) {
-    Diag(Loc, diag::err_no_such_reflected_attribute) << Select;
+    Diag(Loc, diag::err_invalid_attribute_id) << Select;
     return ExprError();
   }
 

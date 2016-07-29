@@ -8996,6 +8996,13 @@ bool IntExprEvaluator::VisitGetAttributeTraitExpr(const GetAttributeTraitExpr * 
     }
   }
   else if (const ValueDecl* D = Base.dyn_cast<const ValueDecl*>()) {
+    // FIXME: We here from:
+    //
+    //    constexpr auto r = $x;
+    //    r.some_eager_function();
+    //
+    // We need to work through the value in r until we eventually reach its
+    // TempObjectExpr that it holds.
     assert(false && "declaration case unhandled");
   }
 
@@ -9007,28 +9014,9 @@ bool IntExprEvaluator::VisitGetAttributeTraitExpr(const GetAttributeTraitExpr * 
   // FIXME: This is super brittle.
   ValueDecl* D = (ValueDecl*)(std::intptr_t)IntPtr.getExtValue();
 
-  switch (Attr.getExtValue()) {
-    case RAI_Linkage: {
-      Linkage L = D->getFormalLinkage();
-      if (L == NoLinkage)
-        return Success(0, E);
-      if (L == InternalLinkage)
-        return Success(1, E);
-      else
-        return Success(2, E);
-    }
-
-    // TODO: Implement me.
-    case RAI_Storage:
-    case RAI_Constexpr:
-    case RAI_Inline:
-    case RAI_Virtual:
-    case RAI_Type: {
-      return Error(E);
-    }
-  }
-
-  return Success(0, E);
+  APValue Result;
+  D->Reflect(Info.Ctx, E, Attr.getExtValue(), Result);
+  return Success(Result, E);
 }
 
 //===----------------------------------------------------------------------===//

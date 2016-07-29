@@ -603,6 +603,11 @@ public:
   ///        or declared with the weak or weak-ref attr.
   bool isWeak() const;
 
+  /// \brief Store a value in R corresponding to attribute N.
+  /// The expression E (a GetAttributeTraitExpr) provides the original
+  /// unevaluated operands and type for the request.
+  bool Reflect(ASTContext& C, const Expr* E, std::uint64_t N, APValue& R);
+
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K >= firstValue && K <= lastValue; }

@@ -12841,33 +12841,38 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
                          MemExpr->getMemberLoc());
   }
 
-  // TODO: [PIM] Factor this into a separate function/C++ file. It's
-  // not the simplest thing to do.
+  // TODO: [PIM] Factor the reconstruction of APValues into expressions int
+  // a ExprConstant.cpp (maybe?). Maybe the behavior already exists?
   if (TheCall->getMethodDecl()->isEager()) {
-    // If the __eager specifier is present, then evaluate the call in
-    // place and return the resulting value.
-    Expr::EvalResult R;
-    SmallVector<PartialDiagnosticAt, 8> Notes;
-    R.Diag = &Notes;
-    if (!TheCall->EvaluateAsRValue(R, Context)) {
-      Diag(TheCall->getLocStart(), diag::err_expr_not_cce) 
-          << 1 << TheCall->getSourceRange();
-      for (const PartialDiagnosticAt &Note : Notes)
-        Diag(Note.first, Note.second);
-      return ExprResult();
-    }
 
-    // Construct a new expression based on the result type. For class types,
-    // we're basically going to construct a temporary just like with
-    // do with $x: set up the constructor call and let the compiler
-    // figure out how to build the expressions.
-    QualType T = TheCall->getType();
-    if (T->isIntegerType())
-      return IntegerLiteral::Create(Context, R.Val.getInt(), T, 
-          TheCall->getLocStart());
-    R.Val.dump();
+    FunctionDecl* Fn = getCurFunctionDecl();
+    if (Fn && !Fn->isEager()) {
+      // Only in non-eager contexts do we try to evaluate an eager function
+      // call. Inside of an eager function, we have no guarantee that the
+      // arguments will be constant expression. That can only be enforced
+      // for arguments in a normal calling context.
+      Expr::EvalResult R;
+      SmallVector<PartialDiagnosticAt, 8> Notes;
+      R.Diag = &Notes;
+      if (!TheCall->EvaluateAsRValue(R, Context)) {
+        Diag(TheCall->getLocStart(), diag::err_expr_not_cce) 
+            << 1 << TheCall->getSourceRange();
+        for (const PartialDiagnosticAt &Note : Notes)
+          Diag(Note.first, Note.second);
+        return ExprResult();
+      }
+
+      // Construct a new expression based on the result type. For class types,
+      // we're basically going to construct a temporary just like with
+      // do with $x: set up the constructor call and let the compiler
+      // figure out how to build the expressions.
+      QualType T = TheCall->getType();
+      if (T->isIntegerType())
+        return IntegerLiteral::Create(Context, R.Val.getInt(), T, 
+            TheCall->getLocStart());
+        llvm_unreachable("unhandled return type");
+    }  
   }
-  
 
   return MaybeBindToTemporary(TheCall);
 }

@@ -8839,7 +8839,7 @@ def err_need_header_before_dollar : Error<
   "you need to include <experimental/meta> before using the '$' operator">;
 def err_not_reflection : Error<
   "expression does not reflect an entity">;
-def err_no_such_reflected_attribute : Error<
+def err_invalid_attribute_id : Error<
   "%q0 does not name a reflected attribute">;
 } // end of reflection issue category
 
