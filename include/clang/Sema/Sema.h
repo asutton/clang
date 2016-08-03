@@ -8199,6 +8199,8 @@ public:
 
   ExprResult ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,
                                         ExprResult Attr);
+  ExprResult ActOnGetArrayElementTraitExpr(SourceLocation Loc, ExprResult Node,
+                                           ExprResult Attr, ExprResult Elem);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
