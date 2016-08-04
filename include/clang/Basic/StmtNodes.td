@@ -154,6 +154,7 @@ def CoyieldExpr : DStmt<CoroutineSuspendExpr>;
 
 // C++ Reflection Expressions
 def GetAttributeTraitExpr : DStmt<Expr>;
+def GetArrayElementTraitExpr : DStmt<Expr>;
 
 // Obj-C Expressions.
 def ObjCStringLiteral : DStmt<Expr>;

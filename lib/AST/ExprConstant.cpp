@@ -8967,7 +8967,7 @@ bool IntExprEvaluator::VisitCXXNoexceptExpr(const CXXNoexceptExpr *E) {
 // TODO: Not all properties will be integer expressions. Perhaps we
 // should lift this to the base evaluator.
 //
-// TODO: Factor the reflection lookup into a separate C++ file.
+// TODO: Factor the reflectin lookup into a separate C++ file.
 bool IntExprEvaluator::VisitGetAttributeTraitExpr(const GetAttributeTraitExpr * E) {
   // Don't both evaluating if we're checking for potential. We
   // wouldn't be able to evaluate the first argument anyway.
@@ -10538,9 +10538,10 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::ChooseExprClass: {
     return CheckICE(cast<ChooseExpr>(E)->getChosenSubExpr(), Ctx);
   }
-  case Expr::GetAttributeTraitExprClass: {
-    // FIXME [PIM]: __get_attribute *is* an ICE iff based on its
-    // selector indicates that it is. 
+  case Expr::GetAttributeTraitExprClass:
+  case Expr::GetArrayElementTraitExprClass: {
+    // FIXME [PIM]: This *is* an ICE iff based on its selector indicates 
+    // that it is.
     llvm_unreachable("not implemented");
   }
   }

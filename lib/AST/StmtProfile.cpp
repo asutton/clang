@@ -1607,6 +1607,10 @@ void StmtProfiler::VisitGetAttributeTraitExpr(const GetAttributeTraitExpr *E) {
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitGetArrayElementTraitExpr(const GetArrayElementTraitExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitOpaqueValueExpr(const OpaqueValueExpr *E) {
   VisitExpr(E);  
 }

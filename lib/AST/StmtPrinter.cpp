@@ -2487,6 +2487,15 @@ void StmtPrinter::VisitGetAttributeTraitExpr(GetAttributeTraitExpr *E) {
   PrintExpr(E->getAttributeSelector());
 }
 
+void StmtPrinter::VisitGetArrayElementTraitExpr(GetArrayElementTraitExpr *E) {
+  OS << "__get_array_element ";
+  PrintExpr(E->getReflectedNode());
+  OS << " ";
+  PrintExpr(E->getAttributeSelector());
+  OS << " ";
+  PrintExpr(E->getElementSelector());
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {

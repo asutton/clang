@@ -2921,6 +2921,7 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case CXXUuidofExprClass:
   case OpaqueValueExprClass:
   case GetAttributeTraitExprClass:
+  case GetArrayElementTraitExprClass:
     // These never have a side-effect.
     return false;
 

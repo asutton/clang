@@ -324,6 +324,10 @@ void ASTStmtWriter::VisitGetAttributeTraitExpr(GetAttributeTraitExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtWriter::VisitGetArrayElementTraitExpr(GetArrayElementTraitExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTStmtWriter::VisitCapturedStmt(CapturedStmt *S) {
   VisitStmt(S);
   // NumCaptures

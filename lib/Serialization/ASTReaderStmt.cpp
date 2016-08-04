@@ -390,6 +390,10 @@ void ASTStmtReader::VisitGetAttributeTraitExpr(GetAttributeTraitExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtReader::VisitGetArrayElementTraitExpr(GetArrayElementTraitExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTStmtReader::VisitCapturedStmt(CapturedStmt *S) {
   VisitStmt(S);
   Record.skipInts(1);

@@ -3325,6 +3325,7 @@ recurse:
   case Expr::OMPArraySectionExprClass:
   case Expr::CXXInheritedCtorInitExprClass:
   case Expr::GetAttributeTraitExprClass:
+  case Expr::GetArrayElementTraitExprClass:
     llvm_unreachable("unexpected statement kind");
 
   // FIXME: invent manglings for all these.

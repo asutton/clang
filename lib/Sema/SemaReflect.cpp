@@ -285,8 +285,10 @@ GetReflectedAttributeType(ASTContext& C, std::uint64_t N)
 
 // Returns an expression representing the requested attributed.
 //
-// TODO: This expression can appear only in a function with the __eager 
-// specifier.
+// TODO: Check that this expression can appear only in a function with the 
+// __eager specifier.
+//
+// TODO: Factor out common code for all trait expressions.
 ExprResult
 Sema::ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,
                                  ExprResult Attr)
@@ -298,8 +300,7 @@ Sema::ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,
   // If the selector is value dependent, we can't compute the type.
   // Return an un-evaluated, un-interpreted node.
   if (Select->isValueDependent()) {
-    return new (Context) GetAttributeTraitExpr(Context, Loc, 
-                                               Context.DependentTy,
+    return new (Context) GetAttributeTraitExpr(Loc, Context.DependentTy,
                                                Ref, Select);
   }
 
@@ -317,20 +318,39 @@ Sema::ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,
     return ExprError();
   }
 
-  return new (Context) GetAttributeTraitExpr(Context, Loc, Type, Ref, Select);
-
-  // For now, return a literal 0 to (mostly) prevent segfaults.
-  // llvm::APInt Zero(Context.getTypeSize(Context.IntTy), 0);
-  // return IntegerLiteral::Create(Context, Zero, Context.IntTy, Loc);
+  return new (Context) GetAttributeTraitExpr(Loc, Type, Ref, Select);
 }
 
 ExprResult
-Sema::ActOnGetArrayElementTraitExpr(SourceLocation Loc, ExprResult Node,
-                                    ExprResult Attr, ExprResult Elem)
+Sema::ActOnGetArrayElementTraitExpr(SourceLocation Loc, 
+                                    ExprResult NodeExpr,
+                                    ExprResult AttrExpr, 
+                                    ExprResult ElemExpr)
 {
-  llvm::outs() << "HERE!\n";
+  Expr* Node = NodeExpr.get();
+  Expr* Attr = AttrExpr.get();
+  Expr* Elem = ElemExpr.get();
 
-  // For now, return a literal 0.
-  llvm::APInt Zero(Context.getTypeSize(Context.IntTy), 0);
-  return IntegerLiteral::Create(Context, Zero, Context.IntTy, Loc);
+  // If the selector is value dependent, we can't compute the type.
+  // Return an un-evaluated, un-interpreted node.
+  if (Attr->isValueDependent()) {
+    return new (Context) GetArrayElementTraitExpr(Loc, Context.DependentTy,
+                                                  Node, Attr, Elem);
+  }
+
+  // Otherwise, determine its type.
+  llvm::APSInt Result;
+  if (!Attr->isIntegerConstantExpr(Result, Context)) {
+    Diag(Loc, diag::err_expr_not_ice) << 1 << Attr->getSourceRange();
+    return ExprResult();
+  }
+
+  // Determine the type of the accessor.
+  QualType Type = GetReflectedAttributeType(Context, Result.getExtValue());
+  if (Type.isNull()) {
+    Diag(Loc, diag::err_invalid_attribute_id) << Attr;
+    return ExprError();
+  }
+
+  return new (Context) GetArrayElementTraitExpr(Loc, Type, Node, Attr, Elem);
 }

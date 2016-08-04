@@ -4251,26 +4251,25 @@ enum ReflectedAttributeId
   RAI_Type,       // meta::type
 };
 
-
-/// \brief Represents a '__get_attribute' expression. This packages the
-/// expressions used to resolve to an attribute during evaluation.
-/// The type of the expression is determined by the value of the selector 
-/// operand.
-class GetAttributeTraitExpr : public Expr {
-  friend class ASTStmtReader;
-
-  // TODO: Save the paren locs too.
+// The base class for derived reflection traits. This stores operands and
+// properties for those derived classes. The template parameter N reflects
+// the arity of the the traits and must be at least 2.
+template<int N>
+class ReflectionTraitExpr : public Expr {
+protected:
+  // TODO: Save the paren locs too. And commas?
   SourceLocation TraitLoc;
 
-  // Stores the node and selector operands to the expression.
-  Stmt* Operands[2];  
+  // Store operands.
+  Stmt* Operands[N];
+
 public:
-  GetAttributeTraitExpr(ASTContext& C, SourceLocation Loc, QualType T, 
-                   Expr *Node, Expr *Sel)
-      : Expr(GetAttributeTraitExprClass, T, VK_RValue, OK_Ordinary,
-          // A __get_attribute expression is type dependent only when the
-          // selector is value dependent.
-             Sel->isValueDependent(),
+  ReflectionTraitExpr(StmtClass SC, SourceLocation Loc, QualType T, 
+                      Expr* Node, Expr* Attr)
+      : Expr(SC, T, VK_RValue, OK_Ordinary,
+          // A reflection trait is type dependent when the selector is value 
+          // dependent. 
+             Attr->isValueDependent(),
           // FIXME: When is this expression value dependent?
              false,
           // FIXME: When is this expression instantiation dependent?
@@ -4280,11 +4279,11 @@ public:
              false),
         TraitLoc(Loc) {
     Operands[0] = Node;
-    Operands[1] = Sel;
+    Operands[1] = Attr;
   }
 
-  GetAttributeTraitExpr(EmptyShell Empty)
-      : Expr(GetAttributeTraitExprClass, Empty) {}
+  ReflectionTraitExpr(StmtClass SC, EmptyShell Empty)
+      : Expr(SC, Empty) {}
 
   /// Returns the operand representing the reflected entity.
   Expr* getReflectedNode() const { return cast<Expr>(Operands[0]); }
@@ -4298,11 +4297,49 @@ public:
   SourceLocation getLocEnd() const { return TraitLoc; }
 
   child_range children() {
-    return child_range(&Operands[0], &Operands[0]+2);
+    return child_range(&Operands[0], &Operands[0]+N);
   }
+};
+
+/// \brief Represents a '__get_attribute' expression. This packages the
+/// expressions used to resolve to an attribute during evaluation.
+/// The type of the expression is determined by the value of the selector 
+/// operand.
+class GetAttributeTraitExpr : public ReflectionTraitExpr<2> {
+  friend class ASTStmtReader;
+public:
+  GetAttributeTraitExpr(SourceLocation Loc, QualType T, Expr *Node, Expr *Attr)
+      : ReflectionTraitExpr<2>(GetAttributeTraitExprClass, Loc, T, Node, Attr) {
+  }
+
+  GetAttributeTraitExpr(EmptyShell Empty)
+      : ReflectionTraitExpr<2>(GetAttributeTraitExprClass, Empty) {}
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == GetAttributeTraitExprClass;
+  }
+};
+
+/// \brief Represents a '__get_array_element' expression. 
+class GetArrayElementTraitExpr : public ReflectionTraitExpr<3> {
+  friend class ASTStmtReader;
+public:
+  GetArrayElementTraitExpr(SourceLocation Loc, QualType T, Expr *Node, 
+                           Expr *Attr, Expr* Elem)
+      : ReflectionTraitExpr<3>(GetAttributeTraitExprClass, Loc, T, Node, Attr) {
+    if (Elem->isTypeDependent())
+      setTypeDependent(true);
+    Operands[2] = Elem;
+  }
+
+  GetArrayElementTraitExpr(EmptyShell Empty)
+      : ReflectionTraitExpr<3>(GetArrayElementTraitExprClass, Empty) {}
+
+  /// Returns the bound subexpression.
+  Expr* getElementSelector() const { return cast<Expr>(Operands[2]); }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == GetArrayElementTraitExprClass;
   }
 };
 

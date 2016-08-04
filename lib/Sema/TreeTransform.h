@@ -1384,13 +1384,22 @@ public:
 
   // [PIM]
   
-  /// \brief Build a new co_yield expression.
+  /// \brief Build a new __get_attribute expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
   ExprResult RebuildGetAttributeTraitExpr(SourceLocation Loc, Expr *Node,
                                           Expr* Attr) {
     return getSema().ActOnGetAttributeTraitExpr(Loc, Node, Attr);
+  }
+
+  /// \brief Build a new __get_array_element expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildGetArrayElementTraitExpr(SourceLocation Loc, Expr *Node,
+                                             Expr* Attr, Expr* Elem) {
+    return getSema().ActOnGetArrayElementTraitExpr(Loc, Node, Attr, Elem);
   }
 
   /// \brief Build a new Objective-C \@try statement.
@@ -6902,6 +6911,29 @@ TreeTransform<Derived>::TransformGetAttributeTraitExpr(GetAttributeTraitExpr *E)
   // context or if the promise type has changed.
   return getDerived().RebuildGetAttributeTraitExpr(E->getLocStart(), 
                                                    Node.get(), Attr.get());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformGetArrayElementTraitExpr(GetArrayElementTraitExpr *E) {
+  ExprResult Node = getDerived().TransformExpr(E->getReflectedNode());
+  if (Node.isInvalid())
+    return ExprError();
+
+  ExprResult Attr = getDerived().TransformExpr(E->getAttributeSelector());
+  if (Attr.isInvalid())
+    return ExprError();
+
+  ExprResult Elem = getDerived().TransformExpr(E->getElementSelector());
+  if (Elem.isInvalid())
+    return ExprError();
+
+  // Always rebuild; we don't know if this needs to be injected into a new
+  // context or if the promise type has changed.
+  return getDerived().RebuildGetArrayElementTraitExpr(E->getLocStart(), 
+                                                      Node.get(), 
+                                                      Attr.get(),
+                                                      Elem.get());
 }
 
 
