@@ -51,6 +51,8 @@ GetLinkage(ASTContext &C, QualType T, ValueDecl *D) {
 
 } // end namespace
 
+// TODO: I don't like the name of this function. I also don't like how
+// it works. Maybe it should be virtual to avoid the explicit casts below.
 bool
 ValueDecl::Reflect(ASTContext &C, const Expr *E, std::uint64_t N, APValue &R) {
   switch (N) {
@@ -64,13 +66,20 @@ ValueDecl::Reflect(ASTContext &C, const Expr *E, std::uint64_t N, APValue &R) {
     case RAI_Inline:
     case RAI_Virtual:
     case RAI_Type:
+      llvm_unreachable("Unhandled attribute selector");
+      break;
 
-    default: {
-      DiagnosticsEngine &Diags = C.getDiagnostics();
-      const GetAttributeTraitExpr *GA = cast<GetAttributeTraitExpr>(E);
-      Diags.Report(GA->getLocStart(), diag::err_no_such_reflected_attribute);
+    case RAI_Parameters: {
+      if (FunctionDecl* F = dyn_cast<FunctionDecl>(this)) {
+        R = APValue(C.MakeIntValue(F->getNumParams(), C.getSizeType()));
+        return true;
+      }
+      break;
     }
+    default:
+      break; 
   }
+  llvm_unreachable("Unknown attribute selector");
   return false;
 }
 

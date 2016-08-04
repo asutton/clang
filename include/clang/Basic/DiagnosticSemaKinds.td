@@ -8837,10 +8837,12 @@ def err_not_implemented : Error<
   "feature not implemented">;
 def err_need_header_before_dollar : Error<
   "you need to include <experimental/meta> before using the '$' operator">;
+def err_reflected_overload : Error<
+  "reflection of an overloaded name">;
 def err_not_reflection : Error<
   "expression does not reflect an entity">;
 def err_invalid_attribute_id : Error<
-  "%q0 does not name a reflected attribute">;
+  "invalid attribute selector">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

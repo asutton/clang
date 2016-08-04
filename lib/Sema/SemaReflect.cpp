@@ -54,6 +54,13 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* Id)
   if (Id->isTypeDependent() || Id->isValueDependent())
     return ExprError(Diag(OpLoc, diag::err_not_implemented));
 
+  if (OverloadExpr* Ovl = dyn_cast<OverloadExpr>(Id)) {
+    // FIXME: This should be okay. We should be able to provide a limited
+    // interface to overloaded functions.
+    return ExprError(Diag(OpLoc, diag::err_reflected_overload)
+                     << Ovl->getSourceRange());
+  }
+
   // For non-dependent expressions, the result of reflection depends
   // on the kind of entity.
   ValueDecl* Value = cast<DeclRefExpr>(Id)->getDecl();
@@ -253,9 +260,9 @@ Sema::RequireReflectionType(SourceLocation Loc, char const* Name)
   return Decl;
 }
 
-
-static
-QualType
+// Returns the type of the expression for __get_attribute for the 
+// selector value N.
+static QualType
 GetReflectedAttributeType(ASTContext& C, std::uint64_t N)
 {
   switch (N) {
@@ -277,6 +284,21 @@ GetReflectedAttributeType(ASTContext& C, std::uint64_t N)
     case RAI_Type:
       return C.IntTy; // FIXME: meta::type
       break;
+    case RAI_Parameters:
+      return C.getSizeType();
+    default:
+      return QualType();
+  }
+}
+
+// Returns the type of the expression for __get_array_element for the 
+// selector value N.
+static QualType
+GetReflectedElementType(ASTContext& C, std::uint64_t N)
+{
+  switch (N) {
+    case RAI_Parameters:
+      return C.getSizeType();
     default:
       return QualType();
   }
@@ -314,7 +336,7 @@ Sema::ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,
   // Determine the type of the accessor.
   QualType Type = GetReflectedAttributeType(Context, Result.getExtValue());
   if (Type.isNull()) {
-    Diag(Loc, diag::err_invalid_attribute_id) << Select;
+    Diag(Loc, diag::err_invalid_attribute_id);
     return ExprError();
   }
 
@@ -334,9 +356,14 @@ Sema::ActOnGetArrayElementTraitExpr(SourceLocation Loc,
   // If the selector is value dependent, we can't compute the type.
   // Return an un-evaluated, un-interpreted node.
   if (Attr->isValueDependent()) {
+    Attr->dump();
+    Context.DependentTy.dump();
     return new (Context) GetArrayElementTraitExpr(Loc, Context.DependentTy,
                                                   Node, Attr, Elem);
   }
+
+  llvm::outs() << "GET ARR\n";
+  Attr->dump();
 
   // Otherwise, determine its type.
   llvm::APSInt Result;
@@ -346,11 +373,13 @@ Sema::ActOnGetArrayElementTraitExpr(SourceLocation Loc,
   }
 
   // Determine the type of the accessor.
-  QualType Type = GetReflectedAttributeType(Context, Result.getExtValue());
+  QualType Type = GetReflectedElementType(Context, Result.getExtValue());
   if (Type.isNull()) {
-    Diag(Loc, diag::err_invalid_attribute_id) << Attr;
+    Diag(Loc, diag::err_invalid_attribute_id);
     return ExprError();
   }
+
+  Type.dump();
 
   return new (Context) GetArrayElementTraitExpr(Loc, Type, Node, Attr, Elem);
 }

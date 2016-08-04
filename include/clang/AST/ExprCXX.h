@@ -4235,7 +4235,6 @@ public:
   }
 };
 
-
 /// \brief The list of queryable attributes supported by reflection.
 ///
 /// TODO: Note that this name/value mapping must be kept in sync with
@@ -4243,12 +4242,16 @@ public:
 /// happen.
 enum ReflectedAttributeId
 {
+  // General value and function attributes.
   RAI_Linkage,    // linkage_t (external, internal, none)
   RAI_Storage,    // storage_t (static, thread, automatic)
   RAI_Constexpr,  // bool
   RAI_Inline,     // bool
   RAI_Virtual,    // virtual_t (virtual, pure virtual)
   RAI_Type,       // meta::type
+
+  // Function-specific parameters
+  RAI_Parameters, // std::size_t | meta::parameter
 };
 
 // The base class for derived reflection traits. This stores operands and
