@@ -8193,8 +8193,9 @@ public:
   ExprResult BuildFunctionReflection(SourceLocation Loc, FunctionDecl* Fn);
   ExprResult BuildEnumeratorReflection(SourceLocation Loc, 
                                        EnumConstantDecl* Enum);
-  NamespaceDecl* RequireStdExperimentalNamespace(SourceLocation Loc);
-  NamespaceDecl* RequireStdMetaNamespace(SourceLocation Loc);
+  
+  NamespaceDecl* RequireCpp3kNamespace(SourceLocation Loc);
+  NamespaceDecl* RequireCpp3kMetaNamespace(SourceLocation Loc);
   RecordDecl* RequireReflectionType(SourceLocation Loc, char const* Name);
 
   ExprResult ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,

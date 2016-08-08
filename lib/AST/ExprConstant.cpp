@@ -6001,6 +6001,8 @@ namespace {
     bool VisitCXXInheritedCtorInitExpr(const CXXInheritedCtorInitExpr *E);
     bool VisitCXXConstructExpr(const CXXConstructExpr *E, QualType T);
     bool VisitCXXStdInitializerListExpr(const CXXStdInitializerListExpr *E);
+
+    bool VisitGetArrayElementTraitExpr(const GetArrayElementTraitExpr* E);
   };
 }
 
@@ -6372,6 +6374,38 @@ bool RecordExprEvaluator::VisitLambdaExpr(const LambdaExpr *E) {
   }
   return Success;
 }
+
+bool RecordExprEvaluator::VisitGetArrayElementTraitExpr(
+    const GetArrayElementTraitExpr* E) {
+  // Don't both evaluating if we're checking for potential. We
+  // wouldn't be able to evaluate the first argument anyway.
+  if (Info.checkingPotentialConstantExpression())
+    return false;
+
+  // Convert the node member into its corresponding declaration.
+  llvm::APSInt Node;
+  if (!EvaluateInteger(E->getReflectedNode(), Node, Info))
+    return Error(E);
+  ValueDecl* D = (ValueDecl*)(std::intptr_t)Node.getExtValue();
+
+  // Evaluate the attribute selector.
+  // TODO: This should just be a property of the expression.
+  llvm::APSInt Attr;
+  if (!EvaluateInteger(E->getAttributeSelector(), Attr, Info))
+    return Error(E);
+
+  // Evaluate the element selector.
+  llvm::APSInt Elem;
+  if (!EvaluateInteger(E->getElementSelector(), Node, Info))
+    return Error(E);
+
+  // Return the reflected value.
+  APValue Reflection;
+  D->ReflectElement(Info.Ctx, E, Attr.getExtValue(), Elem.getExtValue(),
+                    Reflection);
+  return Success(Reflection, E);
+}
+
 
 static bool EvaluateRecord(const Expr *E, const LValue &This,
                            APValue &Result, EvalInfo &Info) {
@@ -8967,43 +9001,21 @@ bool IntExprEvaluator::VisitCXXNoexceptExpr(const CXXNoexceptExpr *E) {
 // TODO: Not all properties will be integer expressions. Perhaps we
 // should lift this to the base evaluator.
 //
-// TODO: Factor the reflectin lookup into a separate C++ file.
+// TODO: Factor the reflection lookup into a separate C++ file.
 bool IntExprEvaluator::VisitGetAttributeTraitExpr(const GetAttributeTraitExpr * E) {
   // Don't both evaluating if we're checking for potential. We
   // wouldn't be able to evaluate the first argument anyway.
   if (Info.checkingPotentialConstantExpression())
     return false;
 
-  // TODO: Perform a first-pass evaluation evaluation. We expect an lvalue
-  // since the first operand is always this->__node in the library.
-  APValue R;
-  if (!Evaluate(R, Info, E->getReflectedNode()))
+  // Convert the node member into its corresponding declaration.
+  llvm::APSInt Node;
+  if (!EvaluateInteger(E->getReflectedNode(), Node, Info))
     return Error(E);
-  APValue::LValueBase Base = R.getLValueBase();
+  ValueDecl* D = (ValueDecl*)(std::intptr_t)Node.getExtValue();
 
-  // Get an expression from the lvalue or the initalizer of a variable
-  // declaration so that we can re-evaluate.
-  const Expr* This = Base.dyn_cast<const Expr*>();
-  if (!This) {
-    const ValueDecl* D = Base.dyn_cast<const ValueDecl*>();
-    const VarDecl* Var = cast<VarDecl>(D);
-    This = Var->getAnyInitializer();
-  }
-  assert(This && "unknown operand to __get_attribute");
-
-  // Evaluate the this operand to get the structure value, and then
-  // pull the node value out.
-  //
-  // FIXME: This is super brittle on two counts. First, we rely on the
-  // node to be the first member. Second, we rely on the fact that our
-  // intptr_t is the same as the target systems.
-  APValue Rec;
-  if (!Evaluate(Rec, Info, This))
-    return Error(E);
-  const APSInt& IntPtr = Rec.getStructField(0).getInt();
-  ValueDecl* D = (ValueDecl*)(std::intptr_t)IntPtr.getExtValue();
-
-  // Evaluate the attribute selector. It must be an ICE anyway.
+  // Evaluate the attribute selector.
+  // TODO: This should just be a property of the expression.
   llvm::APSInt Attr;
   if (!EvaluateInteger(E->getAttributeSelector(), Attr, Info))
     return Error(E);
@@ -9868,8 +9880,9 @@ static bool Evaluate(APValue &Result, EvalInfo &Info, const Expr *E) {
     LValue LV;
     LV.set(E, Info.CurrentCall->Index);
     APValue &Value = Info.CurrentCall->createTemporary(E, false);
-    if (!EvaluateRecord(E, LV, Value, Info))
+    if (!EvaluateRecord(E, LV, Value, Info)) {
       return false;
+    }
     Result = Value;
   } else if (T->isVoidType()) {
     if (!Info.getLangOpts().CPlusPlus11)

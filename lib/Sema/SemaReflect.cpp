@@ -180,57 +180,45 @@ Sema::BuildEnumeratorReflection(SourceLocation Loc, EnumConstantDecl* Enum)
   return BuildDeclarationReflection(Loc, Enum, "enumerator");
 }
 
-// Returns the std::experimental namespace if a suitable header has
-// been included. If not, a diagnostic is emitted, and nullptr is returned.
+// Returns the cpp3k namespace if a suitable header has been included. If not, 
+// a diagnostic is emitted, and nullptr is returned.
 //
 // TODO: We should probably cache this the same way that we do
 // with typeid (see CXXTypeInfoDecl in Sema.h).
 NamespaceDecl*
-Sema::RequireStdExperimentalNamespace(SourceLocation Loc)
+Sema::RequireCpp3kNamespace(SourceLocation Loc)
 {
-  // Ensure std is available.
-  NamespaceDecl* Std = getStdNamespace();
-  if (!Std) {
-    Diag(Loc, diag::err_need_header_before_dollar);
-    return nullptr;
-  }
-
-  // Get the std::experimental namespace.
-  IdentifierInfo *ExperimentalII = &PP.getIdentifierTable().get("experimental");
-  LookupResult R(*this, ExperimentalII, SourceLocation(), LookupNamespaceName);
-  LookupQualifiedName(R, Std);
+  // Get the cpp3k namespace. Lookup starts at in global scope.
+  IdentifierInfo *Cpp3kII = &PP.getIdentifierTable().get("cpp3k");
+  LookupResult R(*this, Cpp3kII, Loc, LookupNamespaceName);
+  LookupQualifiedName(R, Context.getTranslationUnitDecl());
   if (!R.isSingleResult()) {
     Diag(Loc, diag::err_need_header_before_dollar);
     return nullptr;
   }
-  NamespaceDecl* Experimental = R.getAsSingle<NamespaceDecl>();
-  assert(Experimental && "experimental is not a namespace");
-  return Experimental;
+  NamespaceDecl* Cpp3k = R.getAsSingle<NamespaceDecl>();
+  assert(Cpp3k && "cpp3k is not a namespace");
+  return Cpp3k;
 }
 
-// TODO: For now, the meta namespace is in std::experimental. In future
-// versions (presumably), it will move into std. That can probably be
-// determined by the language flags.
-//
-// TODO: Same notes about caching the results as the 
-// RequireStdExperimentalNamespace() function.
+// As above, but requires cpp3k::meta.
 NamespaceDecl*
-Sema::RequireStdMetaNamespace(SourceLocation Loc)
+Sema::RequireCpp3kMetaNamespace(SourceLocation Loc)
 {
-  NamespaceDecl* Experimental = RequireStdExperimentalNamespace(Loc);
-  if (!Experimental)
+  NamespaceDecl* Cpp3k = RequireCpp3kNamespace(Loc);
+  if (!Cpp3k)
     return nullptr;
 
-  // Get the std::experimental::meta namespace.
+  // Get the cpp3k::meta namespace.
   IdentifierInfo *MetaII = &PP.getIdentifierTable().get("meta");
-  LookupResult R(*this, MetaII, SourceLocation(), LookupNamespaceName);
-  LookupQualifiedName(R, Experimental);
+  LookupResult R(*this, MetaII, Loc, LookupNamespaceName);
+  LookupQualifiedName(R, Cpp3k);
   if (!R.isSingleResult()) {
     Diag(Loc, diag::err_need_header_before_dollar);
     return nullptr;
   }
   NamespaceDecl* Meta = R.getAsSingle<NamespaceDecl>();
-  assert(Meta && "meta is not a namespace");
+  assert(Meta && "cpp3k::meta is not a namespace");
   return Meta;
 }
 
@@ -244,7 +232,7 @@ Sema::RequireStdMetaNamespace(SourceLocation Loc)
 RecordDecl*
 Sema::RequireReflectionType(SourceLocation Loc, char const* Name)
 {
-  NamespaceDecl* Meta = RequireStdMetaNamespace(Loc);
+  NamespaceDecl* Meta = RequireCpp3kMetaNamespace(Loc);
   if (!Meta)
     return nullptr;
 
@@ -294,11 +282,13 @@ GetReflectedAttributeType(ASTContext& C, std::uint64_t N)
 // Returns the type of the expression for __get_array_element for the 
 // selector value N.
 static QualType
-GetReflectedElementType(ASTContext& C, std::uint64_t N)
+GetReflectedElementType(Sema& S, SourceLocation Loc, std::uint64_t N)
 {
   switch (N) {
-    case RAI_Parameters:
-      return C.getSizeType();
+    case RAI_Parameters: {
+      RecordDecl *D = S.RequireReflectionType(Loc, "parameter");
+      return S.Context.getTagDeclType(D);
+    }
     default:
       return QualType();
   }
@@ -312,35 +302,42 @@ GetReflectedElementType(ASTContext& C, std::uint64_t N)
 //
 // TODO: Factor out common code for all trait expressions.
 ExprResult
-Sema::ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,
-                                 ExprResult Attr)
+Sema::ActOnGetAttributeTraitExpr(SourceLocation Loc, 
+                                 ExprResult NodeExpr,
+                                 ExprResult AttrExpr)
 {
   // TODO: Check some basic properties of the reflection and attribute.
-  Expr* Ref = Node.get();
-  Expr* Select = Attr.get();
+  Expr* Node = NodeExpr.get();
+  Expr* Attr = AttrExpr.get();
 
   // If the selector is value dependent, we can't compute the type.
   // Return an un-evaluated, un-interpreted node.
-  if (Select->isValueDependent()) {
+  if (Attr->isValueDependent()) {
     return new (Context) GetAttributeTraitExpr(Loc, Context.DependentTy,
-                                               Ref, Select);
+                                               Node, Attr);
   }
 
-  // Otherwise, determine its type.
+  // Evaluate the attribute selector in order to determine the type
+  // of the expression.
+  //
+  // TODO: Why am I not passing the APSInt directly to the node? It
+  // doesn't make sense to keep evaluating this expression, especially
+  // when it determines the type.
   llvm::APSInt Result;
-  if (!Select->isIntegerConstantExpr(Result, Context)) {
-    Diag(Loc, diag::err_expr_not_ice) << 1 << Select->getSourceRange();
+  if (!Attr->isIntegerConstantExpr(Result, Context)) {
+    Diag(Loc, diag::err_expr_not_ice) << 1 << Attr->getSourceRange();
     return ExprResult();
   }
-
-  // Determine the type of the accessor.
   QualType Type = GetReflectedAttributeType(Context, Result.getExtValue());
   if (Type.isNull()) {
     Diag(Loc, diag::err_invalid_attribute_id);
     return ExprError();
   }
 
-  return new (Context) GetAttributeTraitExpr(Loc, Type, Ref, Select);
+  // Apply lvalue-to-rvalue conversions.
+  Node = DefaultLvalueConversion(Node).get();
+
+  return new (Context) GetAttributeTraitExpr(Loc, Type, Node, Attr);
 }
 
 ExprResult
@@ -356,30 +353,30 @@ Sema::ActOnGetArrayElementTraitExpr(SourceLocation Loc,
   // If the selector is value dependent, we can't compute the type.
   // Return an un-evaluated, un-interpreted node.
   if (Attr->isValueDependent()) {
-    Attr->dump();
-    Context.DependentTy.dump();
     return new (Context) GetArrayElementTraitExpr(Loc, Context.DependentTy,
                                                   Node, Attr, Elem);
   }
 
-  llvm::outs() << "GET ARR\n";
-  Attr->dump();
-
-  // Otherwise, determine its type.
+  // Evaluate the attribute selector in order to determine the type
+  // of the expression.
+  //
+  // TODO: Why am I not passing the APSInt directly to the node? It
+  // doesn't make sense to keep evaluating this expression, especially
+  // when it determines the type.
   llvm::APSInt Result;
   if (!Attr->isIntegerConstantExpr(Result, Context)) {
     Diag(Loc, diag::err_expr_not_ice) << 1 << Attr->getSourceRange();
     return ExprResult();
   }
-
-  // Determine the type of the accessor.
-  QualType Type = GetReflectedElementType(Context, Result.getExtValue());
+  QualType Type = GetReflectedElementType(*this, Loc, Result.getExtValue());
   if (Type.isNull()) {
     Diag(Loc, diag::err_invalid_attribute_id);
     return ExprError();
   }
 
-  Type.dump();
+  // Apply lvalue-to-rvalue conversions to the other attributes.
+  Node = DefaultLvalueConversion(Node).get();
+  Elem = DefaultLvalueConversion(Elem).get();
 
   return new (Context) GetArrayElementTraitExpr(Loc, Type, Node, Attr, Elem);
 }

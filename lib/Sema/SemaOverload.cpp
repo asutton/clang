@@ -12623,8 +12623,6 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
     if (CheckOtherCall(call, proto))
       return ExprError();
 
-    // TODO: [PIM] If the declaration is eager, then evaluate that here.
-
     return MaybeBindToTemporary(call);
   }
 
@@ -12841,16 +12839,20 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
                          MemExpr->getMemberLoc());
   }
 
-  // TODO: [PIM] Factor the reconstruction of APValues into expressions int
-  // a ExprConstant.cpp (maybe?). Maybe the behavior already exists?
+  // [PIM] If the resolved function is eager (and we're not already in an
+  // eager context), then try to evaluate it. The actual value is recomputed 
+  // as needed during constexpr evaluation or code gen.
+  //
+  // TODO: Cache the value for eager functions and simply regurgitate
+  // that during code-gen and evaluation?
+  //
+  // FIXME: This only applies to member declarations. Clearly, we want this
+  // to apply to all functions. Maybe we should handle this in the
+  // MaybeBindToTemporary function. Or not, it depends whether all resolution
+  // algorithms funnel through that function (they should?).
   if (TheCall->getMethodDecl()->isEager()) {
-
     FunctionDecl* Fn = getCurFunctionDecl();
     if (Fn && !Fn->isEager()) {
-      // Only in non-eager contexts do we try to evaluate an eager function
-      // call. Inside of an eager function, we have no guarantee that the
-      // arguments will be constant expression. That can only be enforced
-      // for arguments in a normal calling context.
       Expr::EvalResult R;
       SmallVector<PartialDiagnosticAt, 8> Notes;
       R.Diag = &Notes;
@@ -12861,16 +12863,6 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
           Diag(Note.first, Note.second);
         return ExprResult();
       }
-
-      // Construct a new expression based on the result type. For class types,
-      // we're basically going to construct a temporary just like with
-      // do with $x: set up the constructor call and let the compiler
-      // figure out how to build the expressions.
-      QualType T = TheCall->getType();
-      if (T->isIntegerType())
-        return IntegerLiteral::Create(Context, R.Val.getInt(), T, 
-            TheCall->getLocStart());
-        llvm_unreachable("unhandled return type");
     }  
   }
 

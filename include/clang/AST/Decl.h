@@ -603,10 +603,22 @@ public:
   ///        or declared with the weak or weak-ref attr.
   bool isWeak() const;
 
-  /// \brief Store a value in R corresponding to attribute N.
-  /// The expression E (a GetAttributeTraitExpr) provides the original
-  /// unevaluated operands and type for the request.
+  /// \brief Get a reflected property from this declaration.
+  /// Here, N determines which property to select. The actual selection
+  /// depends on the kind of declaration. The reflected value is stored
+  /// in the value R.
+  ///
+  /// The expression E provides context for diagnostics.
   bool Reflect(ASTContext& C, const Expr* E, std::uint64_t N, APValue& R);
+  
+  // \brief Get a reflected value from an element.
+  /// Here, N determines which property to select, and K is the index of
+  /// element being requested. The actual selection depends on the kind of 
+  /// declaration. The reflected value is stored in the value R.
+  ///
+  /// The expression E provides context for diagnostics.
+  bool ReflectElement(ASTContext& C, const Expr* E, std::uint64_t N, 
+                      std::uint64_t K, APValue& R);
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }

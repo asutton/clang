@@ -4329,7 +4329,7 @@ class GetArrayElementTraitExpr : public ReflectionTraitExpr<3> {
 public:
   GetArrayElementTraitExpr(SourceLocation Loc, QualType T, Expr *Node, 
                            Expr *Attr, Expr* Elem)
-      : ReflectionTraitExpr<3>(GetAttributeTraitExprClass, Loc, T, Node, Attr) {
+      : ReflectionTraitExpr<3>(GetArrayElementTraitExprClass, Loc, T, Node, Attr) {
     if (Elem->isTypeDependent())
       setTypeDependent(true);
     Operands[2] = Elem;

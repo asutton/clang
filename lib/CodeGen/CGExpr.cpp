@@ -3866,6 +3866,15 @@ RValue CodeGenFunction::EmitCallExpr(const CallExpr *E,
   if (E->getCallee()->getType()->isBlockPointerType())
     return EmitBlockCallExpr(E, ReturnValue);
 
+  // [PIM] If eager calls escape to code generation. Do this now.
+  if (const FunctionDecl *Fn = E->getDirectCallee()) {
+    if (Fn->isEager()) {
+      llvm::Constant* Res = CGM.EmitConstantExpr(E, E->getType(), this);
+      assert(Res && "Evaluation of eager function failed");
+      return RValue::get(Res);
+    }
+  }
+
   if (const auto *CE = dyn_cast<CXXMemberCallExpr>(E))
     return EmitCXXMemberCallExpr(CE, ReturnValue);
 

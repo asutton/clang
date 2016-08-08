@@ -56,30 +56,53 @@ GetLinkage(ASTContext &C, QualType T, ValueDecl *D) {
 bool
 ValueDecl::Reflect(ASTContext &C, const Expr *E, std::uint64_t N, APValue &R) {
   switch (N) {
-    case RAI_Linkage: 
-      R = APValue(GetLinkage(C, E->getType(), this));
+  case RAI_Linkage: 
+    R = APValue(GetLinkage(C, E->getType(), this));
+    return true;
+
+  // TODO: Implement me.
+  case RAI_Storage:
+  case RAI_Constexpr:
+  case RAI_Inline:
+  case RAI_Virtual:
+  case RAI_Type:
+    llvm_unreachable("Unhandled attribute selector");
+    break;
+
+  case RAI_Parameters: {
+    if (FunctionDecl* F = dyn_cast<FunctionDecl>(this)) {
+      R = APValue(C.MakeIntValue(F->getNumParams(), C.getSizeType()));
       return true;
-
-    // TODO: Implement me.
-    case RAI_Storage:
-    case RAI_Constexpr:
-    case RAI_Inline:
-    case RAI_Virtual:
-    case RAI_Type:
-      llvm_unreachable("Unhandled attribute selector");
-      break;
-
-    case RAI_Parameters: {
-      if (FunctionDecl* F = dyn_cast<FunctionDecl>(this)) {
-        R = APValue(C.MakeIntValue(F->getNumParams(), C.getSizeType()));
-        return true;
-      }
-      break;
     }
-    default:
-      break; 
+    break;
   }
+  default:
+    break; 
+  }
+
+  // FIXME: Use real diagnostics.
   llvm_unreachable("Unknown attribute selector");
   return false;
 }
 
+bool
+ValueDecl::ReflectElement(ASTContext &C, const Expr *E, std::uint64_t N,
+                          std::uint64_t K, APValue &R) {
+  switch (N) {
+  case RAI_Parameters: {
+    if (FunctionDecl* F = dyn_cast<FunctionDecl>(this)) {
+      // TODO: This needs to be VERY carefully coordinated with the
+      // meta::parameter type.
+      R = APValue(APValue::UninitStruct(), 0, F->getNumParams());
+      APValue Node(C.MakeIntValue((std::intptr_t)this, C.getIntPtrType()));
+      R.getStructField(0) = Node;
+      return true;
+    }
+  }
+  default:
+    break; 
+  }
+  // FIXME: Use real diagnostics.
+  llvm_unreachable("Unknown attribute selector");
+  return false;
+}
