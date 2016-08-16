@@ -190,8 +190,8 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::NoInitExprClass:
   case Expr::DesignatedInitUpdateExprClass:
   case Expr::CoyieldExprClass:
-  case Expr::GetAttributeTraitExprClass:
-  case Expr::GetArrayElementTraitExprClass:
+  case Expr::UnaryReflectionTraitExprClass:
+  case Expr::BinaryReflectionTraitExprClass:
     return Cl::CL_PRValue;
 
     // Next come the complicated cases.

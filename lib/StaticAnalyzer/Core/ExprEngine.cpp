@@ -794,7 +794,8 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CoawaitExprClass:
     case Stmt::CoreturnStmtClass:
     case Stmt::CoyieldExprClass:
-    case Stmt::GetAttributeTraitExprClass:
+    case Stmt::UnaryReflectionTraitExprClass:
+    case Stmt::BinaryReflectionTraitExprClass:
     case Stmt::SEHTryStmtClass:
     case Stmt::SEHExceptStmtClass:
     case Stmt::SEHLeaveStmtClass:

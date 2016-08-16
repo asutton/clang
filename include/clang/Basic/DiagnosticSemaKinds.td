@@ -8841,6 +8841,8 @@ def err_reflected_overload : Error<
   "reflection of an overloaded name">;
 def err_not_reflection : Error<
   "expression does not reflect an entity">;
+def err_reflection_operand_not_integer : Error<
+  "argument trait expects an integer operand">;
 def err_invalid_attribute_id : Error<
   "invalid attribute selector">;
 } // end of reflection issue category

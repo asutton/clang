@@ -24,6 +24,7 @@
 #include "clang/Basic/Module.h"
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/PragmaKinds.h"
+#include "clang/Basic/TypeTraits.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/Support/Compiler.h"
@@ -603,13 +604,20 @@ public:
   ///        or declared with the weak or weak-ref attr.
   bool isWeak() const;
 
+
+  // Stores context information passed to the Reflect functions.
+  struct ReflectInfo {
+    ASTContext& Cxt;
+    Expr const* Expr;
+  };
+
   /// \brief Get a reflected property from this declaration.
-  /// Here, N determines which property to select. The actual selection
-  /// depends on the kind of declaration. The reflected value is stored
-  /// in the value R.
   ///
   /// The expression E provides context for diagnostics.
-  bool Reflect(ASTContext& C, const Expr* E, std::uint64_t N, APValue& R);
+  bool Reflect(ReflectionTrait Trait, 
+               APValue const* Arg, 
+               APValue& Result, 
+               ReflectInfo Info) const;
   
   // \brief Get a reflected value from an element.
   /// Here, N determines which property to select, and K is the index of

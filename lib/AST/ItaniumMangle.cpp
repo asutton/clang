@@ -3324,8 +3324,8 @@ recurse:
   case Expr::TypoExprClass:  // This should no longer exist in the AST by now.
   case Expr::OMPArraySectionExprClass:
   case Expr::CXXInheritedCtorInitExprClass:
-  case Expr::GetAttributeTraitExprClass:
-  case Expr::GetArrayElementTraitExprClass:
+  case Expr::UnaryReflectionTraitExprClass:
+  case Expr::BinaryReflectionTraitExprClass:
     llvm_unreachable("unexpected statement kind");
 
   // FIXME: invent manglings for all these.

@@ -2524,8 +2524,8 @@ DEF_TRAVERSE_STMT(CoyieldExpr, {
 })
 
 // [PIM]
-DEF_TRAVERSE_STMT(GetAttributeTraitExpr, {})
-DEF_TRAVERSE_STMT(GetArrayElementTraitExpr, {})
+DEF_TRAVERSE_STMT(UnaryReflectionTraitExpr, {})
+DEF_TRAVERSE_STMT(BinaryReflectionTraitExpr, {})
 
 // These literals (all of them) do not need any action.
 DEF_TRAVERSE_STMT(IntegerLiteral, {})

@@ -4235,31 +4235,21 @@ public:
   }
 };
 
-/// \brief The list of queryable attributes supported by reflection.
-///
-/// TODO: Note that this name/value mapping must be kept in sync with
-/// the attribute selectors in the meta namespace. If not, bad things will
-/// happen.
-enum ReflectedAttributeId
-{
-  // General value and function attributes.
-  RAI_Linkage,    // linkage_t (external, internal, none)
-  RAI_Storage,    // storage_t (static, thread, automatic)
-  RAI_Constexpr,  // bool
-  RAI_Inline,     // bool
-  RAI_Virtual,    // virtual_t (virtual, pure virtual)
-  RAI_Type,       // meta::type
-
-  // Function-specific parameters
-  RAI_Parameters, // std::size_t | meta::parameter
-};
 
 // The base class for derived reflection traits. This stores operands and
 // properties for those derived classes. The template parameter N reflects
 // the arity of the the traits and must be at least 2.
-template<int N>
+template<unsigned N>
 class ReflectionTraitExpr : public Expr {
 protected:
+  // The kind of reflection trait.
+  // TODO: Pack this into Expr's bits union. 
+  ReflectionTrait TraitKind;
+
+  // The number of arguments as determined by the template argument.
+  // TODO: also pack this into Emxpr's bits union. See TypeTraitExpr. 
+  unsigned Arity = N;
+
   // TODO: Save the paren locs too. And commas?
   SourceLocation TraitLoc;
 
@@ -4267,32 +4257,46 @@ protected:
   Stmt* Operands[N];
 
 public:
-  ReflectionTraitExpr(StmtClass SC, SourceLocation Loc, QualType T, 
-                      Expr* Node, Expr* Attr)
+  // All trait expressions have at least one operand -- the node.
+  ReflectionTraitExpr(StmtClass SC, 
+                      ReflectionTrait RT, 
+                      SourceLocation Loc, 
+                      QualType T, 
+                      Expr* Node)
       : Expr(SC, T, VK_RValue, OK_Ordinary,
-          // A reflection trait is type dependent when the selector is value 
-          // dependent. 
-             Attr->isValueDependent(),
-          // FIXME: When is this expression value dependent?
+          // A reflection trait is never type dependent.
              false,
-          // FIXME: When is this expression instantiation dependent?
+          // FIXME: When is this expression value dependent? When the node
+          // is a non-type argument?
+             false,
+          // FIXME: When is this expression instantiation dependent? Almost
+          // certainly never.
              false,
           // TODO: I don't think that any operands can have unexpanded
           // parameter packs (there are only two operands).
              false),
+        TraitKind(RT),
         TraitLoc(Loc) {
     Operands[0] = Node;
-    Operands[1] = Attr;
   }
 
   ReflectionTraitExpr(StmtClass SC, EmptyShell Empty)
       : Expr(SC, Empty) {}
 
-  /// Returns the operand representing the reflected entity.
-  Expr* getReflectedNode() const { return cast<Expr>(Operands[0]); }
+  /// Returns the kind of reflection trait.
+  ReflectionTrait getTrait() const { return TraitKind; }
 
-  /// Returns the selector operand.
-  Expr* getAttributeSelector() const { return cast<Expr>(Operands[1]); }
+  /// Returns the arity of the trait.
+  unsigned getArity() const { return Arity; }
+
+  /// Returns the operand representing the reflected entity.
+  Expr* getASTNode() const { return cast<Expr>(Operands[0]); }
+
+  /// Returns the ith argument of the reflection trait.
+  Expr* getArg(unsigned I) const {
+    assert(I < getArity() && "Argument out-of-range");
+    return Operands[I];
+  }
 
   // Source code locations.
   // TODO: The end locations should be the closing paren.
@@ -4300,49 +4304,50 @@ public:
   SourceLocation getLocEnd() const { return TraitLoc; }
 
   child_range children() {
-    return child_range(&Operands[0], &Operands[0]+N);
+    return child_range(&Operands[0], &Operands[0] + N);
   }
 };
 
-/// \brief Represents a '__get_attribute' expression. This packages the
-/// expressions used to resolve to an attribute during evaluation.
-/// The type of the expression is determined by the value of the selector 
-/// operand.
-class GetAttributeTraitExpr : public ReflectionTraitExpr<2> {
+/// \brief A unary reflection trait.
+class UnaryReflectionTraitExpr : public ReflectionTraitExpr<1> {
   friend class ASTStmtReader;
 public:
-  GetAttributeTraitExpr(SourceLocation Loc, QualType T, Expr *Node, Expr *Attr)
-      : ReflectionTraitExpr<2>(GetAttributeTraitExprClass, Loc, T, Node, Attr) {
+  UnaryReflectionTraitExpr(ReflectionTrait RT, 
+                           SourceLocation Loc, 
+                           QualType T, 
+                           Expr *Node)
+      : ReflectionTraitExpr<1>(UnaryReflectionTraitExprClass, RT, Loc, T, Node) {
   }
 
-  GetAttributeTraitExpr(EmptyShell Empty)
-      : ReflectionTraitExpr<2>(GetAttributeTraitExprClass, Empty) {}
+  UnaryReflectionTraitExpr(EmptyShell Empty)
+      : ReflectionTraitExpr<1>(UnaryReflectionTraitExprClass, Empty) {}
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == GetAttributeTraitExprClass;
+    return T->getStmtClass() == UnaryReflectionTraitExprClass;
   }
 };
 
 /// \brief Represents a '__get_array_element' expression. 
-class GetArrayElementTraitExpr : public ReflectionTraitExpr<3> {
+class BinaryReflectionTraitExpr : public ReflectionTraitExpr<2> {
   friend class ASTStmtReader;
 public:
-  GetArrayElementTraitExpr(SourceLocation Loc, QualType T, Expr *Node, 
-                           Expr *Attr, Expr* Elem)
-      : ReflectionTraitExpr<3>(GetArrayElementTraitExprClass, Loc, T, Node, Attr) {
-    if (Elem->isTypeDependent())
-      setTypeDependent(true);
-    Operands[2] = Elem;
+  BinaryReflectionTraitExpr(ReflectionTrait RT, 
+                            SourceLocation Loc, 
+                            QualType T, 
+                            Expr *Node, 
+                            Expr *Arg)
+      : ReflectionTraitExpr<2>(BinaryReflectionTraitExprClass, RT, Loc, T, Node) {
+    Operands[1] = Arg;
   }
 
-  GetArrayElementTraitExpr(EmptyShell Empty)
-      : ReflectionTraitExpr<3>(GetArrayElementTraitExprClass, Empty) {}
+  BinaryReflectionTraitExpr(EmptyShell Empty)
+      : ReflectionTraitExpr<2>(BinaryReflectionTraitExprClass, Empty) {}
 
-  /// Returns the bound subexpression.
-  Expr* getElementSelector() const { return cast<Expr>(Operands[2]); }
+  /// Returns the non-node argument to the reflection trait.
+  Expr* getArgument() const { return cast<Expr>(Operands[1]); }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == GetArrayElementTraitExprClass;
+    return T->getStmtClass() == BinaryReflectionTraitExprClass;
   }
 };
 

@@ -386,11 +386,11 @@ void ASTStmtReader::VisitCoyieldExpr(CoyieldExpr *S) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtReader::VisitGetAttributeTraitExpr(GetAttributeTraitExpr *E) {
+void ASTStmtReader::VisitUnaryReflectionTraitExpr(UnaryReflectionTraitExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtReader::VisitGetArrayElementTraitExpr(GetArrayElementTraitExpr *E) {
+void ASTStmtReader::VisitBinaryReflectionTraitExpr(BinaryReflectionTraitExpr *E) {
   llvm_unreachable("unimplemented");
 }
 

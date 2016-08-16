@@ -8198,10 +8198,9 @@ public:
   NamespaceDecl* RequireCpp3kMetaNamespace(SourceLocation Loc);
   RecordDecl* RequireReflectionType(SourceLocation Loc, char const* Name);
 
-  ExprResult ActOnGetAttributeTraitExpr(SourceLocation Loc, ExprResult Node,
-                                        ExprResult Attr);
-  ExprResult ActOnGetArrayElementTraitExpr(SourceLocation Loc, ExprResult Node,
-                                           ExprResult Attr, ExprResult Elem);
+  ExprResult ActOnReflectionTrait(ReflectionTrait Kind, SourceLocation KWLoc,
+                                  ArrayRef<Expr *> Args,
+                                  SourceLocation RParenLoc);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

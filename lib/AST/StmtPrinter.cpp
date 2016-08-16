@@ -2480,20 +2480,28 @@ void StmtPrinter::VisitCoyieldExpr(CoyieldExpr *S) {
   PrintExpr(S->getOperand());
 }
 
-void StmtPrinter::VisitGetAttributeTraitExpr(GetAttributeTraitExpr *E) {
-  OS << "__get_attribute ";
-  PrintExpr(E->getReflectedNode());
-  OS << " ";
-  PrintExpr(E->getAttributeSelector());
+// [PIM] Reflection traits
+
+static const char *getReflectionTraitName(ReflectionTrait RT) {
+  switch (RT) {
+#define REFLECTION_TRAIT_1(Spelling, Kind) \
+  case clang::URT_##Kind: return #Spelling;
+#define REFLECTION_TRAIT_2(Spelling, Kind) \
+  case clang::BRT_##Kind: return #Spelling;
+#include "clang/Basic/TokenKinds.def"
+  }
 }
 
-void StmtPrinter::VisitGetArrayElementTraitExpr(GetArrayElementTraitExpr *E) {
-  OS << "__get_array_element ";
-  PrintExpr(E->getReflectedNode());
-  OS << " ";
-  PrintExpr(E->getAttributeSelector());
-  OS << " ";
-  PrintExpr(E->getElementSelector());
+void StmtPrinter::VisitUnaryReflectionTraitExpr(UnaryReflectionTraitExpr *E) {
+  OS << getReflectionTraitName(E->getTrait()) << ' ';
+  PrintExpr(E->getASTNode());
+}
+
+void StmtPrinter::VisitBinaryReflectionTraitExpr(BinaryReflectionTraitExpr *E) {
+  OS << getReflectionTraitName(E->getTrait()) << ' ';
+  PrintExpr(E->getASTNode());
+  OS << ' ';
+  PrintExpr(E->getArgument());
 }
 
 // Obj-C

@@ -4829,6 +4829,51 @@ public:
     llvm_unreachable("Return from function from the loop above.");
   }
 
+  bool VisitUnaryReflectionTraitExpr(const UnaryReflectionTraitExpr* E) {
+    // Don't both evaluating if we're checking for potential. We generally
+    // wouldn't be able to evaluate the first argument anyway. Note that
+    // this does not indicate an error.
+    if (Info.checkingPotentialConstantExpression())
+      return false;
+
+    // Convert the node member into its corresponding declaration.
+    llvm::APSInt Node;
+    if (!EvaluateInteger(E->getASTNode(), Node, Info))
+      return Error(E);
+    ValueDecl* D = (ValueDecl*)(std::intptr_t)Node.getExtValue();
+    (void)D;
+
+    // Return the reflected value.
+    APValue Result;
+    D->Reflect(E->getTrait(), nullptr, Result, {Info.Ctx, E});
+    return DerivedSuccess(Result, E);
+  }
+
+
+  bool VisitBinaryReflectionTraitExpr(const BinaryReflectionTraitExpr* E) {
+    // Don't both evaluating if we're checking for potential. We generally
+    // wouldn't be able to evaluate the first argument anyway. Note that
+    // this does not indicate an error.
+    if (Info.checkingPotentialConstantExpression())
+      return false;
+
+    // Convert the node member into its corresponding declaration.
+    llvm::APSInt Node;
+    if (!EvaluateInteger(E->getASTNode(), Node, Info))
+      return Error(E);
+    ValueDecl* D = (ValueDecl*)(std::intptr_t)Node.getExtValue();
+    // Evaluate extra arguments.
+    APValue Arg;
+    if (!Evaluate(Arg, Info, E->getArgument()))
+      return Error(E);
+
+    // Return the reflected value.
+    APValue Result;
+    D->Reflect(E->getTrait(), &Arg, Result, {Info.Ctx, E});
+    return DerivedSuccess(Result, E);
+  }
+
+
   /// Visit a value which is evaluated, but whose value is ignored.
   void VisitIgnoredValue(const Expr *E) {
     EvaluateIgnoredValue(Info, E);
@@ -6001,8 +6046,6 @@ namespace {
     bool VisitCXXInheritedCtorInitExpr(const CXXInheritedCtorInitExpr *E);
     bool VisitCXXConstructExpr(const CXXConstructExpr *E, QualType T);
     bool VisitCXXStdInitializerListExpr(const CXXStdInitializerListExpr *E);
-
-    bool VisitGetArrayElementTraitExpr(const GetArrayElementTraitExpr* E);
   };
 }
 
@@ -6374,38 +6417,6 @@ bool RecordExprEvaluator::VisitLambdaExpr(const LambdaExpr *E) {
   }
   return Success;
 }
-
-bool RecordExprEvaluator::VisitGetArrayElementTraitExpr(
-    const GetArrayElementTraitExpr* E) {
-  // Don't both evaluating if we're checking for potential. We
-  // wouldn't be able to evaluate the first argument anyway.
-  if (Info.checkingPotentialConstantExpression())
-    return false;
-
-  // Convert the node member into its corresponding declaration.
-  llvm::APSInt Node;
-  if (!EvaluateInteger(E->getReflectedNode(), Node, Info))
-    return Error(E);
-  ValueDecl* D = (ValueDecl*)(std::intptr_t)Node.getExtValue();
-
-  // Evaluate the attribute selector.
-  // TODO: This should just be a property of the expression.
-  llvm::APSInt Attr;
-  if (!EvaluateInteger(E->getAttributeSelector(), Attr, Info))
-    return Error(E);
-
-  // Evaluate the element selector.
-  llvm::APSInt Elem;
-  if (!EvaluateInteger(E->getElementSelector(), Node, Info))
-    return Error(E);
-
-  // Return the reflected value.
-  APValue Reflection;
-  D->ReflectElement(Info.Ctx, E, Attr.getExtValue(), Elem.getExtValue(),
-                    Reflection);
-  return Success(Reflection, E);
-}
-
 
 static bool EvaluateRecord(const Expr *E, const LValue &This,
                            APValue &Result, EvalInfo &Info) {
@@ -6991,8 +7002,6 @@ public:
 
   bool VisitCXXNoexceptExpr(const CXXNoexceptExpr *E);
   bool VisitSizeOfPackExpr(const SizeOfPackExpr *E);
-
-  bool VisitGetAttributeTraitExpr(const GetAttributeTraitExpr* E);
 
   // FIXME: Missing: array subscript of vector, member of vector
 };
@@ -8995,37 +9004,6 @@ bool IntExprEvaluator::VisitCXXNoexceptExpr(const CXXNoexceptExpr *E) {
   return Success(E->getValue(), E);
 }
 
-// Lookup the requested property and return an value corresponding
-// to that particular property.
-//
-// TODO: Not all properties will be integer expressions. Perhaps we
-// should lift this to the base evaluator.
-//
-// TODO: Factor the reflection lookup into a separate C++ file.
-bool IntExprEvaluator::VisitGetAttributeTraitExpr(const GetAttributeTraitExpr * E) {
-  // Don't both evaluating if we're checking for potential. We
-  // wouldn't be able to evaluate the first argument anyway.
-  if (Info.checkingPotentialConstantExpression())
-    return false;
-
-  // Convert the node member into its corresponding declaration.
-  llvm::APSInt Node;
-  if (!EvaluateInteger(E->getReflectedNode(), Node, Info))
-    return Error(E);
-  ValueDecl* D = (ValueDecl*)(std::intptr_t)Node.getExtValue();
-
-  // Evaluate the attribute selector.
-  // TODO: This should just be a property of the expression.
-  llvm::APSInt Attr;
-  if (!EvaluateInteger(E->getAttributeSelector(), Attr, Info))
-    return Error(E);
-
-  // Return the reflected value.
-  APValue Reflection;
-  D->Reflect(Info.Ctx, E, Attr.getExtValue(), Reflection);
-  return Success(Reflection, E);
-}
-
 //===----------------------------------------------------------------------===//
 // Float Evaluation
 //===----------------------------------------------------------------------===//
@@ -10551,10 +10529,8 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::ChooseExprClass: {
     return CheckICE(cast<ChooseExpr>(E)->getChosenSubExpr(), Ctx);
   }
-  case Expr::GetAttributeTraitExprClass:
-  case Expr::GetArrayElementTraitExprClass: {
-    // FIXME [PIM]: This *is* an ICE iff based on its selector indicates 
-    // that it is.
+  case Expr::UnaryReflectionTraitExprClass:
+  case Expr::BinaryReflectionTraitExprClass: {
     llvm_unreachable("not implemented");
   }
   }

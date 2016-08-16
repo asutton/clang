@@ -67,6 +67,18 @@
 #define ANNOTATION(X) TOK(annot_ ## X)
 #endif
 
+// [PIM] Keyword macros for reflection queries.
+#ifndef REFLECTION_TRAIT
+#define REFLECTION_TRAIT(N,I,K) KEYWORD(I, KEYCXX11)
+#endif
+#ifndef REFLECTION_TRAIT_1
+#define REFLECTION_TRAIT_1(I,K) REFLECTION_TRAIT(1,I,K)
+#endif
+#ifndef REFLECTION_TRAIT_2
+#define REFLECTION_TRAIT_2(I,K) REFLECTION_TRAIT(2,I,K)
+#endif
+
+
 //===----------------------------------------------------------------------===//
 // Preprocessor keywords.
 //===----------------------------------------------------------------------===//
@@ -494,12 +506,15 @@ KEYWORD(__array_extent              , KEYCXX)
 
 // [PIM] Extensions for Reflection
 //
-// TODO: Put these in a KEYREFLECTION category?
+// TODO: Put these in a KEYREFLECTION category.
 KEYWORD(__eager                     , KEYCXX)
-KEYWORD(__get_attribute             , KEYCXX)
-KEYWORD(__set_attribute             , KEYCXX)
-KEYWORD(__get_array_element         , KEYCXX)
-KEYWORD(__get_tuple_element         , KEYCXX)
+REFLECTION_TRAIT_1(__get_name, GetName)
+REFLECTION_TRAIT_1(__get_qualified_name, GetQualifiedName)
+REFLECTION_TRAIT_1(__get_type, GetType)
+REFLECTION_TRAIT_1(__get_storage, GetStorage)
+REFLECTION_TRAIT_1(__get_linkage, GetLinkage)
+REFLECTION_TRAIT_1(__get_num_parameters, GetNumParameters)
+REFLECTION_TRAIT_2(__get_parameter, GetParameter)
 
 // Apple Extension.
 KEYWORD(__private_extern__          , KEYALL)
@@ -804,6 +819,9 @@ ANNOTATION(module_include)
 ANNOTATION(module_begin)
 ANNOTATION(module_end)
 
+#undef REFLECTION_TRAIT
+#undef REFLECTION_TRAIT_2
+#undef REFLECTION_TRAIT_1
 #undef ANNOTATION
 #undef TESTING_KEYWORD
 #undef OBJC2_AT_KEYWORD

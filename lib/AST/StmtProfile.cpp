@@ -1603,11 +1603,13 @@ void StmtProfiler::VisitCoyieldExpr(const CoyieldExpr *S) {
   VisitExpr(S);
 }
 
-void StmtProfiler::VisitGetAttributeTraitExpr(const GetAttributeTraitExpr *E) {
+void StmtProfiler::VisitUnaryReflectionTraitExpr(
+    const UnaryReflectionTraitExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitGetArrayElementTraitExpr(const GetArrayElementTraitExpr *E) {
+void StmtProfiler::VisitBinaryReflectionTraitExpr(
+    const BinaryReflectionTraitExpr *E) {
   VisitExpr(E);
 }
 

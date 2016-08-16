@@ -1348,14 +1348,10 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___is_rvalue_expr:
     return ParseExpressionTrait();
 
-  case tok::kw___get_attribute: // [PIM] Reflection traits.
-    return ParseGetAttributeTraitExpr();
-  case tok::kw___set_attribute:
-    return ParseSetAttributeTraitExpr();
-  case tok::kw___get_array_element:
-    return ParseGetArrayElementTraitExpr();
-  case tok::kw___get_tuple_element:
-    return ParseGetTupleElementTraitExpr();
+#define REFLECTION_TRAIT(N,Spelling,K) \
+  case tok::kw_##Spelling:
+#include "clang/Basic/TokenKinds.def"
+    return ParseReflectionTrait();
 
   case tok::at: {
     SourceLocation AtLoc = ConsumeToken();

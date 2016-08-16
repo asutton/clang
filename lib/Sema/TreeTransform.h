@@ -1384,22 +1384,26 @@ public:
 
   // [PIM]
   
-  /// \brief Build a new __get_attribute expression.
+  /// \brief Build a new unary reflection trait.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildGetAttributeTraitExpr(SourceLocation Loc, Expr *Node,
-                                          Expr* Attr) {
-    return getSema().ActOnGetAttributeTraitExpr(Loc, Node, Attr);
+  ExprResult RebuildUnaryReflectionTraitExpr(ReflectionTrait TraitKind, 
+                                             SourceLocation TraitLoc, 
+                                             ArrayRef<Expr *> Args,
+                                             SourceLocation RParenLoc) {
+    return getSema().ActOnReflectionTrait(TraitKind, TraitLoc, Args, RParenLoc);
   }
 
-  /// \brief Build a new __get_array_element expression.
+  /// \brief Build a new binary reflection trait.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildGetArrayElementTraitExpr(SourceLocation Loc, Expr *Node,
-                                             Expr* Attr, Expr* Elem) {
-    return getSema().ActOnGetArrayElementTraitExpr(Loc, Node, Attr, Elem);
+  ExprResult RebuildBinaryReflectionTraitExpr(ReflectionTrait TraitKind, 
+                                              SourceLocation TraitLoc, 
+                                              ArrayRef<Expr *> Args,
+                                              SourceLocation RParenLoc) {
+    return getSema().ActOnReflectionTrait(TraitKind, TraitLoc, Args, RParenLoc);
   }
 
   /// \brief Build a new Objective-C \@try statement.
@@ -6898,42 +6902,40 @@ TreeTransform<Derived>::TransformCoyieldExpr(CoyieldExpr *E) {
 // [PIM]
 template<typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformGetAttributeTraitExpr(GetAttributeTraitExpr *E) {
-  ExprResult Node = getDerived().TransformExpr(E->getReflectedNode());
-  if (Node.isInvalid())
+TreeTransform<Derived>::TransformUnaryReflectionTraitExpr(UnaryReflectionTraitExpr *E) {
+  Expr* Args[1];
+  ExprResult Arg = getDerived().TransformExpr(E->getASTNode());
+  if (Arg.isInvalid())
     return ExprError();
-
-  ExprResult Attr = getDerived().TransformExpr(E->getAttributeSelector());
-  if (Attr.isInvalid())
-    return ExprError();
+  Args[0] = Arg.get();
 
   // Always rebuild; we don't know if this needs to be injected into a new
   // context or if the promise type has changed.
-  return getDerived().RebuildGetAttributeTraitExpr(E->getLocStart(), 
-                                                   Node.get(), Attr.get());
+  return getDerived().RebuildUnaryReflectionTraitExpr(E->getTrait(),
+                                                      E->getLocStart(), 
+                                                      Args,
+                                                      E->getLocEnd());
 }
 
 template<typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformGetArrayElementTraitExpr(GetArrayElementTraitExpr *E) {
-  ExprResult Node = getDerived().TransformExpr(E->getReflectedNode());
-  if (Node.isInvalid())
+TreeTransform<Derived>::TransformBinaryReflectionTraitExpr(BinaryReflectionTraitExpr *E) {
+  Expr* Args[2];
+  ExprResult Arg1 = getDerived().TransformExpr(E->getASTNode());
+  if (Arg1.isInvalid())
     return ExprError();
-
-  ExprResult Attr = getDerived().TransformExpr(E->getAttributeSelector());
-  if (Attr.isInvalid())
+  ExprResult Arg2 = getDerived().TransformExpr(E->getArgument());
+  if (Arg2.isInvalid())
     return ExprError();
-
-  ExprResult Elem = getDerived().TransformExpr(E->getElementSelector());
-  if (Elem.isInvalid())
-    return ExprError();
+  Args[0] = Arg1.get();
+  Args[1] = Arg2.get();
 
   // Always rebuild; we don't know if this needs to be injected into a new
   // context or if the promise type has changed.
-  return getDerived().RebuildGetArrayElementTraitExpr(E->getLocStart(), 
-                                                      Node.get(), 
-                                                      Attr.get(),
-                                                      Elem.get());
+  return getDerived().RebuildBinaryReflectionTraitExpr(E->getTrait(),
+                                                      E->getLocStart(), 
+                                                      Args,
+                                                      E->getLocEnd());
 }
 
 

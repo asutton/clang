@@ -91,6 +91,7 @@ GetReflectedNodeValue(Sema& Sema, ValueDecl* D, SourceLocation Loc)
   return IntegerLiteral::Create(Sema.Context, NodeRef, IntPtrTy, Loc);
 }
 
+#if 0
 // Return a string literal describing the declaration.
 static Expr*
 GetReflectedDeclarationName(Sema& Sema, ValueDecl* D, SourceLocation Loc)
@@ -110,7 +111,7 @@ GetReflectedDeclarationName(Sema& Sema, ValueDecl* D, SourceLocation Loc)
   return StringLiteral::Create(Sema.Context, Name, StringLiteral::Ascii,
                                false, StrTy, Loc);
 }
-
+#endif
 
 // Returns a constructed temporary aggregate describing the declaration D.
 // 
@@ -142,9 +143,8 @@ Sema::BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D, char const* K
   QualType Type = Context.getRecordType(Refl);
 
   // Build an initializer list as the argument for initialization.
-  SmallVector<Expr*, 4> Args {
+  SmallVector<Expr*, 1> Args {
     GetReflectedNodeValue(*this, D, Loc),
-    GetReflectedDeclarationName(*this, D, Loc)
   };
 
   // Produce an initialized temporary via direct list-initialization.
@@ -160,23 +160,18 @@ Sema::BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D, char const* K
   return InitSeq.Perform(*this, Entity, Kind, Args);
 }
 
-// TODO: There's a lot of duplication in the following functions. I would
-
 ExprResult
-Sema::BuildVariableReflection(SourceLocation Loc, VarDecl* Var)
-{
+Sema::BuildVariableReflection(SourceLocation Loc, VarDecl* Var) {
   return BuildDeclarationReflection(Loc, Var, "variable");
 }
 
 ExprResult
-Sema::BuildFunctionReflection(SourceLocation Loc, FunctionDecl* Fn)
-{
+Sema::BuildFunctionReflection(SourceLocation Loc, FunctionDecl* Fn) {
   return BuildDeclarationReflection(Loc, Fn, "function");
 }
 
 ExprResult
-Sema::BuildEnumeratorReflection(SourceLocation Loc, EnumConstantDecl* Enum)
-{
+Sema::BuildEnumeratorReflection(SourceLocation Loc, EnumConstantDecl* Enum) {
   return BuildDeclarationReflection(Loc, Enum, "enumerator");
 }
 
@@ -248,53 +243,82 @@ Sema::RequireReflectionType(SourceLocation Loc, char const* Name)
   return Decl;
 }
 
-// Returns the type of the expression for __get_attribute for the 
-// selector value N.
-static QualType
-GetReflectedAttributeType(ASTContext& C, std::uint64_t N)
-{
-  switch (N) {
-    case RAI_Linkage:
-      return C.IntTy; // FIXME: linkage_t
-      break;
-    case RAI_Storage:
-      return C.IntTy; // FIXME: storage_t
-      break;
-    case RAI_Constexpr:
-      return C.BoolTy;
-      break;
-    case RAI_Inline:
-      return C.BoolTy;
-      break;
-    case RAI_Virtual:
-      return C.IntTy; // FIXME: virtual_t
-      break;
-    case RAI_Type:
-      return C.IntTy; // FIXME: meta::type
-      break;
-    case RAI_Parameters:
-      return C.getSizeType();
-    default:
-      return QualType();
-  }
-}
 
-// Returns the type of the expression for __get_array_element for the 
-// selector value N.
-static QualType
-GetReflectedElementType(Sema& S, SourceLocation Loc, std::uint64_t N)
-{
-  switch (N) {
-    case RAI_Parameters: {
-      RecordDecl *D = S.RequireReflectionType(Loc, "parameter");
-      return S.Context.getTagDeclType(D);
+ExprResult Sema::ActOnReflectionTrait(ReflectionTrait Kind, 
+                                      SourceLocation KWLoc,
+                                      ArrayRef<Expr*> Args,
+                                      SourceLocation RParenLoc) {
+  // TODO: Handle the case where any arguments are type dependent. Note
+  // that it's probably a grave error to mess with types of the first
+  // argument.
+
+  // FIXME: We actually require intptr_t, but this is close enough for
+  // now. It would be *very* bad to allow conversions of the node type.
+  Expr* Node = DefaultLvalueConversion(Args[0]).get();
+  if (!Node->getType()->isIntegerType()) {
+    Diag(Node->getLocStart(), diag::err_reflection_operand_not_integer)
+        << Node->getSourceRange();
+    return ExprError();
+  }
+
+  // Get the type and check extra operands to the trait.
+  Expr* Arg = nullptr;
+  QualType Ty;
+  switch (Kind) {
+  case URT_GetName:
+  case URT_GetQualifiedName:
+    // These have const char* type.
+    Ty = Context.getPointerType(Context.getConstType(Context.CharTy));
+    break;
+
+  case URT_GetLinkage:
+  case URT_GetStorage:
+    // These have integer type.
+    Ty = Context.IntTy;
+    break;
+  
+  case URT_GetNumParameters:
+    // These have std::size_t type.
+    Ty = Context.getSizeType();
+    break;
+
+  case URT_GetType: {
+    RecordDecl* RD = RequireReflectionType(KWLoc, "type");
+    if (!RD)
+      return ExprError();
+    Ty = Context.getTagDeclType(RD);
+    break;
+  }
+
+  case BRT_GetParameter: {
+    RecordDecl* RD = RequireReflectionType(KWLoc, "parameter");
+    if (!RD)
+      return ExprError();
+    Ty = Context.getTagDeclType(RD);
+
+    // Convert and check the 2nd operand.
+    Arg = DefaultLvalueConversion(Args[1]).get();
+    if (!Arg->getType()->isIntegerType()) {
+      Diag(Arg->getLocStart(), diag::err_reflection_operand_not_integer)
+          << Arg->getSourceRange();
+      return ExprError();
     }
-    default:
-      return QualType();
+    break;
+  }
+  }
+  if (Ty.isNull())
+    llvm_unreachable("Unknown reflection trait");
+
+  if (Args.size() == 1) {
+    return new (Context) UnaryReflectionTraitExpr(Kind, KWLoc, Ty, Node);
+  } else {
+    assert(Arg && "Second argument of binary trait not set");
+    return new (Context) BinaryReflectionTraitExpr(Kind, KWLoc, Ty, Node, Arg);
   }
 }
 
 
+#if 0
 // Returns an expression representing the requested attributed.
 //
 // TODO: Check that this expression can appear only in a function with the 
@@ -380,3 +404,4 @@ Sema::ActOnGetArrayElementTraitExpr(SourceLocation Loc,
 
   return new (Context) GetArrayElementTraitExpr(Loc, Type, Node, Attr, Elem);
 }
+#endif

@@ -37,6 +37,7 @@ using llvm::APFloat;
 
 namespace {
 
+#if 0
 llvm::APSInt
 GetLinkage(ASTContext &C, QualType T, ValueDecl *D) {
   Linkage L = D->getFormalLinkage();
@@ -47,47 +48,75 @@ GetLinkage(ASTContext &C, QualType T, ValueDecl *D) {
   else
     return C.MakeIntValue(2, T);
 }
-
+#endif
 
 } // end namespace
 
 // TODO: I don't like the name of this function. I also don't like how
 // it works. Maybe it should be virtual to avoid the explicit casts below.
 bool
-ValueDecl::Reflect(ASTContext &C, const Expr *E, std::uint64_t N, APValue &R) {
-  switch (N) {
-  case RAI_Linkage: 
-    R = APValue(GetLinkage(C, E->getType(), this));
-    return true;
+ValueDecl::Reflect(ReflectionTrait Trait, 
+                   APValue const* Arg, 
+                   APValue &R, 
+                   ReflectInfo Info) const {
+  ASTContext& C = Info.Cxt;
 
-  // TODO: Implement me.
-  case RAI_Storage:
-  case RAI_Constexpr:
-  case RAI_Inline:
-  case RAI_Virtual:
-  case RAI_Type:
-    llvm_unreachable("Unhandled attribute selector");
+  switch (Trait) {
+  case URT_GetName:
+    llvm_unreachable("__get_name not implemented");
+    break;
+  
+  case URT_GetQualifiedName:
+    llvm_unreachable("__get_qualified_name not implemented");
     break;
 
-  case RAI_Parameters: {
-    if (FunctionDecl* F = dyn_cast<FunctionDecl>(this)) {
-      R = APValue(C.MakeIntValue(F->getNumParams(), C.getSizeType()));
-      return true;
-    }
+  case URT_GetLinkage:
+    R = APValue(C.MakeIntValue(0, C.IntTy));
+    break;
+
+  case URT_GetStorage:
+    R = APValue(C.MakeIntValue(0, C.IntTy));
+    break;
+  
+  case URT_GetNumParameters: {
+    // FIXME: Don't fail quite so aggressively if this is not a function.
+    // Emit an error and return false.
+    const FunctionDecl *Fn = cast<FunctionDecl>(this);
+    R = APValue(C.MakeIntValue(Fn->getNumParams(), C.getSizeType()));
     break;
   }
-  default:
-    break; 
-  }
 
-  // FIXME: Use real diagnostics.
-  llvm_unreachable("Unknown attribute selector");
-  return false;
+  case URT_GetType: 
+    llvm_unreachable("__get_type not implemented");
+    break;
+
+  case BRT_GetParameter:
+    // FIXME: Don't fail quite so aggressively if this is not a function.
+    // Emit an error and return false.
+    const FunctionDecl *Fn = cast<FunctionDecl>(this);
+
+    // FIXME: Don't fail quite so aggressively here either.
+    unsigned N = Arg->getInt().getExtValue();
+    assert(N < Fn->getNumParams() && "Invalid parameter index");
+    ParmVarDecl const* Parm = Fn->getParamDecl(0);
+
+    // Build an aggregate with the same shape as the "parameter" type.
+    //
+    // TODO: This is super brittle. It would be great if e could emulate
+    // the sema layer at this point. Unfortunately, we can't resolve lookups
+    // at this point. We may be able to fake it, but this works for now.
+    R = APValue(APValue::UninitStruct(), /*Bases*/0, /*Members*/1);
+    APValue Node(C.MakeIntValue((std::intptr_t)this, C.getIntPtrType()));
+    R.getStructField(0) = Node;
+    break;
+  }
+  return true;
 }
 
 bool
 ValueDecl::ReflectElement(ASTContext &C, const Expr *E, std::uint64_t N,
                           std::uint64_t K, APValue &R) {
+#if 0
   switch (N) {
   case RAI_Parameters: {
     if (FunctionDecl* F = dyn_cast<FunctionDecl>(this)) {
@@ -102,6 +131,7 @@ ValueDecl::ReflectElement(ASTContext &C, const Expr *E, std::uint64_t N,
   default:
     break; 
   }
+#endif
   // FIXME: Use real diagnostics.
   llvm_unreachable("Unknown attribute selector");
   return false;

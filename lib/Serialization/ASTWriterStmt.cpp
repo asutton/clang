@@ -320,11 +320,11 @@ void ASTStmtWriter::VisitCoyieldExpr(CoyieldExpr *S) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtWriter::VisitGetAttributeTraitExpr(GetAttributeTraitExpr *E) {
+void ASTStmtWriter::VisitUnaryReflectionTraitExpr(UnaryReflectionTraitExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtWriter::VisitGetArrayElementTraitExpr(GetArrayElementTraitExpr *E) {
+void ASTStmtWriter::VisitBinaryReflectionTraitExpr(BinaryReflectionTraitExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
