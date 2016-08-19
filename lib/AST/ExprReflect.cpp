@@ -52,6 +52,18 @@ GetLinkage(ASTContext &C, QualType T, ValueDecl *D) {
 
 } // end namespace
 
+
+static StringLiteral*
+MakeString(ASTContext& C, std::string const& Str)
+{
+  llvm::APSInt Size = C.MakeIntValue(Str.size() + 1, C.getSizeType());
+  QualType Elem = C.getConstType(C.CharTy);
+  QualType Type = C.getConstantArrayType(Elem, Size, ArrayType::Normal, 0);
+  return StringLiteral::Create(C, Str, StringLiteral::Ascii, false, Type, 
+                               SourceLocation());
+}
+
+
 // TODO: I don't like the name of this function. I also don't like how
 // it works. Maybe it should be virtual to avoid the explicit casts below.
 bool
@@ -62,13 +74,27 @@ ValueDecl::Reflect(ReflectionTrait Trait,
   ASTContext& C = Info.Cxt;
 
   switch (Trait) {
-  case URT_GetName:
-    llvm_unreachable("__get_name not implemented");
-    break;
+  case URT_GetName: {
+    // TODO: getNameAsString is deprecated
+    std::string Name = getNameAsString();
+    StringLiteral* Str = MakeString(C, Name);
+    Expr::EvalResult Result;
+    if (!Str->EvaluateAsLValue(Result, C))
+      assert(false && "Evaluation of string literal failed");
+    R = Result.Val;
+    break;    
+  }
   
-  case URT_GetQualifiedName:
-    llvm_unreachable("__get_qualified_name not implemented");
+  case URT_GetQualifiedName: {
+    // TODO: getQualifiedNameAsString is deprecated
+    std::string Name = getQualifiedNameAsString();
+    StringLiteral* Str = MakeString(C, Name);
+    Expr::EvalResult Result;
+    if (!Str->EvaluateAsLValue(Result, C))
+      assert(false && "Evaluation of string literal failed");
+    R = Result.Val;
     break;
+  }
 
   case URT_GetLinkage:
     R = APValue(C.MakeIntValue(0, C.IntTy));
