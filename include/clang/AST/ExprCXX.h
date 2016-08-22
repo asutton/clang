@@ -4235,119 +4235,56 @@ public:
   }
 };
 
-
-// The base class for derived reflection traits. This stores operands and
-// properties for those derived classes. The template parameter N reflects
-// the arity of the the traits and must be at least 2.
-template<unsigned N>
+// A reflection trait is a query of an AST node. All traits accept a sequence
+// of arguments (expressions), the first of which is the encoded value of
+// the AST node.
 class ReflectionTraitExpr : public Expr {
 protected:
-  // The kind of reflection trait.
-  // TODO: Pack this into Expr's bits union. 
-  ReflectionTrait TraitKind;
-
-  // The number of arguments as determined by the template argument.
-  // TODO: also pack this into Emxpr's bits union. See TypeTraitExpr. 
-  unsigned Arity = N;
-
-  // TODO: Save the paren locs too. And commas?
+  ReflectionTrait Trait;
+  Expr** Args;
+  unsigned NumArgs;
+  APValue Value;
   SourceLocation TraitLoc;
-
-  // Store operands.
-  Stmt* Operands[N];
+  SourceLocation RParenLoc;  
 
 public:
-  // All trait expressions have at least one operand -- the node.
-  ReflectionTraitExpr(StmtClass SC, 
-                      ReflectionTrait RT, 
-                      SourceLocation Loc, 
-                      QualType T, 
-                      Expr* Node)
-      : Expr(SC, T, VK_RValue, OK_Ordinary,
-          // A reflection trait is never type dependent.
-             false,
-          // FIXME: When is this expression value dependent? When the node
-          // is a non-type argument?
-             false,
-          // FIXME: When is this expression instantiation dependent? Almost
-          // certainly never.
-             false,
-          // TODO: I don't think that any operands can have unexpanded
-          // parameter packs (there are only two operands).
-             false),
-        TraitKind(RT),
-        TraitLoc(Loc) {
-    Operands[0] = Node;
-  }
+  ReflectionTraitExpr(ASTContext& C, ReflectionTrait RT, QualType T, 
+                      ArrayRef<Expr*> Args, APValue const& Val,
+                      SourceLocation TraitLoc, SourceLocation RParenLoc);
 
   ReflectionTraitExpr(StmtClass SC, EmptyShell Empty)
       : Expr(SC, Empty) {}
 
   /// Returns the kind of reflection trait.
-  ReflectionTrait getTrait() const { return TraitKind; }
+  ReflectionTrait getTrait() const { return Trait; }
 
   /// Returns the arity of the trait.
-  unsigned getArity() const { return Arity; }
-
-  /// Returns the operand representing the reflected entity.
-  Expr* getASTNode() const { return cast<Expr>(Operands[0]); }
+  unsigned getNumArgs() const { return NumArgs; }
 
   /// Returns the ith argument of the reflection trait.
   Expr* getArg(unsigned I) const {
-    assert(I < getArity() && "Argument out-of-range");
-    return Operands[I];
+    assert(I < NumArgs && "Argument out-of-range");
+    return cast<Expr>(Args[I]);
   }
 
-  // Source code locations.
-  // TODO: The end locations should be the closing paren.
+  /// Returns the operand representing the reflected entity.
+  Expr* getASTNode() const { return cast<Expr>(Args[0]); }
+
+  /// Returns the value of the reflection trait.
+  APValue const& getValue() const { return Value; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getTraitLoc() const { return TraitLoc; }
+
+  /// Returns the source code location of the closing parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }  
+  
   SourceLocation getLocStart() const { return TraitLoc; }
-  SourceLocation getLocEnd() const { return TraitLoc; }
+  SourceLocation getLocEnd() const { return RParenLoc; }
 
   child_range children() {
-    return child_range(&Operands[0], &Operands[0] + N);
-  }
-};
-
-/// \brief A unary reflection trait.
-class UnaryReflectionTraitExpr : public ReflectionTraitExpr<1> {
-  friend class ASTStmtReader;
-public:
-  UnaryReflectionTraitExpr(ReflectionTrait RT, 
-                           SourceLocation Loc, 
-                           QualType T, 
-                           Expr *Node)
-      : ReflectionTraitExpr<1>(UnaryReflectionTraitExprClass, RT, Loc, T, Node) {
-  }
-
-  UnaryReflectionTraitExpr(EmptyShell Empty)
-      : ReflectionTraitExpr<1>(UnaryReflectionTraitExprClass, Empty) {}
-
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == UnaryReflectionTraitExprClass;
-  }
-};
-
-/// \brief Represents a '__get_array_element' expression. 
-class BinaryReflectionTraitExpr : public ReflectionTraitExpr<2> {
-  friend class ASTStmtReader;
-public:
-  BinaryReflectionTraitExpr(ReflectionTrait RT, 
-                            SourceLocation Loc, 
-                            QualType T, 
-                            Expr *Node, 
-                            Expr *Arg)
-      : ReflectionTraitExpr<2>(BinaryReflectionTraitExprClass, RT, Loc, T, Node) {
-    Operands[1] = Arg;
-  }
-
-  BinaryReflectionTraitExpr(EmptyShell Empty)
-      : ReflectionTraitExpr<2>(BinaryReflectionTraitExprClass, Empty) {}
-
-  /// Returns the non-node argument to the reflection trait.
-  Expr* getArgument() const { return cast<Expr>(Operands[1]); }
-
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == BinaryReflectionTraitExprClass;
+    return child_range(reinterpret_cast<Stmt**>(&Args[0]), 
+                       reinterpret_cast<Stmt**>(&Args[0] + NumArgs));
   }
 };
 

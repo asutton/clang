@@ -63,9 +63,9 @@ MakeString(ASTContext& C, std::string const& Str)
                                SourceLocation());
 }
 
-
-// TODO: I don't like the name of this function. I also don't like how
-// it works. Maybe it should be virtual to avoid the explicit casts below.
+// TODO: Provide a facility to facilitate meaningful diagnostics (assert is
+// not meaningful). See Basic/Diagnostic.h, and in particular the
+// DiagnosticBuilder class -- Also, see how Sema wraps this stuff.
 bool
 ValueDecl::Reflect(ReflectionTrait Trait, 
                    APValue const* Arg, 
@@ -75,7 +75,7 @@ ValueDecl::Reflect(ReflectionTrait Trait,
 
   switch (Trait) {
   case URT_GetName: {
-    // TODO: getNameAsString is deprecated
+    // TODO: getNameAsString is deprecated.
     std::string Name = getNameAsString();
     StringLiteral* Str = MakeString(C, Name);
     Expr::EvalResult Result;
@@ -86,7 +86,7 @@ ValueDecl::Reflect(ReflectionTrait Trait,
   }
   
   case URT_GetQualifiedName: {
-    // TODO: getQualifiedNameAsString is deprecated
+    // TODO: getQualifiedNameAsString is deprecated.
     std::string Name = getQualifiedNameAsString();
     StringLiteral* Str = MakeString(C, Name);
     Expr::EvalResult Result;
@@ -113,6 +113,8 @@ ValueDecl::Reflect(ReflectionTrait Trait,
   }
 
   case URT_GetType: 
+    // Build a type object... Unfortunately, 
+
     llvm_unreachable("__get_type not implemented");
     break;
 
@@ -124,41 +126,17 @@ ValueDecl::Reflect(ReflectionTrait Trait,
     // FIXME: Don't fail quite so aggressively here either.
     unsigned N = Arg->getInt().getExtValue();
     assert(N < Fn->getNumParams() && "Invalid parameter index");
-    ParmVarDecl const* Parm = Fn->getParamDecl(0);
+    ParmVarDecl const* Parm = Fn->getParamDecl(N);
 
     // Build an aggregate with the same shape as the "parameter" type.
     //
-    // TODO: This is super brittle. It would be great if e could emulate
+    // TODO: This is super brittle. It would be great if we could emulate
     // the sema layer at this point. Unfortunately, we can't resolve lookups
     // at this point. We may be able to fake it, but this works for now.
     R = APValue(APValue::UninitStruct(), /*Bases*/0, /*Members*/1);
-    APValue Node(C.MakeIntValue((std::intptr_t)this, C.getIntPtrType()));
+    APValue Node(C.MakeIntValue((std::intptr_t)Parm, C.getIntPtrType()));
     R.getStructField(0) = Node;
     break;
   }
   return true;
-}
-
-bool
-ValueDecl::ReflectElement(ASTContext &C, const Expr *E, std::uint64_t N,
-                          std::uint64_t K, APValue &R) {
-#if 0
-  switch (N) {
-  case RAI_Parameters: {
-    if (FunctionDecl* F = dyn_cast<FunctionDecl>(this)) {
-      // TODO: This needs to be VERY carefully coordinated with the
-      // meta::parameter type.
-      R = APValue(APValue::UninitStruct(), 0, F->getNumParams());
-      APValue Node(C.MakeIntValue((std::intptr_t)this, C.getIntPtrType()));
-      R.getStructField(0) = Node;
-      return true;
-    }
-  }
-  default:
-    break; 
-  }
-#endif
-  // FIXME: Use real diagnostics.
-  llvm_unreachable("Unknown attribute selector");
-  return false;
 }

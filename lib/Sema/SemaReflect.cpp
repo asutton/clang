@@ -33,8 +33,7 @@
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ScopeInfo.h"
-#include "clang/Sema/SemaLambda.h"
-#include "clang/Sema/TemplateDeduction.h"
+#include "clang/Sema/Template.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -74,44 +73,6 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* Id)
   llvm_unreachable("unhandled reflected declaration");
 }
 
-// Generate the opaque handle to the reflected node. This is simply
-// it's internal pointer value, stored as a pointer.
-//
-// FIXME: Cache the integer value to ensure that we don't accept invalid 
-// arguments in the reflection intrinsics. For now, because we only reflect 
-// declarations, this is sufficient.
-//
-// FIXME: Choose a compile-time integer representation whose size
-// is as large as std::intptr_t in the host environment.
-static Expr*
-GetReflectedNodeValue(Sema& Sema, ValueDecl* D, SourceLocation Loc)
-{
-  QualType IntPtrTy = Sema.Context.getIntPtrType();
-  llvm::APInt NodeRef(Sema.Context.getTypeSize(IntPtrTy), (std::intptr_t)D);
-  return IntegerLiteral::Create(Sema.Context, NodeRef, IntPtrTy, Loc);
-}
-
-#if 0
-// Return a string literal describing the declaration.
-static Expr*
-GetReflectedDeclarationName(Sema& Sema, ValueDecl* D, SourceLocation Loc)
-{
-  // FIXME: This is totally broken. getQualifiedNameAsString is slated
-  // for eventual removal. Unfortunately, I don't if there's a suitable
-  // replacement or if I'm going to have to supply something.
-  std::string Name = D->getQualifiedNameAsString();
-
-  // Type type of C++ string literals is an array of const char that
-  // is big enough to contain the null terminator.
-  QualType CharTyConst = Sema.Context.CharTy;
-  CharTyConst.addConst();
-  llvm::APInt Len(32, Name.size() + 1);
-  QualType StrTy = Sema.Context.getConstantArrayType(CharTyConst, Len,
-                                                     ArrayType::Normal, 0);
-  return StringLiteral::Create(Sema.Context, Name, StringLiteral::Ascii,
-                               false, StrTy, Loc);
-}
-#endif
 
 // Returns a constructed temporary aggregate describing the declaration D.
 // 
@@ -134,28 +95,29 @@ GetReflectedDeclarationName(Sema& Sema, ValueDecl* D, SourceLocation Loc)
 // If they don't, which will probably happen at some point, then we'll
 // need to push this code down into the other Build* functions.
 ExprResult
-Sema::BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D, char const* K)
-{
-  // Get the declaration
-  RecordDecl* Refl = RequireReflectionType(Loc, K);
-  if (!Refl)
+Sema::BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D, 
+                                 char const* K) {
+  // Get the wrapper type.
+  ClassTemplateDecl* Temp = RequireReflectionType(Loc, K);
+  if (!Temp)
     return ExprError();
-  QualType Type = Context.getRecordType(Refl);
+  TemplateName TempName(Temp);
 
-  // Build an initializer list as the argument for initialization.
-  SmallVector<Expr*, 1> Args {
-    GetReflectedNodeValue(*this, D, Loc),
-  };
+  // Build a template specialization, instantiate it, and then complete it.
+  QualType IntPtrTy = Context.getIntPtrType();
+  llvm::APSInt IntPtrVal = Context.MakeIntValue((std::intptr_t)D, IntPtrTy);
+  TemplateArgument Arg(Context, IntPtrVal, IntPtrTy);
+  TemplateArgumentLoc ArgLoc(Arg, TemplateArgumentLocInfo());
+  TemplateArgumentListInfo TempArgs(Loc, Loc);
+  TempArgs.addArgument(ArgLoc);
+  QualType TempType = CheckTemplateIdType(TempName, Loc, TempArgs);
+  if (RequireCompleteType(Loc, TempType, diag::err_incomplete_type))
+    assert(false && "Failed to instantiate reflection type");
 
-  // Produce an initialized temporary via direct list-initialization.
-  //
-  // TODO: This must be kept in sync with the constructors of reflected
-  // types. I'm currently doing this using constexpr constructors, but
-  // the ideal would be to make those data types aggregates, but for some
-  // reason, the compiler is rejecting the constexpr-ness of 
-  // std::intializer_list. Not sure why.
-  InitializedEntity Entity = InitializedEntity::InitializeTemporary(Type);
-  InitializationKind Kind = InitializationKind::CreateDirect(Loc, Loc, Loc);
+  // Produce a value-initialized temporary of the required type.
+  SmallVector<Expr*, 1> Args;
+  InitializedEntity Entity = InitializedEntity::InitializeTemporary(TempType);
+  InitializationKind Kind = InitializationKind::CreateValue(Loc, Loc, Loc);
   InitializationSequence InitSeq(*this, Entity, Kind, Args);
   return InitSeq.Perform(*this, Entity, Kind, Args);
 }
@@ -181,9 +143,7 @@ Sema::BuildEnumeratorReflection(SourceLocation Loc, EnumConstantDecl* Enum) {
 // TODO: We should probably cache this the same way that we do
 // with typeid (see CXXTypeInfoDecl in Sema.h).
 NamespaceDecl*
-Sema::RequireCpp3kNamespace(SourceLocation Loc)
-{
-  // Get the cpp3k namespace. Lookup starts at in global scope.
+Sema::RequireCpp3kNamespace(SourceLocation Loc) {
   IdentifierInfo *Cpp3kII = &PP.getIdentifierTable().get("cpp3k");
   LookupResult R(*this, Cpp3kII, Loc, LookupNamespaceName);
   LookupQualifiedName(R, Context.getTranslationUnitDecl());
@@ -198,8 +158,7 @@ Sema::RequireCpp3kNamespace(SourceLocation Loc)
 
 // As above, but requires cpp3k::meta.
 NamespaceDecl*
-Sema::RequireCpp3kMetaNamespace(SourceLocation Loc)
-{
+Sema::RequireCpp3kMetaNamespace(SourceLocation Loc) {
   NamespaceDecl* Cpp3k = RequireCpp3kNamespace(Loc);
   if (!Cpp3k)
     return nullptr;
@@ -224,18 +183,17 @@ Sema::RequireCpp3kMetaNamespace(SourceLocation Loc)
 // TODO: Cache these types so we don't keep doing lookup. In on the first
 // lookup, cache the names of ALL meta types so that we can easily check
 // for appropriate arguments in the reflection traits.
-RecordDecl*
-Sema::RequireReflectionType(SourceLocation Loc, char const* Name)
-{
+ClassTemplateDecl*
+Sema::RequireReflectionType(SourceLocation Loc, char const* Name) {
   NamespaceDecl* Meta = RequireCpp3kMetaNamespace(Loc);
   if (!Meta)
     return nullptr;
 
   // Get the corresponding reflection class.
-  IdentifierInfo *VariableII = &PP.getIdentifierTable().get(Name);
-  LookupResult R(*this, VariableII, SourceLocation(), LookupTagName);
+  IdentifierInfo *TypeII = &PP.getIdentifierTable().get(Name);
+  LookupResult R(*this, TypeII, SourceLocation(), LookupAnyName);
   LookupQualifiedName(R, Meta);
-  RecordDecl* Decl = R.getAsSingle<RecordDecl>();
+  ClassTemplateDecl* Decl = R.getAsSingle<ClassTemplateDecl>();
   if (!Decl) {
     Diag(Loc, diag::err_need_header_before_dollar);
     return nullptr;
@@ -244,23 +202,36 @@ Sema::RequireReflectionType(SourceLocation Loc, char const* Name)
 }
 
 
-ExprResult Sema::ActOnReflectionTrait(ReflectionTrait Kind, 
-                                      SourceLocation KWLoc,
-                                      ArrayRef<Expr*> Args,
-                                      SourceLocation RParenLoc) {
-  // TODO: Handle the case where any arguments are type dependent. Note
-  // that it's probably a grave error to mess with types of the first
-  // argument.
+static ValueDecl*
+GetReflectedValueDecl(Sema& S, ASTContext& C, Expr* const& N)
+{
+  llvm::APSInt IntPtrVal;
+  if (!N->EvaluateAsInt(IntPtrVal, C)) {
+    S.Diag(N->getLocStart(), diag::err_expr_not_ice);
+    return nullptr;
+  };
+  return (ValueDecl*)(std::intptr_t)IntPtrVal.getExtValue();
+}
 
-  // FIXME: We actually require intptr_t, but this is close enough for
-  // now. It would be *very* bad to allow conversions of the node type.
-  Expr* Node = DefaultLvalueConversion(Args[0]).get();
-  if (!Node->getType()->isIntegerType()) {
-    Diag(Node->getLocStart(), diag::err_reflection_operand_not_integer)
-        << Node->getSourceRange();
-    return ExprError();
+
+ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
+                                      ReflectionTrait Kind, 
+                                      ArrayRef<Expr *> Args,
+                                      SourceLocation RParenLoc) {
+  // If any arguments are dependent, then the result is a dependent
+  // expression.
+  //
+  // TODO: What if a argument is type dependent? Or instantiation dependent?
+  for (unsigned i = 0; i < Args.size(); ++i) {
+    if (Args[i]->isValueDependent()) {
+      QualType Ty = Context.DependentTy;
+      return new (Context) ReflectionTraitExpr(Context, Kind, Ty, Args, 
+                                               APValue(), KWLoc, RParenLoc);
+    }
   }
 
+
+#if 0
   // Get the type and check extra operands to the trait.
   Expr* Arg = nullptr;
   QualType Ty;
@@ -283,29 +254,41 @@ ExprResult Sema::ActOnReflectionTrait(ReflectionTrait Kind,
     break;
 
   case URT_GetType: {
-    RecordDecl* RD = RequireReflectionType(KWLoc, "type");
-    if (!RD)
+    ValueDecl* D = GetReflectedValueDecl(*this, Context, Node);
+    if (!D)
       return ExprError();
-    Ty = Context.getTagDeclType(RD);
-    break;
+
+    // RecordDecl* RD = RequireReflectionType(KWLoc, "type");
+    // if (!RD)
+    //   return ExprError();
+    // Ty = Context.getTagDeclType(RD);
+    // break;
   }
 
   case BRT_GetParameter: {
-    RecordDecl* RD = RequireReflectionType(KWLoc, "parameter");
-    if (!RD)
+    ValueDecl* D = GetReflectedValueDecl(*this, Context, Node);
+    if (!D)
       return ExprError();
-    Ty = Context.getTagDeclType(RD);
 
-    // Convert and check the 2nd operand.
-    Arg = DefaultLvalueConversion(Args[1]).get();
-    if (!Arg->getType()->isIntegerType()) {
-      Diag(Arg->getLocStart(), diag::err_reflection_operand_not_integer)
-          << Arg->getSourceRange();
+    Arg = Args[1];
+    llvm::APSInt Index;
+    if (!Arg->EvaluateAsInt(Index, Context)) {
+      Diag(Arg->getLocStart(), diag::err_expr_not_ice);
       return ExprError();
-    }
+    };
+
+    // FIXME: Fail with a less bad error.
+    FunctionDecl* Fn = cast<FunctionDecl>(D);
+    ValueDecl* Parm = Fn->getParamDecl(Index.getExtValue());
+
+    // TODO: Do I actually need to instantiate the class or can I just
+    // build the type?
+    Expr* Expr = BuildDeclarationReflection(KWLoc, Parm, "parameter").get();
+    Ty = Expr->getType();
     break;
   }
   }
+
   if (Ty.isNull())
     llvm_unreachable("Unknown reflection trait");
 
@@ -315,6 +298,9 @@ ExprResult Sema::ActOnReflectionTrait(ReflectionTrait Kind,
     assert(Arg && "Second argument of binary trait not set");
     return new (Context) BinaryReflectionTraitExpr(Kind, KWLoc, Ty, Node, Arg);
   }
+#endif
+
+  return ExprError();  
 }
 
 

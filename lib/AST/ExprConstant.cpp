@@ -4829,50 +4829,11 @@ public:
     llvm_unreachable("Return from function from the loop above.");
   }
 
-  bool VisitUnaryReflectionTraitExpr(const UnaryReflectionTraitExpr* E) {
-    // Don't both evaluating if we're checking for potential. We generally
-    // wouldn't be able to evaluate the first argument anyway. Note that
-    // this does not indicate an error.
-    if (Info.checkingPotentialConstantExpression())
-      return false;
-
-    // Convert the node member into its corresponding declaration.
-    llvm::APSInt Node;
-    if (!EvaluateInteger(E->getASTNode(), Node, Info))
-      return Error(E);
-    ValueDecl* D = (ValueDecl*)(std::intptr_t)Node.getExtValue();
-    (void)D;
-
-    // Return the reflected value.
-    APValue Result;
-    D->Reflect(E->getTrait(), nullptr, Result, {Info.Ctx, E});
-    return DerivedSuccess(Result, E);
+  /// Visit a reflection trait expression. The value shall have been
+  /// computed during semantic analysis.
+  bool VisitReflectionTraitExpr(const ReflectionTraitExpr* E) {
+    return DerivedSuccess(E->getValue(), E);
   }
-
-
-  bool VisitBinaryReflectionTraitExpr(const BinaryReflectionTraitExpr* E) {
-    // Don't both evaluating if we're checking for potential. We generally
-    // wouldn't be able to evaluate the first argument anyway. Note that
-    // this does not indicate an error.
-    if (Info.checkingPotentialConstantExpression())
-      return false;
-
-    // Convert the node member into its corresponding declaration.
-    llvm::APSInt Node;
-    if (!EvaluateInteger(E->getASTNode(), Node, Info))
-      return Error(E);
-    ValueDecl* D = (ValueDecl*)(std::intptr_t)Node.getExtValue();
-    // Evaluate extra arguments.
-    APValue Arg;
-    if (!Evaluate(Arg, Info, E->getArgument()))
-      return Error(E);
-
-    // Return the reflected value.
-    APValue Result;
-    D->Reflect(E->getTrait(), &Arg, Result, {Info.Ctx, E});
-    return DerivedSuccess(Result, E);
-  }
-
 
   /// Visit a value which is evaluated, but whose value is ignored.
   void VisitIgnoredValue(const Expr *E) {
@@ -10529,10 +10490,8 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::ChooseExprClass: {
     return CheckICE(cast<ChooseExpr>(E)->getChosenSubExpr(), Ctx);
   }
-  case Expr::UnaryReflectionTraitExprClass:
-  case Expr::BinaryReflectionTraitExprClass: {
+  case Expr::ReflectionTraitExprClass: 
     llvm_unreachable("not implemented");
-  }
   }
 
   llvm_unreachable("Invalid StmtClass!");

@@ -8196,10 +8196,11 @@ public:
   
   NamespaceDecl* RequireCpp3kNamespace(SourceLocation Loc);
   NamespaceDecl* RequireCpp3kMetaNamespace(SourceLocation Loc);
-  RecordDecl* RequireReflectionType(SourceLocation Loc, char const* Name);
+  ClassTemplateDecl* RequireReflectionType(SourceLocation Loc, 
+                                           char const* Name);
 
-  ExprResult ActOnReflectionTrait(ReflectionTrait Kind, SourceLocation KWLoc,
-                                  ArrayRef<Expr *> Args,
+  ExprResult ActOnReflectionTrait(SourceLocation KWLoc, ReflectionTrait Trait,
+                                  ArrayRef<Expr *> Args, 
                                   SourceLocation RParenLoc);
 
   //===--------------------------------------------------------------------===//

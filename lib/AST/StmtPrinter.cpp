@@ -2492,16 +2492,14 @@ static const char *getReflectionTraitName(ReflectionTrait RT) {
   }
 }
 
-void StmtPrinter::VisitUnaryReflectionTraitExpr(UnaryReflectionTraitExpr *E) {
-  OS << getReflectionTraitName(E->getTrait()) << ' ';
-  PrintExpr(E->getASTNode());
-}
-
-void StmtPrinter::VisitBinaryReflectionTraitExpr(BinaryReflectionTraitExpr *E) {
-  OS << getReflectionTraitName(E->getTrait()) << ' ';
-  PrintExpr(E->getASTNode());
-  OS << ' ';
-  PrintExpr(E->getArgument());
+void StmtPrinter::VisitReflectionTraitExpr(ReflectionTraitExpr *E) {
+  OS << getReflectionTraitName(E->getTrait()) << '(';
+  for (unsigned i = 0; i < E->getNumArgs(); ++i) {
+    PrintExpr(E->getArg(i));
+    if (i + 1 != E->getNumArgs())
+      OS << ", ";
+  }
+  OS << ')';
 }
 
 // Obj-C

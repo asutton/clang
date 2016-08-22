@@ -1615,6 +1615,9 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
   if (D->isInlined())
     Function->setImplicitlyInline();
 
+  if (D->isEager())
+    Function->setEager(true);
+
   if (QualifierLoc)
     Function->setQualifierInfo(QualifierLoc);
 
@@ -1925,6 +1928,9 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
 
   if (D->isInlined())
     Method->setImplicitlyInline();
+
+  if (D->isEager())
+    Method->setEager(true);
 
   if (QualifierLoc)
     Method->setQualifierInfo(QualifierLoc);

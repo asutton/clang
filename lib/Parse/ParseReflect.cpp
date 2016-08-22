@@ -48,8 +48,10 @@ static unsigned ReflectionTraitArity(tok::TokenKind kind) {
 /// Parse a reflector trait.
 ///
 ///       primary-expression:
-///          unary-reflector '(' constant-expression ')'
-///          binary-reflector-trait '(' constant-expression ',' constant-expression ')'
+///          reflection-trait '(' expression-list ')'
+///
+///       reflection-trait: one of
+///          ...
 ExprResult
 Parser::ParseReflectionTrait()
 {
@@ -71,9 +73,9 @@ Parser::ParseReflectionTrait()
   } while (TryConsumeToken(tok::comma));
   if (Parens.consumeClose())
     return ExprError();
-
   SourceLocation EndLoc = Parens.getCloseLocation();
 
+  // Make sure that the number of arguments matches the arity of trait.
   unsigned Arity = ReflectionTraitArity(Kind);
   if (Args.size() != Arity) {
     Diag(EndLoc, diag::err_type_trait_arity)
@@ -81,79 +83,8 @@ Parser::ParseReflectionTrait()
     return ExprError();
   }
 
-  // Check that we have an appropriate arity.
-  if (!Arity && Args.empty()) {
-    Diag(EndLoc, diag::err_type_trait_arity)
-      << 1 << 1 << 1 << (int)Args.size() << SourceRange(Loc);
-    return ExprError();
-  }
-
   ReflectionTrait Trait = ReflectionTraitKind(Kind);
-  return Actions.ActOnReflectionTrait(Trait, Loc, Args, EndLoc);
+  return Actions.ActOnReflectionTrait(Loc, Trait, Args, EndLoc);
 }
 
 
-#if 0
-/// Parse the __get_attribute_trait invocation.
-///
-///   get-attribute-trait:
-///     __get_attribute ( assignment-expression , constant-expression )
-///
-ExprResult
-Parser::ParseGetAttributeTraitExpr()
-{
-  assert(Tok.is(tok::kw___get_attribute));
-  SourceLocation Loc = ConsumeToken();  
-  
-  BalancedDelimiterTracker Parens(*this, tok::l_paren);
-  if (Parens.expectAndConsume())
-    return ExprError();
-
-  ExprResult Node = ParseAssignmentExpression();
-  if (ExpectAndConsume(tok::comma))
-    return ExprError();
-  ExprResult Attr = ParseConstantExpression();
-  
-  if (Parens.consumeClose())
-    return ExprError();
-
-  return Actions.ActOnGetAttributeTraitExpr(Loc, Node, Attr);
-}
-
-ExprResult
-Parser::ParseSetAttributeTraitExpr()
-{
-  llvm_unreachable("not implemented");
-}
-
-ExprResult
-Parser::ParseGetArrayElementTraitExpr()
-{
-  assert(Tok.is(tok::kw___get_array_element));
-  SourceLocation Loc = ConsumeToken();  
-  
-  BalancedDelimiterTracker Parens(*this, tok::l_paren);
-  if (Parens.expectAndConsume())
-    return ExprError();
-
-  ExprResult Node = ParseAssignmentExpression();
-  if (ExpectAndConsume(tok::comma))
-    return ExprError();
-  ExprResult Attr = ParseConstantExpression();
-  if (ExpectAndConsume(tok::comma))
-    return ExprError();
-  ExprResult Elem = ParseAssignmentExpression();
-  
-  if (Parens.consumeClose())
-    return ExprError();
-
-  return Actions.ActOnGetArrayElementTraitExpr(Loc, Node, Attr, Elem);
-}
-
-ExprResult
-Parser::ParseGetTupleElementTraitExpr()
-{
-  llvm_unreachable("not implemented");
-}
-
-#endif

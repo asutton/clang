@@ -8832,6 +8832,7 @@ def err_coroutine_promise_return_ill_formed : Error<
   "%0 declares both 'return_value' and 'return_void'">;
 }
 
+// [PIM] Reflection
 let CategoryName = "Reflection Issue" in {
 def err_not_implemented : Error<
   "feature not implemented">;
@@ -8843,8 +8844,10 @@ def err_not_reflection : Error<
   "expression does not reflect an entity">;
 def err_reflection_operand_not_integer : Error<
   "argument trait expects an integer operand">;
-def err_invalid_attribute_id : Error<
-  "invalid attribute selector">;
+def err_reflection_not_function : Error<
+  "reflected entity is not a function">;
+def err_parameter_out_of_bounds : Error<
+  "reflected parameter is out of bounds">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

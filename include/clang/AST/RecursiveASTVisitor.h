@@ -2523,9 +2523,8 @@ DEF_TRAVERSE_STMT(CoyieldExpr, {
   }
 })
 
-// [PIM]
-DEF_TRAVERSE_STMT(UnaryReflectionTraitExpr, {})
-DEF_TRAVERSE_STMT(BinaryReflectionTraitExpr, {})
+// [PIM] Reflection traits
+DEF_TRAVERSE_STMT(ReflectionTraitExpr, {})
 
 // These literals (all of them) do not need any action.
 DEF_TRAVERSE_STMT(IntegerLiteral, {})

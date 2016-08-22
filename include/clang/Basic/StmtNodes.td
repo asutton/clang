@@ -153,8 +153,7 @@ def CoawaitExpr : DStmt<CoroutineSuspendExpr>;
 def CoyieldExpr : DStmt<CoroutineSuspendExpr>;
 
 // [PIM] C++ Reflection Expressions
-def UnaryReflectionTraitExpr : DStmt<Expr>;
-def BinaryReflectionTraitExpr : DStmt<Expr>;
+def ReflectionTraitExpr : DStmt<Expr>;
 
 // Obj-C Expressions.
 def ObjCStringLiteral : DStmt<Expr>;

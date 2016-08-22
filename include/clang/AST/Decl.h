@@ -1938,7 +1938,7 @@ public:
 
   /// Whether this is an eagerly evaluated constexpr function.
   bool isEager() const { return IsEager; }
-  void setEager(bool IC) { IsEager = IC; }
+  void setEager(bool IE) { IsEager = IE; }
 
   /// \brief Indicates the function uses __try.
   bool usesSEHTry() const { return UsesSEHTry; }
