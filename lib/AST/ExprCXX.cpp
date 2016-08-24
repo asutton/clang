@@ -1447,6 +1447,7 @@ ReflectionTraitExpr::ReflectionTraitExpr(ASTContext& C, ReflectionTrait RT,
            false),
       Trait(RT),
       NumArgs(InitArgs.size()),
+      Value(Val),
       TraitLoc(KWLoc),
       RParenLoc(RParenLoc) {
   Args = new (C) Expr *[NumArgs];

@@ -6895,7 +6895,7 @@ TreeTransform<Derived>::TransformReflectionTraitExpr(ReflectionTraitExpr *E) {
   SmallVector<Expr*, 2> Args;
   Args.resize(E->getNumArgs());
   for (unsigned i = 0; i < E->getNumArgs(); ++i) {
-    ExprResult Arg = getDerived().TransformExpr(E->getASTNode());
+    ExprResult Arg = getDerived().TransformExpr(E->getArg(i));
     if (Arg.isInvalid())
       return ExprError();
     Args[i] = Arg.get();

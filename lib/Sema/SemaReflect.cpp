@@ -16,12 +16,7 @@
 #include "TreeTransform.h"
 #include "TypeLocBuilder.h"
 #include "clang/AST/ASTContext.h"
-#include "clang/AST/ASTLambda.h"
-#include "clang/AST/CXXInheritance.h"
-#include "clang/AST/CharUnits.h"
-#include "clang/AST/DeclObjC.h"
 #include "clang/AST/ExprCXX.h"
-#include "clang/AST/ExprObjC.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/PartialDiagnostic.h"
@@ -35,6 +30,7 @@
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/Template.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/PointerSumType.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/ErrorHandling.h"
 using namespace clang;
@@ -73,6 +69,38 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* Id)
   llvm_unreachable("unhandled reflected declaration");
 }
 
+// Used to encode the kind of entity reflected. This value is packed into
+// the low order bits of each reflected pointer. Because we stuff pointer
+// values, all must be aligned at 2 bytes (which is generally guaranteed).
+//
+// TODO: Could we safely use high order bits?
+enum ReflectionKind {
+  RK_Decl = 1,
+  RK_Type = 2,
+  RK_Expr = 3
+};
+
+using ReflectionValue = llvm::PointerSumType<
+  ReflectionKind,
+  llvm::PointerSumTypeMember<RK_Decl, Decl *>,
+  llvm::PointerSumTypeMember<RK_Type, Type *>,
+  llvm::PointerSumTypeMember<RK_Expr, Expr *>
+>;
+
+
+static std::pair<ReflectionKind, void*> ExplodeOpaqueValue(std::uintptr_t N) {
+  // Look away. I'm totally breaking abstraction.
+  using Helper = llvm::detail::PointerSumTypeHelper<
+    ReflectionKind,
+    llvm::PointerSumTypeMember<RK_Decl, Decl *>,
+    llvm::PointerSumTypeMember<RK_Type, Type *>,
+    llvm::PointerSumTypeMember<RK_Expr, Expr *>
+  >;
+  ReflectionKind K = (ReflectionKind)(N & Helper::TagMask);
+  void* P = (void*)(N & Helper::PointerMask);
+  return {K, P};
+}
+
 
 // Returns a constructed temporary aggregate describing the declaration D.
 // 
@@ -105,7 +133,9 @@ Sema::BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D,
 
   // Build a template specialization, instantiate it, and then complete it.
   QualType IntPtrTy = Context.getIntPtrType();
-  llvm::APSInt IntPtrVal = Context.MakeIntValue((std::intptr_t)D, IntPtrTy);
+  ReflectionValue RV = ReflectionValue::create<RK_Decl>(D);
+  llvm::APSInt IntPtrVal = Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
+
   TemplateArgument Arg(Context, IntPtrVal, IntPtrTy);
   TemplateArgumentLoc ArgLoc(Arg, TemplateArgumentLocInfo());
   TemplateArgumentListInfo TempArgs(Loc, Loc);
@@ -136,6 +166,55 @@ ExprResult
 Sema::BuildEnumeratorReflection(SourceLocation Loc, EnumConstantDecl* Enum) {
   return BuildDeclarationReflection(Loc, Enum, "enumerator");
 }
+
+
+// TODO: Build a class corresponding to the most-derived kind.
+//
+// TODO: Accommodate cv-qualifiers somewhow. Perhaps add them as template
+// parameters a la:
+//
+//    template<reflection_t X, bool C, bool V>
+//    struct type { ... };
+//
+// Note that we would need a few alternative traits to combine cv information
+// in order to accurately get the type name. I also suspect that we'll need
+// noexcept information for function types, and possibly more state flags
+// for other types beyond this. Same idea. X is always the value type. 
+// Additional flags can be added as extensions.
+//
+// TODO: There's a lot of duplication between this and the BuildDeclReflection
+// function above. Surely we can simplify.
+//
+ExprResult
+Sema::BuildTypeReflection(SourceLocation Loc, QualType QT) {  
+  // Get the wrapper type.
+  ClassTemplateDecl* Temp = RequireReflectionType(Loc, "type");
+  if (!Temp)
+    return ExprError();
+  TemplateName TempName(Temp);
+
+  Type* T = const_cast<Type*>(QT.getTypePtr());
+  ReflectionValue RV = ReflectionValue::create<RK_Type>(T);
+
+  // Build a template specialization, instantiate it, and then complete it.
+  QualType IntPtrTy = Context.getIntPtrType();
+  llvm::APSInt IntPtrVal = Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
+  TemplateArgument Arg(Context, IntPtrVal, IntPtrTy);
+  TemplateArgumentLoc ArgLoc(Arg, TemplateArgumentLocInfo());
+  TemplateArgumentListInfo TempArgs(Loc, Loc);
+  TempArgs.addArgument(ArgLoc);
+  QualType TempType = CheckTemplateIdType(TempName, Loc, TempArgs);
+  if (RequireCompleteType(Loc, TempType, diag::err_incomplete_type))
+    assert(false && "Failed to instantiate reflection type");
+
+  // Produce a value-initialized temporary of the required type.
+  SmallVector<Expr*, 1> Args;
+  InitializedEntity Entity = InitializedEntity::InitializeTemporary(TempType);
+  InitializationKind Kind = InitializationKind::CreateValue(Loc, Loc, Loc);
+  InitializationSequence InitSeq(*this, Entity, Kind, Args);
+  return InitSeq.Perform(*this, Entity, Kind, Args);
+}
+
 
 // Returns the cpp3k namespace if a suitable header has been included. If not, 
 // a diagnostic is emitted, and nullptr is returned.
@@ -201,17 +280,35 @@ Sema::RequireReflectionType(SourceLocation Loc, char const* Name) {
   return Decl;
 }
 
-
-static ValueDecl*
-GetReflectedValueDecl(Sema& S, ASTContext& C, Expr* const& N)
+// Information supporting reflection operations.
+//
+// TODO: Move all of the functions below into this class since it provides
+// the context for their evaluation.
+struct Reflector
 {
-  llvm::APSInt IntPtrVal;
-  if (!N->EvaluateAsInt(IntPtrVal, C)) {
-    S.Diag(N->getLocStart(), diag::err_expr_not_ice);
-    return nullptr;
-  };
-  return (ValueDecl*)(std::intptr_t)IntPtrVal.getExtValue();
-}
+  Sema& S;
+  SourceLocation KWLoc;
+  SourceLocation RParenLoc;
+  ArrayRef<Expr *> Args;
+  ArrayRef<llvm::APSInt> Vals;
+
+  ExprResult Reflect(ReflectionTrait RT, Decl* D);
+  ExprResult Reflect(ReflectionTrait RT, Type* T);
+
+  ExprResult ReflectName(Decl* D);
+  ExprResult ReflectName(Type* D);
+  
+  ExprResult ReflectQualifiedName(Decl* D);
+  ExprResult ReflectQualifiedName(Type* D);
+  
+  ExprResult ReflectLinkage(Decl* D);
+  ExprResult ReflectVariableStorage(VarDecl* D);
+  ExprResult ReflectFunctionStorage(FunctionDecl* D);
+  ExprResult ReflectStorage(Decl* D);
+  ExprResult ReflectType(Decl* D);
+  ExprResult ReflectNumParameters(Decl* D);
+  ExprResult ReflectParameter(Decl* D, const llvm::APSInt& N);
+};
 
 
 ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
@@ -230,164 +327,201 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
     }
   }
 
+  // Ensure that each operand has integral type.
+  for (unsigned i = 0; i < Args.size(); ++i) {
+    Expr* E = Args[i];
+    if (!E->getType()->isIntegerType()) {
+      Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
+      return ExprError();
+    }
+  }
 
-#if 0
-  // Get the type and check extra operands to the trait.
-  Expr* Arg = nullptr;
-  QualType Ty;
-  switch (Kind) {
+  // Evaluate all of the operands ahead of time. Note that trait arity
+  // is checked at parse time.
+  SmallVector<llvm::APSInt, 2> Vals;
+  Vals.resize(Args.size());
+  for (unsigned i = 0; i < Args.size(); ++i) {
+    Expr* E = Args[i];
+    if (!E->EvaluateAsInt(Vals[i], Context)) {
+      Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
+      return ExprError();
+    }
+  }
+
+  // FIXME: Verify that this is actually a reflected node.
+  std::pair<ReflectionKind, void*> Info = 
+      ExplodeOpaqueValue(Vals[0].getExtValue());
+
+  Reflector R {*this, KWLoc, RParenLoc, Args, Vals};
+  if (Info.first == RK_Decl)
+    return R.Reflect(Kind, (Decl*)Info.second);
+  if (Info.first == RK_Type)
+    return R.Reflect(Kind, (Type*)Info.second);
+
+  llvm_unreachable("Unhandled reflection");
+}
+
+// Returns a string literal having the given name.
+static ExprResult MakeString(ASTContext& C, const std::string &Str)
+{
+  llvm::APSInt Size = C.MakeIntValue(Str.size() + 1, C.getSizeType());
+  QualType Elem = C.getConstType(C.CharTy);
+  QualType Type = C.getConstantArrayType(Elem, Size, ArrayType::Normal, 0);
+  return StringLiteral::Create(C, Str, StringLiteral::Ascii, false, Type, 
+                               SourceLocation());
+}
+
+
+ExprResult Reflector::Reflect(ReflectionTrait RT, Decl* D) {
+  switch (RT) {
   case URT_GetName:
+    return ReflectName(D);
   case URT_GetQualifiedName:
-    // These have const char* type.
-    Ty = Context.getPointerType(Context.getConstType(Context.CharTy));
-    break;
-
+    return ReflectQualifiedName(D);
   case URT_GetLinkage:
+    return ReflectLinkage(D);
   case URT_GetStorage:
-    // These have integer type.
-    Ty = Context.IntTy;
-    break;
-  
+    return ReflectStorage(D);
+  case URT_GetType:
+    return ReflectType(D);
   case URT_GetNumParameters:
-    // These have std::size_t type.
-    Ty = Context.getSizeType();
-    break;
-
-  case URT_GetType: {
-    ValueDecl* D = GetReflectedValueDecl(*this, Context, Node);
-    if (!D)
-      return ExprError();
-
-    // RecordDecl* RD = RequireReflectionType(KWLoc, "type");
-    // if (!RD)
-    //   return ExprError();
-    // Ty = Context.getTagDeclType(RD);
-    // break;
+    return ReflectNumParameters(D);
+  case BRT_GetParameter:
+    assert(Vals.size() == 2 && "Wrong arity");
+    return ReflectParameter(D, Vals[1]);
   }
 
-  case BRT_GetParameter: {
-    ValueDecl* D = GetReflectedValueDecl(*this, Context, Node);
-    if (!D)
-      return ExprError();
+  // FIXME: Improve this error message.
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
+}
 
-    Arg = Args[1];
-    llvm::APSInt Index;
-    if (!Arg->EvaluateAsInt(Index, Context)) {
-      Diag(Arg->getLocStart(), diag::err_expr_not_ice);
-      return ExprError();
-    };
 
-    // FIXME: Fail with a less bad error.
-    FunctionDecl* Fn = cast<FunctionDecl>(D);
-    ValueDecl* Parm = Fn->getParamDecl(Index.getExtValue());
-
-    // TODO: Do I actually need to instantiate the class or can I just
-    // build the type?
-    Expr* Expr = BuildDeclarationReflection(KWLoc, Parm, "parameter").get();
-    Ty = Expr->getType();
+ExprResult Reflector::Reflect(ReflectionTrait RT, Type* T) {
+  switch (RT) {
+  case URT_GetName:
+    return ReflectName(T);
+  case URT_GetQualifiedName:
+    return ReflectQualifiedName(T);
+  default:
     break;
   }
+
+  // FIXME: Improve this error message.
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+// Returns a named declaration or emits an error and returns nullptr.
+static NamedDecl* RequireNamedDecl(Reflector R, Decl* D) {
+  Sema& S = R.S;
+  if (!isa<NamedDecl>(D)) {
+    S.Diag(R.Args[0]->getLocStart(), diag::err_reflection_not_named);
+    return nullptr;
   }
+  return cast<NamedDecl>(D); 
+}
 
-  if (Ty.isNull())
-    llvm_unreachable("Unknown reflection trait");
+ExprResult Reflector::ReflectName(Decl* D) {
+  if (NamedDecl* ND = RequireNamedDecl(*this, D))
+    return MakeString(S.Context, ND->getNameAsString());  
+  return ExprError();
+}
 
-  if (Args.size() == 1) {
-    return new (Context) UnaryReflectionTraitExpr(Kind, KWLoc, Ty, Node);
-  } else {
-    assert(Arg && "Second argument of binary trait not set");
-    return new (Context) BinaryReflectionTraitExpr(Kind, KWLoc, Ty, Node, Arg);
+ExprResult Reflector::ReflectQualifiedName(Decl* D) {
+  if (NamedDecl* ND = RequireNamedDecl(*this, D))
+    return MakeString(S.Context, ND->getQualifiedNameAsString());  
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectName(Type* T) {
+  // Use the underlying declaration of tag types for the name. This way,
+  // we won't generate "struct or enum" as part of the type.
+  if (TagDecl* TD = T->getAsTagDecl())
+    return MakeString(S.Context, TD->getNameAsString());
+  QualType QT(T, 0);
+  return MakeString(S.Context, QT.getAsString());  
+}
+
+ExprResult Reflector::ReflectQualifiedName(Type* T) {
+  if (TagDecl* TD = T->getAsTagDecl())
+    return MakeString(S.Context, TD->getQualifiedNameAsString());
+  QualType QT(T, 0);
+  return MakeString(S.Context, QT.getAsString());  
+}
+
+ExprResult Reflector::ReflectLinkage(Decl* D) { 
+  if (NamedDecl* ND = RequireNamedDecl(*this, D)) {
+    ASTContext& C = S.Context;
+    QualType T = C.IntTy;
+    llvm::APSInt N = C.MakeIntValue((int)ND->getFormalLinkage(), T);
+    return IntegerLiteral::Create(C, N, T, KWLoc);
   }
-#endif
+  return ExprError();
+}
 
-  return ExprError();  
+ExprResult Reflector::ReflectVariableStorage(VarDecl* D) {
+  ASTContext& C = S.Context;
+  QualType T = C.IntTy;
+  llvm::APSInt N = C.MakeIntValue((int)D->getStorageClass(), T);
+  return IntegerLiteral::Create(C, N, T, KWLoc);
+}
+
+ExprResult Reflector::ReflectFunctionStorage(FunctionDecl* D) {
+  ASTContext& C = S.Context;
+  QualType T = C.IntTy;
+  llvm::APSInt N = C.MakeIntValue((int)D->getStorageClass(), T);
+  return IntegerLiteral::Create(C, N, T, KWLoc);
+}
+
+ExprResult Reflector::ReflectStorage(Decl* D) {
+  if (VarDecl* Var = dyn_cast<VarDecl>(D))
+    return ReflectVariableStorage(Var);
+  if (FunctionDecl* Fn = dyn_cast<FunctionDecl>(D))
+    return ReflectFunctionStorage(Fn);
+
+  // FIXME: This is the wrong error message. Should be D does not have
+  // a storage class.
+  S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_named);
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectType(Decl* D) {
+  if (ValueDecl* VD = dyn_cast<ValueDecl>(D))
+    return S.BuildTypeReflection(KWLoc, VD->getType());
+  S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_typed);
+  return ExprError();
+}
+
+static FunctionDecl* RequireFunctionDecl(Reflector R, Decl* D) {
+  if (!isa<FunctionDecl>(D)) {
+    R.S.Diag(R.Args[0]->getLocStart(), diag::err_reflection_not_function);
+    return nullptr;
+  }
+  return cast<FunctionDecl>(D);
+}
+
+ExprResult Reflector::ReflectNumParameters(Decl* D) {
+  if (FunctionDecl* Fn = RequireFunctionDecl(*this, D)) {
+    ASTContext& C = S.Context;
+    QualType T = C.UnsignedIntTy;
+    llvm::APSInt N = C.MakeIntValue(Fn->getNumParams(), T);
+    return IntegerLiteral::Create(C, N, T, KWLoc);
+  }
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectParameter(Decl* D, const llvm::APSInt& N) {
+  if (FunctionDecl* Fn = RequireFunctionDecl(*this, D)) {
+    unsigned Num = N.getExtValue();
+    if (Num >= Fn->getNumParams()) {
+      S.Diag(Args[1]->getLocStart(), diag::err_parameter_out_of_bounds);
+      return ExprError();
+    }
+    ParmVarDecl* Parm = Fn->getParamDecl(Num);
+    return S.BuildDeclarationReflection(KWLoc, Parm, "parameter");
+  }
+  return ExprError();
 }
 
 
-#if 0
-// Returns an expression representing the requested attributed.
-//
-// TODO: Check that this expression can appear only in a function with the 
-// __eager specifier.
-//
-// TODO: Factor out common code for all trait expressions.
-ExprResult
-Sema::ActOnGetAttributeTraitExpr(SourceLocation Loc, 
-                                 ExprResult NodeExpr,
-                                 ExprResult AttrExpr)
-{
-  // TODO: Check some basic properties of the reflection and attribute.
-  Expr* Node = NodeExpr.get();
-  Expr* Attr = AttrExpr.get();
-
-  // If the selector is value dependent, we can't compute the type.
-  // Return an un-evaluated, un-interpreted node.
-  if (Attr->isValueDependent()) {
-    return new (Context) GetAttributeTraitExpr(Loc, Context.DependentTy,
-                                               Node, Attr);
-  }
-
-  // Evaluate the attribute selector in order to determine the type
-  // of the expression.
-  //
-  // TODO: Why am I not passing the APSInt directly to the node? It
-  // doesn't make sense to keep evaluating this expression, especially
-  // when it determines the type.
-  llvm::APSInt Result;
-  if (!Attr->isIntegerConstantExpr(Result, Context)) {
-    Diag(Loc, diag::err_expr_not_ice) << 1 << Attr->getSourceRange();
-    return ExprResult();
-  }
-  QualType Type = GetReflectedAttributeType(Context, Result.getExtValue());
-  if (Type.isNull()) {
-    Diag(Loc, diag::err_invalid_attribute_id);
-    return ExprError();
-  }
-
-  // Apply lvalue-to-rvalue conversions.
-  Node = DefaultLvalueConversion(Node).get();
-
-  return new (Context) GetAttributeTraitExpr(Loc, Type, Node, Attr);
-}
-
-ExprResult
-Sema::ActOnGetArrayElementTraitExpr(SourceLocation Loc, 
-                                    ExprResult NodeExpr,
-                                    ExprResult AttrExpr, 
-                                    ExprResult ElemExpr)
-{
-  Expr* Node = NodeExpr.get();
-  Expr* Attr = AttrExpr.get();
-  Expr* Elem = ElemExpr.get();
-
-  // If the selector is value dependent, we can't compute the type.
-  // Return an un-evaluated, un-interpreted node.
-  if (Attr->isValueDependent()) {
-    return new (Context) GetArrayElementTraitExpr(Loc, Context.DependentTy,
-                                                  Node, Attr, Elem);
-  }
-
-  // Evaluate the attribute selector in order to determine the type
-  // of the expression.
-  //
-  // TODO: Why am I not passing the APSInt directly to the node? It
-  // doesn't make sense to keep evaluating this expression, especially
-  // when it determines the type.
-  llvm::APSInt Result;
-  if (!Attr->isIntegerConstantExpr(Result, Context)) {
-    Diag(Loc, diag::err_expr_not_ice) << 1 << Attr->getSourceRange();
-    return ExprResult();
-  }
-  QualType Type = GetReflectedElementType(*this, Loc, Result.getExtValue());
-  if (Type.isNull()) {
-    Diag(Loc, diag::err_invalid_attribute_id);
-    return ExprError();
-  }
-
-  // Apply lvalue-to-rvalue conversions to the other attributes.
-  Node = DefaultLvalueConversion(Node).get();
-  Elem = DefaultLvalueConversion(Elem).get();
-
-  return new (Context) GetArrayElementTraitExpr(Loc, Type, Node, Attr, Elem);
-}
-#endif

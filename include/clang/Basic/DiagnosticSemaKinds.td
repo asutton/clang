@@ -8842,8 +8842,14 @@ def err_reflected_overload : Error<
   "reflection of an overloaded name">;
 def err_not_reflection : Error<
   "expression does not reflect an entity">;
+def err_reflection_not_supported : Error<
+  "entity does not support this reflection">;
 def err_reflection_operand_not_integer : Error<
   "argument trait expects an integer operand">;
+def err_reflection_not_named : Error<
+  "reflected entity is not named named">;
+def err_reflection_not_typed : Error<
+  "reflected entity is not named named">;
 def err_reflection_not_function : Error<
   "reflected entity is not a function">;
 def err_parameter_out_of_bounds : Error<

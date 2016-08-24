@@ -8193,6 +8193,7 @@ public:
   ExprResult BuildFunctionReflection(SourceLocation Loc, FunctionDecl* Fn);
   ExprResult BuildEnumeratorReflection(SourceLocation Loc, 
                                        EnumConstantDecl* Enum);
+  ExprResult BuildTypeReflection(SourceLocation Loc, QualType T);
   
   NamespaceDecl* RequireCpp3kNamespace(SourceLocation Loc);
   NamespaceDecl* RequireCpp3kMetaNamespace(SourceLocation Loc);
