@@ -2538,6 +2538,7 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ Reflection [PIM]
   
+  ExprResult ParseReflectExpression();
   ExprResult ParseReflectionTrait();
   DeclGroupPtrTy ParseMetaClassDefinition();
 

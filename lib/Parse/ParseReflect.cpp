@@ -24,6 +24,65 @@
 using namespace clang;
 
 
+/// Parse a reflect expression.
+///
+///   primary-expression:
+///     '$' id-expression
+///     '$' type-id
+///     '$' nested-name-specifier[opt] namespace-name
+///
+/// TODO: Consider adding specifiers? $static? $private?
+ExprResult
+Parser::ParseReflectExpression()
+{
+  assert(Tok.is(tok::dollar));
+  SourceLocation OpLoc = ConsumeToken();
+
+  // Tentatively parse the nested name specifier before parsing
+  // an expression.
+  //
+  // FIXME: This is wrong. We should use isNamespaceName to determine
+  // if the sequence of tokens refers to a namespace. Of course, we
+  // have to define that function. 
+  TentativeParsingAction TPA(*this);
+  CXXScopeSpec SS;
+  ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false);
+  if (!SS.isInvalid() && Tok.is(tok::identifier)) {
+    IdentifierInfo* II = Tok.getIdentifierInfo();
+    SourceLocation IdLoc = ConsumeToken();
+    ExprResult Expr = Actions.ActOnCXXReflectExpr(OpLoc, SS, II, IdLoc);
+    if (!Expr.isInvalid()) {
+      TPA.Commit();
+      return Expr;
+    }
+  }
+  TPA.Revert();
+
+  // Potentially parse the type-id.
+  if (isTypeIdUnambiguously()) {
+    DeclSpec DS(AttrFactory);
+    ParseSpecifierQualifierList(DS);
+    Declarator D(DS, Declarator::TypeNameContext);
+    ParseDeclarator(D);
+    return Actions.ActOnCXXReflectExpr(OpLoc, D);
+  }
+
+
+  // We might have previously classified the token as a primary expression.
+  if (Tok.is(tok::annot_primary_expr)) {
+    ExprResult Primary = getExprAnnotation(Tok);
+    ConsumeToken();
+    return Actions.ActOnCXXReflectExpr(OpLoc, Primary.get());
+  }
+
+  // Otherwise, this is an unparsed expression.
+  ExprResult Id = ParseCXXIdExpression(false);
+  if (!Id.isInvalid())
+    return Actions.ActOnCXXReflectExpr(OpLoc, Id.get());
+  return Id;
+}
+
+
 static ReflectionTrait ReflectionTraitKind(tok::TokenKind kind) {
   switch (kind) {
     default: llvm_unreachable("Not a known type trait");

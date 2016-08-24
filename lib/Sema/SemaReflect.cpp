@@ -41,24 +41,36 @@ using namespace sema;
 //
 // The Id argument is not null.
 ExprResult
-Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* Id)
+Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* E)
 {
+  if (isa<TypoExpr>(E)) {
+    ExprResult Fixed = CorrectDelayedTyposInExpr(E);
+    if (!Fixed.isUsable())
+      return ExprError();
+    E = Fixed.get();
+  }
+
   // TODO: Handle the case where Id is dependent (type? value?). We
   // just want to return a dependent expression that we can substitute
   // into later.
-  if (Id->isTypeDependent() || Id->isValueDependent())
+  if (E->isTypeDependent() || E->isValueDependent()) {
+    E->dump();
     return ExprError(Diag(OpLoc, diag::err_not_implemented));
+  }
 
-  if (OverloadExpr* Ovl = dyn_cast<OverloadExpr>(Id)) {
+  if (OverloadExpr* Ovl = dyn_cast<OverloadExpr>(E)) {
     // FIXME: This should be okay. We should be able to provide a limited
     // interface to overloaded functions.
     return ExprError(Diag(OpLoc, diag::err_reflected_overload)
                      << Ovl->getSourceRange());
   }
 
+  if (!isa<DeclRefExpr>(E))
+    llvm_unreachable("Expression reflection not implemented");
+
   // For non-dependent expressions, the result of reflection depends
   // on the kind of entity.
-  ValueDecl* Value = cast<DeclRefExpr>(Id)->getDecl();
+  ValueDecl* Value = cast<DeclRefExpr>(E)->getDecl();
   if (VarDecl* Var = dyn_cast<VarDecl>(Value))
     return BuildVariableReflection(OpLoc, Var);
   if (FunctionDecl* Fn = dyn_cast<FunctionDecl>(Value))
@@ -66,8 +78,39 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* Id)
   if (EnumConstantDecl* Enum = dyn_cast<EnumConstantDecl>(Value))
     return BuildEnumeratorReflection(OpLoc, Enum);
 
-  llvm_unreachable("unhandled reflected declaration");
+  llvm_unreachable("Unhandled reflected declaration");
 }
+
+ExprResult
+Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Declarator& D)
+{
+  TypeSourceInfo *TI = GetTypeForDeclarator(D, CurScope);
+  QualType QT = TI->getType();
+  
+  return IntegerLiteral::Create(Context, 
+                                Context.MakeIntValue(0, Context.IntTy), 
+                                Context.IntTy, OpLoc);
+}
+
+ExprResult
+Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec& SS, 
+                          IdentifierInfo* II, SourceLocation IdLoc)
+{
+  // Perform a lookup in the current scope for II to determine if
+  // it refers to a namespace.
+  LookupResult R(*this, II, OpLoc, LookupNamespaceName);
+  LookupParsedName(R, CurScope, &SS);
+  if (!R.isSingleResult())
+    return ExprError();  
+  NamespaceDecl* NS = R.getAsSingle<NamespaceDecl>();
+  if (!NS)
+    return ExprError();
+
+  return IntegerLiteral::Create(Context, 
+                                Context.MakeIntValue(0, Context.IntTy), 
+                                Context.IntTy, OpLoc);
+}
+
 
 // Used to encode the kind of entity reflected. This value is packed into
 // the low order bits of each reflected pointer. Because we stuff pointer

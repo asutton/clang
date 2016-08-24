@@ -8186,7 +8186,10 @@ public:
   //===--------------------------------------------------------------------===//
   // C++ Reflection [PIM]
   //
-  ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Expr *Id);
+  ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Expr *E);
+  ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Declarator& D);
+  ExprResult ActOnCXXReflectExpr(SourceLocation Loc, CXXScopeSpec& SS, 
+                                 IdentifierInfo *II, SourceLocation IdLoc);
   ExprResult BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D,
                                         char const* Kind);
   ExprResult BuildVariableReflection(SourceLocation Loc, VarDecl *Var);

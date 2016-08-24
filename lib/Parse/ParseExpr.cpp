@@ -692,10 +692,7 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 ///
 /// [PIM]   '$' id-expression 
 ///         '$' type-id
-///          __get_attribute
-///          __set_attribute
-///          __get_array_element
-///          __get_tuple_element
+///          reflection-trait
 /// \endverbatim
 ///
 ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
@@ -1325,15 +1322,9 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return Result;
   }
 
-  case tok::dollar: { // [PIM] '$' [id-expression | type-id]
-    // TODO: Tentatively parse and handle the type-id case.
-    SourceLocation OpLoc = ConsumeToken();
-    ExprResult Id = ParseCXXIdExpression(false);
-    if (Id.isInvalid())
-      return Id;
-    Res = Actions.ActOnCXXReflectExpr(OpLoc, Id.get());
+  case tok::dollar:  // [PIM] '$' [id-expression | type-name | namespace-name]
+    Res = ParseReflectExpression();
     break;
-  }
 
 #define TYPE_TRAIT(N,Spelling,K) \
   case tok::kw_##Spelling:
