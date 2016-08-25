@@ -8850,6 +8850,8 @@ def err_reflection_not_named : Error<
   "reflected entity is not named named">;
 def err_reflection_not_typed : Error<
   "reflected entity is not named named">;
+def err_reflection_of_local_reference : Error<
+  "reflection of a reference to a local variable">;
 def err_reflection_not_function : Error<
   "reflected entity is not a function">;
 def err_parameter_out_of_bounds : Error<

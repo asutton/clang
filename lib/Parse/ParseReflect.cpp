@@ -38,12 +38,9 @@ Parser::ParseReflectExpression()
   assert(Tok.is(tok::dollar));
   SourceLocation OpLoc = ConsumeToken();
 
-  // Tentatively parse the nested name specifier before parsing
-  // an expression.
-  //
-  // FIXME: This is wrong. We should use isNamespaceName to determine
-  // if the sequence of tokens refers to a namespace. Of course, we
-  // have to define that function. 
+  // Tentatively parse the nested name specifier before parsing an expression.
+  // Semantically, if we can't resolve this, then we're going to fail quietly,
+  // and match this as either a type or expression.
   TentativeParsingAction TPA(*this);
   CXXScopeSpec SS;
   ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false);
@@ -66,7 +63,6 @@ Parser::ParseReflectExpression()
     ParseDeclarator(D);
     return Actions.ActOnCXXReflectExpr(OpLoc, D);
   }
-
 
   // We might have previously classified the token as a primary expression.
   if (Tok.is(tok::annot_primary_expr)) {
@@ -104,7 +100,7 @@ static unsigned ReflectionTraitArity(tok::TokenKind kind) {
 }
 
 
-/// Parse a reflector trait.
+/// Parse a reflection trait.
 ///
 ///       primary-expression:
 ///          reflection-trait '(' expression-list ')'

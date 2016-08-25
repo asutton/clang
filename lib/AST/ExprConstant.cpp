@@ -4829,8 +4829,8 @@ public:
     llvm_unreachable("Return from function from the loop above.");
   }
 
-  /// Visit a reflection trait expression. The value shall have been
-  /// computed during semantic analysis.
+  /// Visit a reflection trait expression. The value is computed during 
+  /// semantic analysis, so just return that here.
   bool VisitReflectionTraitExpr(const ReflectionTraitExpr* E) {
     return DerivedSuccess(E->getValue(), E);
   }

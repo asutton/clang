@@ -31,7 +31,6 @@ add_clang_library(clangAST
   ExprConstant.cpp
   ExprCXX.cpp
   ExprObjC.cpp
-  ExprReflect.cpp
   ExternalASTSource.cpp
   InheritViz.cpp
   ItaniumCXXABI.cpp

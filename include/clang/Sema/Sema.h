@@ -8190,12 +8190,7 @@ public:
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Declarator& D);
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, CXXScopeSpec& SS, 
                                  IdentifierInfo *II, SourceLocation IdLoc);
-  ExprResult BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D,
-                                        char const* Kind);
-  ExprResult BuildVariableReflection(SourceLocation Loc, VarDecl *Var);
-  ExprResult BuildFunctionReflection(SourceLocation Loc, FunctionDecl* Fn);
-  ExprResult BuildEnumeratorReflection(SourceLocation Loc, 
-                                       EnumConstantDecl* Enum);
+  ExprResult BuildDeclReflection(SourceLocation Loc, Decl* D);
   ExprResult BuildTypeReflection(SourceLocation Loc, QualType T);
   
   NamespaceDecl* RequireCpp3kNamespace(SourceLocation Loc);

@@ -604,30 +604,6 @@ public:
   ///        or declared with the weak or weak-ref attr.
   bool isWeak() const;
 
-
-  // Stores context information passed to the Reflect functions.
-  struct ReflectInfo {
-    ASTContext& Cxt;
-    Expr const* Expr;
-  };
-
-  /// \brief Get a reflected property from this declaration.
-  ///
-  /// The expression E provides context for diagnostics.
-  bool Reflect(ReflectionTrait Trait, 
-               APValue const* Arg, 
-               APValue& Result, 
-               ReflectInfo Info) const;
-  
-  // \brief Get a reflected value from an element.
-  /// Here, N determines which property to select, and K is the index of
-  /// element being requested. The actual selection depends on the kind of 
-  /// declaration. The reflected value is stored in the value R.
-  ///
-  /// The expression E provides context for diagnostics.
-  bool ReflectElement(ASTContext& C, const Expr* E, std::uint64_t N, 
-                      std::uint64_t K, APValue& R);
-
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K >= firstValue && K <= lastValue; }

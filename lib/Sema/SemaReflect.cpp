@@ -68,30 +68,22 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* E)
   if (!isa<DeclRefExpr>(E))
     llvm_unreachable("Expression reflection not implemented");
 
-  // For non-dependent expressions, the result of reflection depends
-  // on the kind of entity.
-  ValueDecl* Value = cast<DeclRefExpr>(E)->getDecl();
-  if (VarDecl* Var = dyn_cast<VarDecl>(Value))
-    return BuildVariableReflection(OpLoc, Var);
-  if (FunctionDecl* Fn = dyn_cast<FunctionDecl>(Value))
-    return BuildFunctionReflection(OpLoc, Fn);
-  if (EnumConstantDecl* Enum = dyn_cast<EnumConstantDecl>(Value))
-    return BuildEnumeratorReflection(OpLoc, Enum);
-
-  llvm_unreachable("Unhandled reflected declaration");
+  // Build the reflection expression.
+  return BuildDeclReflection(OpLoc, cast<DeclRefExpr>(E)->getDecl());
 }
 
+// Build a reflection for the type-id stored in D.
 ExprResult
 Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Declarator& D)
 {
   TypeSourceInfo *TI = GetTypeForDeclarator(D, CurScope);
   QualType QT = TI->getType();
-  
-  return IntegerLiteral::Create(Context, 
-                                Context.MakeIntValue(0, Context.IntTy), 
-                                Context.IntTy, OpLoc);
+  return BuildTypeReflection(OpLoc, QT);
 }
 
+// Build a reflection of the indicated namespace. If SS and II do not
+// denote a namespace fail quietly. The parse for expressions will emit
+// a better error.
 ExprResult
 Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec& SS, 
                           IdentifierInfo* II, SourceLocation IdLoc)
@@ -105,10 +97,7 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec& SS,
   NamespaceDecl* NS = R.getAsSingle<NamespaceDecl>();
   if (!NS)
     return ExprError();
-
-  return IntegerLiteral::Create(Context, 
-                                Context.MakeIntValue(0, Context.IntTy), 
-                                Context.IntTy, OpLoc);
+  return BuildDeclReflection(OpLoc, NS);
 }
 
 
@@ -144,41 +133,63 @@ static std::pair<ReflectionKind, void*> ExplodeOpaqueValue(std::uintptr_t N) {
   return {K, P};
 }
 
+// Returns the name of the class we're going to instantiate.
+//
+// TODO: Add templates and... other stuff?
+//
+// TODO: Do we want a more precise set of types for these things? 
+static char const* GetReflectionClass(Decl* D)
+{
+  switch (D->getKind()) {
+    case Decl::Var:
+    case Decl::Field:
+      return "variable";
+    
+    case Decl::ParmVar:
+      return "parameter";
+    
+    case Decl::Function:
+    case Decl::CXXMethod:
+    case Decl::CXXConstructor:
+    case Decl::CXXDestructor:
+    case Decl::CXXConversion:
+      return "function";
+    
+    case Decl::EnumConstant:
+      return "enumerator";
+    
+    case Decl::TranslationUnit:
+      return "tu";
+    
+    case Decl::Namespace:
+      return "ns";
+    
+    default:
+      break;
+  }
+  llvm_unreachable("Unhandled declaration in reflection");
+}
 
-// Returns a constructed temporary aggregate describing the declaration D.
-// 
-// When building reflections in non-dependent contexts, we don't maintain 
-// the expression as a new kind of AST node. Instead, we directly produce 
-// a temporary if the expression had been `Type { args... }`. The alternative 
-// would be to produce a new AST node denoting temporary. However, that would
-// require special handling in all cases.
-//
-// In dependent code, we absolutely must produce the a new AST node. That
-// would resolve to an type construction expression during substitution.
-// 
-// NOTE: If we want to reflect the names of declarations, we need to
-// create string literals at reasonable points in the program. These may
-// need to become implicit global or local variables (like __func__).
-// Note that we only need to generate these if we request the name
-// property.
-//
-// TODO: This assumes that all reflections have the same internal structure.
-// If they don't, which will probably happen at some point, then we'll
-// need to push this code down into the other Build* functions.
-ExprResult
-Sema::BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D, 
-                                 char const* K) {
-  // Get the wrapper type.
-  ClassTemplateDecl* Temp = RequireReflectionType(Loc, K);
+
+// Return an expression whose type reflects the given node.
+ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl* D) {
+  // Use BuildTypeReflection for types.
+  if (TagDecl* TD = dyn_cast<TagDecl>(D))
+    return BuildTypeReflection(Loc, Context.getTagDeclType(TD));
+
+  // Get the template name for the instantiation.
+  char const* Name = GetReflectionClass(D);
+  ClassTemplateDecl* Temp = RequireReflectionType(Loc, Name);
   if (!Temp)
     return ExprError();
   TemplateName TempName(Temp);
 
+  // Get the reflected value for D.
+  ReflectionValue RV = ReflectionValue::create<RK_Decl>(D);
+
   // Build a template specialization, instantiate it, and then complete it.
   QualType IntPtrTy = Context.getIntPtrType();
-  ReflectionValue RV = ReflectionValue::create<RK_Decl>(D);
   llvm::APSInt IntPtrVal = Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
-
   TemplateArgument Arg(Context, IntPtrVal, IntPtrTy);
   TemplateArgumentLoc ArgLoc(Arg, TemplateArgumentLocInfo());
   TemplateArgumentListInfo TempArgs(Loc, Loc);
@@ -195,25 +206,27 @@ Sema::BuildDeclarationReflection(SourceLocation Loc, ValueDecl* D,
   return InitSeq.Perform(*this, Entity, Kind, Args);
 }
 
-ExprResult
-Sema::BuildVariableReflection(SourceLocation Loc, VarDecl* Var) {
-  return BuildDeclarationReflection(Loc, Var, "variable");
-}
-
-ExprResult
-Sema::BuildFunctionReflection(SourceLocation Loc, FunctionDecl* Fn) {
-  return BuildDeclarationReflection(Loc, Fn, "function");
-}
-
-ExprResult
-Sema::BuildEnumeratorReflection(SourceLocation Loc, EnumConstantDecl* Enum) {
-  return BuildDeclarationReflection(Loc, Enum, "enumerator");
-}
-
-
-// TODO: Build a class corresponding to the most-derived kind.
+// Returns the reflection class name for the type.
 //
-// TODO: Accommodate cv-qualifiers somewhow. Perhaps add them as template
+// TODO: Actually populate this table.
+static char const* GetReflectionClass(QualType T)
+{
+  switch (T->getTypeClass()) {
+  case Type::Record:
+    if (T->isUnionType())
+      return "union_type";
+    else
+      return "class_type";
+  case Type::Enum:
+    return "enum_type";
+  default: 
+    return "type"; // FIXME: Wrong! We should have a class for each type.
+  }
+}
+
+// Return an expression whose type reflects the given node.
+//
+// TODO: Accommodate cv-qualifiers somehow. Perhaps add them as template
 // parameters a la:
 //
 //    template<reflection_t X, bool C, bool V>
@@ -227,11 +240,17 @@ Sema::BuildEnumeratorReflection(SourceLocation Loc, EnumConstantDecl* Enum) {
 //
 // TODO: There's a lot of duplication between this and the BuildDeclReflection
 // function above. Surely we can simplify.
-//
 ExprResult
 Sema::BuildTypeReflection(SourceLocation Loc, QualType QT) {  
+  // See through deduced types.
+  if (const AutoType* Auto = QT->getAs<AutoType>()) {
+    assert(Auto->isDeduced() && "Reflection of non-deduced type");
+    QT = Auto->getDeducedType();
+  }
+
   // Get the wrapper type.
-  ClassTemplateDecl* Temp = RequireReflectionType(Loc, "type");
+  char const* Name = GetReflectionClass(QT);
+  ClassTemplateDecl* Temp = RequireReflectionType(Loc, Name);
   if (!Temp)
     return ExprError();
   TemplateName TempName(Temp);
@@ -257,7 +276,6 @@ Sema::BuildTypeReflection(SourceLocation Loc, QualType QT) {
   InitializationSequence InitSeq(*this, Entity, Kind, Args);
   return InitSeq.Perform(*this, Entity, Kind, Args);
 }
-
 
 // Returns the cpp3k namespace if a suitable header has been included. If not, 
 // a diagnostic is emitted, and nullptr is returned.
@@ -338,19 +356,35 @@ struct Reflector
   ExprResult Reflect(ReflectionTrait RT, Decl* D);
   ExprResult Reflect(ReflectionTrait RT, Type* T);
 
+  // General entity properties.
   ExprResult ReflectName(Decl* D);
   ExprResult ReflectName(Type* D);
-  
   ExprResult ReflectQualifiedName(Decl* D);
   ExprResult ReflectQualifiedName(Type* D);
+  ExprResult ReflectDeclarationContext(Decl* D);
+  ExprResult ReflectDeclarationContext(Type* T);
+  ExprResult ReflectLexicalContext(Decl* D);
+  ExprResult ReflectLexicalContext(Type* T);
   
   ExprResult ReflectLinkage(Decl* D);
+  
   ExprResult ReflectVariableStorage(VarDecl* D);
   ExprResult ReflectFunctionStorage(FunctionDecl* D);
   ExprResult ReflectStorage(Decl* D);
+  ExprResult ReflectPointer(Decl* D);
   ExprResult ReflectType(Decl* D);
+  
   ExprResult ReflectNumParameters(Decl* D);
   ExprResult ReflectParameter(Decl* D, const llvm::APSInt& N);
+
+  ExprResult ReflectNumMembers(Decl*);
+  ExprResult ReflectMember(Decl*, const llvm::APSInt& N);
+  ExprResult ReflectNumMembers(Type*);
+  ExprResult ReflectMember(Type*, const llvm::APSInt& N);
+  ExprResult ReflectNumObjects(Type*);
+  ExprResult ReflectObject(Type*, const llvm::APSInt& N);
+  ExprResult ReflectNumFunctions(Type*);
+  ExprResult ReflectFunction(Type*, const llvm::APSInt& N);
 };
 
 
@@ -417,21 +451,42 @@ static ExprResult MakeString(ASTContext& C, const std::string &Str)
 
 ExprResult Reflector::Reflect(ReflectionTrait RT, Decl* D) {
   switch (RT) {
-  case URT_GetName:
+  // Name(s) of a declaration.
+  case URT_ReflectName:
     return ReflectName(D);
-  case URT_GetQualifiedName:
+  case URT_ReflectQualifiedName:
     return ReflectQualifiedName(D);
-  case URT_GetLinkage:
+  
+  case URT_ReflectDeclarationContext:
+    return ReflectDeclarationContext(D);
+  
+  case URT_ReflectLexicalContext:
+    return ReflectLexicalContext(D);
+  
+  case URT_ReflectLinkage:
     return ReflectLinkage(D);
-  case URT_GetStorage:
+  
+  case URT_ReflectStorage:
     return ReflectStorage(D);
-  case URT_GetType:
+  
+  case URT_ReflectPointer:
+    return ReflectPointer(D);
+  
+  case URT_ReflectType:
     return ReflectType(D);
-  case URT_GetNumParameters:
+  
+  case URT_ReflectNumParameters:
     return ReflectNumParameters(D);
-  case BRT_GetParameter:
-    assert(Vals.size() == 2 && "Wrong arity");
+  case BRT_ReflectParameter:
     return ReflectParameter(D, Vals[1]);
+  
+  case URT_ReflectNumMembers:
+    return ReflectNumMembers(D);
+  case BRT_ReflectMember:
+    return ReflectMember(D, Vals[1]);
+  
+  default:
+    break;
   }
 
   // FIXME: Improve this error message.
@@ -442,10 +497,36 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl* D) {
 
 ExprResult Reflector::Reflect(ReflectionTrait RT, Type* T) {
   switch (RT) {
-  case URT_GetName:
+  // Type name.
+  case URT_ReflectName:
     return ReflectName(T);
-  case URT_GetQualifiedName:
+  case URT_ReflectQualifiedName:
     return ReflectQualifiedName(T);
+
+  case URT_ReflectDeclarationContext:
+    return ReflectDeclarationContext(T);
+
+  case URT_ReflectLexicalContext:
+    return ReflectLexicalContext(T);
+
+  // Members of a type.
+  case URT_ReflectNumMembers:
+    return ReflectNumMembers(T);
+  case BRT_ReflectMember:
+    return ReflectMember(T, Vals[1]);
+
+  // Objects within the type.
+  case URT_ReflectNumObjects:
+    return ReflectNumObjects(T);
+  case BRT_ReflectObject:
+    return ReflectObject(T, Vals[1]);
+
+  // Functions within the type.
+  case URT_ReflectNumFunctions:
+    return ReflectNumFunctions(T);
+  case BRT_ReflectFunction:
+    return ReflectFunction(T, Vals[1]);
+
   default:
     break;
   }
@@ -456,7 +537,7 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Type* T) {
 }
 
 // Returns a named declaration or emits an error and returns nullptr.
-static NamedDecl* RequireNamedDecl(Reflector R, Decl* D) {
+static NamedDecl* RequireNamedDecl(Reflector& R, Decl* D) {
   Sema& S = R.S;
   if (!isa<NamedDecl>(D)) {
     S.Diag(R.Args[0]->getLocStart(), diag::err_reflection_not_named);
@@ -471,12 +552,6 @@ ExprResult Reflector::ReflectName(Decl* D) {
   return ExprError();
 }
 
-ExprResult Reflector::ReflectQualifiedName(Decl* D) {
-  if (NamedDecl* ND = RequireNamedDecl(*this, D))
-    return MakeString(S.Context, ND->getQualifiedNameAsString());  
-  return ExprError();
-}
-
 ExprResult Reflector::ReflectName(Type* T) {
   // Use the underlying declaration of tag types for the name. This way,
   // we won't generate "struct or enum" as part of the type.
@@ -486,6 +561,12 @@ ExprResult Reflector::ReflectName(Type* T) {
   return MakeString(S.Context, QT.getAsString());  
 }
 
+ExprResult Reflector::ReflectQualifiedName(Decl* D) {
+  if (NamedDecl* ND = RequireNamedDecl(*this, D))
+    return MakeString(S.Context, ND->getQualifiedNameAsString());  
+  return ExprError();
+}
+
 ExprResult Reflector::ReflectQualifiedName(Type* T) {
   if (TagDecl* TD = T->getAsTagDecl())
     return MakeString(S.Context, TD->getQualifiedNameAsString());
@@ -493,6 +574,53 @@ ExprResult Reflector::ReflectQualifiedName(Type* T) {
   return MakeString(S.Context, QT.getAsString());  
 }
 
+// TODO: Currently, this fails to return a declaration context for the
+// translation unit and for builtin types (because they aren't declared).
+// Perhaps we should return an empty context?
+
+// Reflects the declaration context of D.
+ExprResult Reflector::ReflectDeclarationContext(Decl* D) {
+  if (isa<TranslationUnitDecl>(D)) {
+    S.Diag(KWLoc, diag::err_reflection_not_supported);
+    return ExprError();
+  }
+  return S.BuildDeclReflection(KWLoc, cast<Decl>(D->getDeclContext()));
+}
+
+// Reflects the declaration context of a user-defined type T.
+//
+// TODO: Emit a better error for non-declared types.
+ExprResult Reflector::ReflectDeclarationContext(Type* T) {
+  if (TagDecl* TD = T->getAsTagDecl()) {
+    Decl* D = cast<Decl>(TD->getDeclContext());
+    return S.BuildDeclReflection(KWLoc, D);
+  }
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+// Reflects the lexical declaration context of D.
+ExprResult Reflector::ReflectLexicalContext(Decl* D) {
+  if (isa<TranslationUnitDecl>(D)) {
+    S.Diag(KWLoc, diag::err_reflection_not_supported);
+    return ExprError();
+  }
+  return S.BuildDeclReflection(KWLoc, cast<Decl>(D->getLexicalDeclContext()));
+}
+
+// Reflects the lexical declaration context of a user-defined type T.
+//
+// TODO: Emit a better error for non-declared types.
+ExprResult Reflector::ReflectLexicalContext(Type* T) {
+  if (TagDecl* TD = T->getAsTagDecl()) {
+    Decl* D = cast<Decl>(TD->getLexicalDeclContext());
+    return S.BuildDeclReflection(KWLoc, D);
+  }
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+// Reflects the linkage of the declaration D.
 ExprResult Reflector::ReflectLinkage(Decl* D) { 
   if (NamedDecl* ND = RequireNamedDecl(*this, D)) {
     ASTContext& C = S.Context;
@@ -503,6 +631,7 @@ ExprResult Reflector::ReflectLinkage(Decl* D) {
   return ExprError();
 }
 
+// Reflects the storage class of the variable declaration D.
 ExprResult Reflector::ReflectVariableStorage(VarDecl* D) {
   ASTContext& C = S.Context;
   QualType T = C.IntTy;
@@ -510,6 +639,41 @@ ExprResult Reflector::ReflectVariableStorage(VarDecl* D) {
   return IntegerLiteral::Create(C, N, T, KWLoc);
 }
 
+// Reflects a pointer the given declaration. This only applies to global
+// variables, member variables, and functions.
+//
+// TODO: We can actually reflect pointers to local variables by storing
+// them within the reflected object. For example:
+//
+//    void f() {
+//      int x = 0;
+//      auto p = $x; // constructs a temp with a pointer to x.
+//      (void)*p.pointer(); // evaluates to 0.
+//
+// This would require that local declarations reflect differently than
+// global declarations.
+ExprResult Reflector::ReflectPointer(Decl* D)
+{
+  // In order to reflect a pointer, we need to construct an id-expression
+  // that refers to the declaration. Then we can call ActOnIdExpression
+  // indicating that the expression is an operand of the address-of 
+  // expression. We also probably need to create the address-of expression.
+  if (FieldDecl* FD = dyn_cast<FieldDecl>(D)) {
+
+  } else if (VarDecl* VD = dyn_cast<VarDecl>(D)) {
+    if (VD->hasLocalStorage()) {
+      S.Diag(Args[0]->getLocStart(), diag::err_reflection_of_local_reference);
+      return ExprError();
+    }
+
+  } else if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
+
+  }
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+// Reflects the storage class of the function declaration D.
 ExprResult Reflector::ReflectFunctionStorage(FunctionDecl* D) {
   ASTContext& C = S.Context;
   QualType T = C.IntTy;
@@ -517,6 +681,7 @@ ExprResult Reflector::ReflectFunctionStorage(FunctionDecl* D) {
   return IntegerLiteral::Create(C, N, T, KWLoc);
 }
 
+// Reflects the storage class of the declaration D.
 ExprResult Reflector::ReflectStorage(Decl* D) {
   if (VarDecl* Var = dyn_cast<VarDecl>(D))
     return ReflectVariableStorage(Var);
@@ -529,6 +694,7 @@ ExprResult Reflector::ReflectStorage(Decl* D) {
   return ExprError();
 }
 
+// Reflects the type the typed declaration D.
 ExprResult Reflector::ReflectType(Decl* D) {
   if (ValueDecl* VD = dyn_cast<ValueDecl>(D))
     return S.BuildTypeReflection(KWLoc, VD->getType());
@@ -536,7 +702,8 @@ ExprResult Reflector::ReflectType(Decl* D) {
   return ExprError();
 }
 
-static FunctionDecl* RequireFunctionDecl(Reflector R, Decl* D) {
+// Returns a function declaration or emits a diagnostic and returns null.
+static FunctionDecl* RequireFunctionDecl(Reflector& R, Decl* D) {
   if (!isa<FunctionDecl>(D)) {
     R.S.Diag(R.Args[0]->getLocStart(), diag::err_reflection_not_function);
     return nullptr;
@@ -544,6 +711,7 @@ static FunctionDecl* RequireFunctionDecl(Reflector R, Decl* D) {
   return cast<FunctionDecl>(D);
 }
 
+// Reflects the number of parameters of a function declaration.
 ExprResult Reflector::ReflectNumParameters(Decl* D) {
   if (FunctionDecl* Fn = RequireFunctionDecl(*this, D)) {
     ASTContext& C = S.Context;
@@ -554,6 +722,7 @@ ExprResult Reflector::ReflectNumParameters(Decl* D) {
   return ExprError();
 }
 
+// Reflects a selected parameter of a function.
 ExprResult Reflector::ReflectParameter(Decl* D, const llvm::APSInt& N) {
   if (FunctionDecl* Fn = RequireFunctionDecl(*this, D)) {
     unsigned Num = N.getExtValue();
@@ -561,9 +730,77 @@ ExprResult Reflector::ReflectParameter(Decl* D, const llvm::APSInt& N) {
       S.Diag(Args[1]->getLocStart(), diag::err_parameter_out_of_bounds);
       return ExprError();
     }
-    ParmVarDecl* Parm = Fn->getParamDecl(Num);
-    return S.BuildDeclarationReflection(KWLoc, Parm, "parameter");
+    return S.BuildDeclReflection(KWLoc, Fn->getParamDecl(Num));
   }
+  return ExprError();
+}
+
+static NamespaceDecl* RequireNamespace(Reflector& R, Decl* D)
+{
+  if (NamespaceDecl* NS = dyn_cast<NamespaceDecl>(D))
+    return NS;
+  R.S.Diag(R.Args[0]->getLocStart(), diag::err_reflection_not_supported);
+  return nullptr;
+}
+
+// TODO: The semantics of this query on namespaces are questionable. Should
+// we also include members in the anonymous namespace? If not, how could we
+// access those? Another trait perhaps. What about imported declarations?
+// We probably also need to walk the namespace backwards through previous
+// declarations.
+ExprResult Reflector::ReflectNumMembers(Decl* D) {
+  if (NamespaceDecl* NS = RequireNamespace(*this, D)) {
+    ASTContext& C = S.Context;
+    QualType T = C.UnsignedIntTy;
+    unsigned D = std::distance(NS->decls_begin(), NS->decls_end());
+    llvm::APSInt N = C.MakeIntValue(D, T);
+    return IntegerLiteral::Create(C, N, T, KWLoc);
+  }
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectMember(Decl* D, const llvm::APSInt& N) {
+  if (NamespaceDecl* NS = RequireNamespace(*this, D)) {
+    ASTContext& C = S.Context;
+    unsigned Ix = N.getExtValue();
+    auto Iter = NS->decls_begin();
+    if (Ix >= std::distance(Iter, NS->decls_end())) {
+      S.Diag(Args[1]->getLocStart(), diag::err_parameter_out_of_bounds);
+      return ExprError();
+    }
+    std::advance(Iter, Ix);
+    return S.BuildDeclReflection(KWLoc, *Iter);
+  }
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectNumMembers(Type*) {
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectMember(Type*, const llvm::APSInt& N) {
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectNumObjects(Type*) {
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectObject(Type*, const llvm::APSInt& N) {
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectNumFunctions(Type*) {
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectFunction(Type*, const llvm::APSInt& N) {
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
   return ExprError();
 }
 

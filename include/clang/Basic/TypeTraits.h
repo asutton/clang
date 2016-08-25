@@ -104,19 +104,28 @@ namespace clang {
   /// indexing into an array.
   enum ReflectionTrait {
     // General declaration properties.
-    URT_GetName,
-    URT_GetQualifiedName,
-    URT_GetLinkage,
+    URT_ReflectName,
+    URT_ReflectQualifiedName,
+    URT_ReflectDeclarationContext,
+    URT_ReflectLexicalContext,
+    URT_ReflectLinkage,
     
-    // Non-type declaration properties.
-    URT_GetType,
-    URT_GetStorage,
+    // Value and function declaration properties.
+    URT_ReflectType,
+    URT_ReflectStorage,
+    URT_ReflectPointer,
     
     // Function declarations.
-    URT_GetNumParameters,
-    BRT_GetParameter,
+    URT_ReflectNumParameters,
+    BRT_ReflectParameter,
 
-    // Type declarations
+    // Type declarations.
+    URT_ReflectNumMembers,
+    BRT_ReflectMember,
+    URT_ReflectNumObjects,
+    BRT_ReflectObject,
+    URT_ReflectNumFunctions,
+    BRT_ReflectFunction,
   };
 }
 
