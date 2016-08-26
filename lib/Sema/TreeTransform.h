@@ -1383,6 +1383,17 @@ public:
   }
 
   // [PIM]
+
+  /// \brief Build a new reflection trait.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildReflectionExpr(SourceLocation OpLoc, Expr* E) {
+    return getSema().ActOnCXXReflectExpr(OpLoc, E);
+  }
+  ExprResult RebuildReflectionExpr(SourceLocation OpLoc, TypeSourceInfo* TSI) {
+    return getSema().ActOnCXXReflectExpr(OpLoc, TSI);
+  }
   
   /// \brief Build a new reflection trait.
   ///
@@ -6889,6 +6900,23 @@ TreeTransform<Derived>::TransformCoyieldExpr(CoyieldExpr *E) {
 }
 
 // [PIM]
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
+  if (E->hasExpressionOperand()) {
+    ExprResult Expr = getDerived().TransformExpr(E->getExpressionOperand());
+    if (Expr.isInvalid())
+      return ExprError();
+    return getDerived().RebuildReflectionExpr(E->getOperatorLoc(), Expr.get());
+  } else {
+    TypeSourceInfo *TSI = getDerived().TransformType(E->getTypeOperand());
+    if (!TSI)
+      return ExprError();
+    return RebuildReflectionExpr(E->getOperatorLoc(), TSI);
+  }
+}
+
+
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformReflectionTraitExpr(ReflectionTraitExpr *E) {

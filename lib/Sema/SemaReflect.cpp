@@ -43,6 +43,7 @@ using namespace sema;
 ExprResult
 Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* E)
 {
+  // Try to correct typos.
   if (isa<TypoExpr>(E)) {
     ExprResult Fixed = CorrectDelayedTyposInExpr(E);
     if (!Fixed.isUsable())
@@ -50,13 +51,9 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* E)
     E = Fixed.get();
   }
 
-  // TODO: Handle the case where Id is dependent (type? value?). We
-  // just want to return a dependent expression that we can substitute
-  // into later.
-  if (E->isTypeDependent() || E->isValueDependent()) {
-    E->dump();
-    return ExprError(Diag(OpLoc, diag::err_not_implemented));
-  }
+  // If the node is dependent, then preserve the expression until instantiation.
+  if (E->isTypeDependent() || E->isValueDependent())
+    return new (Context) ReflectionExpr(OpLoc, E, Context.DependentTy);
 
   if (OverloadExpr* Ovl = dyn_cast<OverloadExpr>(E)) {
     // FIXME: This should be okay. We should be able to provide a limited
@@ -72,13 +69,24 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr* E)
   return BuildDeclReflection(OpLoc, cast<DeclRefExpr>(E)->getDecl());
 }
 
+// Build a reflection for the type T.
+ExprResult
+Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, TypeSourceInfo* TSI)
+{
+  QualType T = TSI->getType();
+
+  // If the type is dependent, preserve the expression until instantiation.
+  if (T->isDependentType())
+    return new (Context) ReflectionExpr(OpLoc, TSI, Context.DependentTy);
+  
+  return BuildTypeReflection(OpLoc, T);
+}
+
 // Build a reflection for the type-id stored in D.
 ExprResult
 Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Declarator& D)
 {
-  TypeSourceInfo *TI = GetTypeForDeclarator(D, CurScope);
-  QualType QT = TI->getType();
-  return BuildTypeReflection(OpLoc, QT);
+  return ActOnCXXReflectExpr(OpLoc, GetTypeForDeclarator(D, CurScope));
 }
 
 // Build a reflection of the indicated namespace. If SS and II do not
@@ -142,18 +150,23 @@ static char const* GetReflectionClass(Decl* D)
 {
   switch (D->getKind()) {
     case Decl::Var:
-    case Decl::Field:
       return "variable";
+    case Decl::Field:
+      return "member_variable";
     
     case Decl::ParmVar:
       return "parameter";
     
     case Decl::Function:
-    case Decl::CXXMethod:
-    case Decl::CXXConstructor:
-    case Decl::CXXDestructor:
-    case Decl::CXXConversion:
       return "function";
+    case Decl::CXXMethod:
+      return "member_function";
+    case Decl::CXXConstructor:
+      return "constructor";
+    case Decl::CXXDestructor:
+      return "destructor";
+    case Decl::CXXConversion:
+      return "conversion";
     
     case Decl::EnumConstant:
       return "enumerator";
@@ -242,8 +255,10 @@ static char const* GetReflectionClass(QualType T)
 // function above. Surely we can simplify.
 ExprResult
 Sema::BuildTypeReflection(SourceLocation Loc, QualType QT) {  
-  // See through deduced types.
-  if (const AutoType* Auto = QT->getAs<AutoType>()) {
+  // See through elaborated and deduced types.
+  if (const ElaboratedType* Elab = QT->getAs<ElaboratedType>()) {
+    QT = Elab->getNamedType();
+  } else if (const AutoType* Auto = QT->getAs<AutoType>()) {
     assert(Auto->isDeduced() && "Reflection of non-deduced type");
     QT = Auto->getDeducedType();
   }
@@ -373,10 +388,16 @@ struct Reflector
   ExprResult ReflectStorage(Decl* D);
   ExprResult ReflectPointer(Decl* D);
   ExprResult ReflectType(Decl* D);
-  
+
   ExprResult ReflectNumParameters(Decl* D);
   ExprResult ReflectParameter(Decl* D, const llvm::APSInt& N);
 
+  template<typename I>
+  ExprResult GetNumMembers(I First, I Limit);
+  
+  template<typename I>
+  ExprResult GetMember(const llvm::APSInt& N, I First, I Limit);
+  
   ExprResult ReflectNumMembers(Decl*);
   ExprResult ReflectMember(Decl*, const llvm::APSInt& N);
   ExprResult ReflectNumMembers(Type*);
@@ -743,63 +764,97 @@ static NamespaceDecl* RequireNamespace(Reflector& R, Decl* D)
   return nullptr;
 }
 
+// Reflects the number of elements in the context.
+template<typename I>
+ExprResult Reflector::GetNumMembers(I First, I Limit) {
+  ASTContext& C = S.Context;
+  QualType T = C.UnsignedIntTy;
+  unsigned D = std::distance(First, Limit);
+  llvm::APSInt N = C.MakeIntValue(D, T);
+  return IntegerLiteral::Create(C, N, T, KWLoc);
+}
+
+// Reflects the selected member from the declaration.
+template<typename I>
+ExprResult Reflector::GetMember(const llvm::APSInt & N, I First, I Limit) {
+  unsigned Ix = N.getExtValue();
+  if (Ix >= std::distance(First, Limit)) {
+    S.Diag(Args[1]->getLocStart(), diag::err_parameter_out_of_bounds);
+    return ExprError();
+  }
+  std::advance(First, Ix);
+  return S.BuildDeclReflection(KWLoc, *First);
+}
+
+
 // TODO: The semantics of this query on namespaces are questionable. Should
 // we also include members in the anonymous namespace? If not, how could we
 // access those? Another trait perhaps. What about imported declarations?
 // We probably also need to walk the namespace backwards through previous
 // declarations.
 ExprResult Reflector::ReflectNumMembers(Decl* D) {
-  if (NamespaceDecl* NS = RequireNamespace(*this, D)) {
-    ASTContext& C = S.Context;
-    QualType T = C.UnsignedIntTy;
-    unsigned D = std::distance(NS->decls_begin(), NS->decls_end());
-    llvm::APSInt N = C.MakeIntValue(D, T);
-    return IntegerLiteral::Create(C, N, T, KWLoc);
-  }
+  if (NamespaceDecl* NS = RequireNamespace(*this, D))
+    return GetNumMembers(NS->decls_begin(), NS->decls_end());
   return ExprError();
 }
 
+// Refelects the selected member from the declaration.
 ExprResult Reflector::ReflectMember(Decl* D, const llvm::APSInt& N) {
-  if (NamespaceDecl* NS = RequireNamespace(*this, D)) {
-    ASTContext& C = S.Context;
-    unsigned Ix = N.getExtValue();
-    auto Iter = NS->decls_begin();
-    if (Ix >= std::distance(Iter, NS->decls_end())) {
-      S.Diag(Args[1]->getLocStart(), diag::err_parameter_out_of_bounds);
-      return ExprError();
-    }
-    std::advance(Iter, Ix);
-    return S.BuildDeclReflection(KWLoc, *Iter);
-  }
+  if (NamespaceDecl* NS = RequireNamespace(*this, D))
+    return GetMember(N, NS->decls_begin(), NS->decls_end());
   return ExprError();
 }
 
-ExprResult Reflector::ReflectNumMembers(Type*) {
+ExprResult Reflector::ReflectNumMembers(Type* T) {
+  if (TagDecl* TD = T->getAsTagDecl())
+    return GetNumMembers(TD->decls_begin(), TD->decls_end());
+  S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectMember(Type* T, const llvm::APSInt& N) {
+  if (TagDecl* TD = T->getAsTagDecl())
+    return GetMember(N, TD->decls_begin(), TD->decls_end());
+  S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectNumObjects(Type* T) {
+  // if (TagDecl* TD = T->getAsTagDecl()) {
+  //   DeclContext::specific_decl_iterator<FieldDecl> first(TD->decls_begin());
+  //   DeclContext::specific_decl_iterator<FieldDecl> limit(TD->decls_end());
+  //   return ReflectIterMembers(first, limit);
+  // }
   S.Diag(KWLoc, diag::err_reflection_not_supported);
   return ExprError();
 }
 
-ExprResult Reflector::ReflectMember(Type*, const llvm::APSInt& N) {
+ExprResult Reflector::ReflectObject(Type* T, const llvm::APSInt& N) {
+  // if (TagDecl* TD = T->getAsTagDecl()) {
+  //   DeclContext::specific_decl_iterator<FieldDecl> first(TD->decls_begin());
+  //   DeclContext::specific_decl_iterator<FieldDecl> limit(TD->decls_end());
+  //   return ReflectIterMember(first, limit, N);
+  // }
   S.Diag(KWLoc, diag::err_reflection_not_supported);
   return ExprError();
 }
 
-ExprResult Reflector::ReflectNumObjects(Type*) {
+ExprResult Reflector::ReflectNumFunctions(Type* T) {
+  // if (TagDecl* TD = T->getAsTagDecl()) {
+  //   DeclContext::specific_decl_iterator<CXXMethodDecl> first(TD->decls_begin());
+  //   DeclContext::specific_decl_iterator<CXXMethodDecl> limit(TD->decls_end());
+  //   return ReflectIterMembers(first, limit);
+  // }
   S.Diag(KWLoc, diag::err_reflection_not_supported);
   return ExprError();
 }
 
-ExprResult Reflector::ReflectObject(Type*, const llvm::APSInt& N) {
-  S.Diag(KWLoc, diag::err_reflection_not_supported);
-  return ExprError();
-}
-
-ExprResult Reflector::ReflectNumFunctions(Type*) {
-  S.Diag(KWLoc, diag::err_reflection_not_supported);
-  return ExprError();
-}
-
-ExprResult Reflector::ReflectFunction(Type*, const llvm::APSInt& N) {
+ExprResult Reflector::ReflectFunction(Type* T, const llvm::APSInt& N) {
+  // if (TagDecl* TD = T->getAsTagDecl()) {
+  //   DeclContext::specific_decl_iterator<CXXMethodDecl> first(TD->decls_begin());
+  //   DeclContext::specific_decl_iterator<CXXMethodDecl> limit(TD->decls_end());
+  //   return ReflectIterMember(first, limit, N);
+  // }
   S.Diag(KWLoc, diag::err_reflection_not_supported);
   return ExprError();
 }

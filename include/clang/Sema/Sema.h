@@ -8187,6 +8187,7 @@ public:
   // C++ Reflection [PIM]
   //
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Expr *E);
+  ExprResult ActOnCXXReflectExpr(SourceLocation Loc, TypeSourceInfo* TSI);
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Declarator& D);
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, CXXScopeSpec& SS, 
                                  IdentifierInfo *II, SourceLocation IdLoc);

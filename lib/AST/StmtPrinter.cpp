@@ -2492,6 +2492,15 @@ static const char *getReflectionTraitName(ReflectionTrait RT) {
   }
 }
 
+void StmtPrinter::VisitReflectionExpr(ReflectionExpr *E) {
+  // TODO: We probably need braces on the expression and/or type.
+  OS << '$';
+  if (E->hasExpressionOperand())
+    PrintExpr(E->getExpressionOperand());
+  else
+    E->getTypeOperand()->getType().print(OS, Policy);
+}
+
 void StmtPrinter::VisitReflectionTraitExpr(ReflectionTraitExpr *E) {
   OS << getReflectionTraitName(E->getTrait()) << '(';
   for (unsigned i = 0; i < E->getNumArgs(); ++i) {

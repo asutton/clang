@@ -2524,6 +2524,12 @@ DEF_TRAVERSE_STMT(CoyieldExpr, {
 })
 
 // [PIM] Reflection traits
+DEF_TRAVERSE_STMT(ReflectionExpr, {
+  // If this is a type, traverse that. Note that expression operands
+  // are handled by the child visitor.
+  if (S->hasTypeOperand())
+    TRY_TO(TraverseTypeLoc(S->getTypeOperand()->getTypeLoc()));
+})
 DEF_TRAVERSE_STMT(ReflectionTraitExpr, {})
 
 // These literals (all of them) do not need any action.
