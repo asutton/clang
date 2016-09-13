@@ -44,6 +44,7 @@ namespace clang {
   class ParsingFieldDeclarator;
   class ColonProtectionRAIIObject;
   class InMessageExpressionRAIIObject;
+  class InReflectionExpressionRAIIObject;
   class PoisonSEHIdentifiersRAIIObject;
   class VersionTuple;
   class OMPClause;
@@ -57,6 +58,7 @@ namespace clang {
 class Parser : public CodeCompletionHandler {
   friend class ColonProtectionRAIIObject;
   friend class InMessageExpressionRAIIObject;
+  friend class InReflectionExpressionRAIIObject;
   friend class PoisonSEHIdentifiersRAIIObject;
   friend class ObjCDeclContextSwitch;
   friend class ParenBraceBracketBalancer;
@@ -200,6 +202,13 @@ class Parser : public CodeCompletionHandler {
   /// This is managed by the \c InMessageExpressionRAIIObject class, and
   /// should not be set directly.
   bool InMessageExpression;
+
+  /// \brief When true, we are parsing the operand of a reflection. When
+  /// parsing an expression operand, this will treat it as if it were the
+  /// operand of a unary '&' expression. Note that these can nest.
+  ///
+  /// TODO: Manage this with an RAII class.
+  int ReflectionExpressionDepth;
 
   /// The "depth" of the template parameters currently being parsed.
   unsigned TemplateParameterDepth;

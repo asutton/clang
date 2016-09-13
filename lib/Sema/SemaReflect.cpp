@@ -89,23 +89,27 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Declarator& D)
   return ActOnCXXReflectExpr(OpLoc, GetTypeForDeclarator(D, CurScope));
 }
 
-// Build a reflection of the indicated namespace. If SS and II do not
-// denote a namespace fail quietly. The parse for expressions will emit
-// a better error.
+// Try to construct a reflection for the declaration named by II. This will
+// reflect:
+//
+//    - id-expressions whose unqualified-id is an identifier
+//    - type-names that are identifiers, and
+//    - namespace-names
+//
+// TODO: Handle ambiguous and overloaded lookups.
 ExprResult
 Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec& SS, 
                           IdentifierInfo* II, SourceLocation IdLoc)
 {
-  // Perform a lookup in the current scope for II to determine if
-  // it refers to a namespace.
-  LookupResult R(*this, II, OpLoc, LookupNamespaceName);
+  // Perform any declaration having the given name.
+  LookupResult R(*this, II, OpLoc, LookupAnyName);
   LookupParsedName(R, CurScope, &SS);
   if (!R.isSingleResult())
+    return ExprError(Diag(IdLoc, diag::err_reflected_overload));
+  Decl* D = R.getAsSingle<Decl>();
+  if (!D)
     return ExprError();  
-  NamespaceDecl* NS = R.getAsSingle<NamespaceDecl>();
-  if (!NS)
-    return ExprError();
-  return BuildDeclReflection(OpLoc, NS);
+  return BuildDeclReflection(OpLoc, D);
 }
 
 

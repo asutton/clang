@@ -319,6 +319,22 @@ namespace clang {
     }
   };
   
+
+/// \brief Manages the nesting depth of reflection expressions.
+class InReflectionExpressionRAIIObject {
+  Parser &P;
+  public:
+    InReflectionExpressionRAIIObject(Parser &P)
+      : P(P) {
+      ++P.ReflectionExpressionDepth;
+    }
+    
+    ~InReflectionExpressionRAIIObject() {
+      --P.ReflectionExpressionDepth;
+    }
+  };
+  
+
   /// \brief RAII object that makes sure paren/bracket/brace count is correct
   /// after declaration/statement parsing, even when there's a parsing error.
   class ParenBraceBracketBalancer {

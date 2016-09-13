@@ -38,25 +38,27 @@ Parser::ParseReflectExpression()
   assert(Tok.is(tok::dollar));
   SourceLocation OpLoc = ConsumeToken();
 
-  // Tentatively parse the nested name specifier before parsing an expression.
-  // Semantically, if we can't resolve this, then we're going to fail quietly,
-  // and match this as either a type or expression.
-  TentativeParsingAction TPA(*this);
+  // TODO: Actually look at the token following the '$'. We should be able
+  // to easily predict the parse.
+
   CXXScopeSpec SS;
   ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false);
+
+  // If the next token is an identifier, try to resolve that. This will likely
+  // match most uses of the reflection operator, but there are some cases
+  // of id-expressions and type-ids that must be handled separately.
   if (!SS.isInvalid() && Tok.is(tok::identifier)) {
+    SourceLocation IdLoc = Tok.getLocation();
     IdentifierInfo* II = Tok.getIdentifierInfo();
-    SourceLocation IdLoc = ConsumeToken();
     ExprResult Expr = Actions.ActOnCXXReflectExpr(OpLoc, SS, II, IdLoc);
     if (!Expr.isInvalid()) {
-      TPA.Commit();
+      ConsumeToken();
       return Expr;
     }
   }
-  TPA.Revert();
 
-  // Potentially parse the type-id.
-  if (isTypeIdUnambiguously()) {
+  // Determine if the operand is actually a type-id.
+  if (isCXXTypeId(TypeIdAsTemplateArgument)) {
     DeclSpec DS(AttrFactory);
     ParseSpecifierQualifierList(DS);
     Declarator D(DS, Declarator::TypeNameContext);
@@ -64,18 +66,12 @@ Parser::ParseReflectExpression()
     return Actions.ActOnCXXReflectExpr(OpLoc, D);
   }
 
-  // We might have previously classified the token as a primary expression.
-  if (Tok.is(tok::annot_primary_expr)) {
-    ExprResult Primary = getExprAnnotation(Tok);
-    ConsumeToken();
-    return Actions.ActOnCXXReflectExpr(OpLoc, Primary.get());
-  }
-
-  // Otherwise, this is an unparsed expression.
-  ExprResult Id = ParseCXXIdExpression(false);
+  // If not that, then this could be an id-expression. Try parsing this.
+  Token Replacement;
+  ExprResult Id = tryParseCXXIdExpression(SS, true, Replacement);
   if (!Id.isInvalid())
     return Actions.ActOnCXXReflectExpr(OpLoc, Id.get());
-  return Id;
+  return ExprError();
 }
 
 
