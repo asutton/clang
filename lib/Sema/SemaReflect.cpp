@@ -664,6 +664,7 @@ ExprResult Reflector::ReflectVariableStorage(VarDecl* D) {
   return IntegerLiteral::Create(C, N, T, KWLoc);
 }
 
+
 // Reflects a pointer the given declaration. This only applies to global
 // variables, member variables, and functions.
 //
@@ -679,23 +680,47 @@ ExprResult Reflector::ReflectVariableStorage(VarDecl* D) {
 // global declarations.
 ExprResult Reflector::ReflectPointer(Decl* D)
 {
-  // In order to reflect a pointer, we need to construct an id-expression
-  // that refers to the declaration. Then we can call ActOnIdExpression
-  // indicating that the expression is an operand of the address-of 
-  // expression. We also probably need to create the address-of expression.
-  if (FieldDecl* FD = dyn_cast<FieldDecl>(D)) {
-
-  } else if (VarDecl* VD = dyn_cast<VarDecl>(D)) {
+  // We can only take the address of stored declarations.
+  if (!isa<VarDecl>(D) && !isa<FieldDecl>(D) && !isa<FunctionDecl>(D)) {
+    S.Diag(KWLoc, diag::err_reflection_not_supported);
+    return ExprError();
+  }
+  ValueDecl* Val = cast<ValueDecl>(D);
+  
+  // Don't produce addresses to local variables; they aren't static.
+  if (VarDecl* VD = dyn_cast<VarDecl>(Val)) {
     if (VD->hasLocalStorage()) {
       S.Diag(Args[0]->getLocStart(), diag::err_reflection_of_local_reference);
       return ExprError();
     }
-
-  } else if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
-
   }
-  S.Diag(KWLoc, diag::err_reflection_not_supported);
-  return ExprError();
+
+  // Determine the type of the declaration pointed at. If it's a member of
+  // a class, we need to adjust it to a member pointer type.
+  //
+  // TODO: This is a subset of what CreateBuiltinUnaryOp does, but for
+  // some reason, the result isn't being typed correctly.
+  QualType Ty = Val->getType();
+  if (FieldDecl* FD = dyn_cast<FieldDecl>(Val)) {
+    const Type* Cls = S.Context.getTagDeclType(FD->getParent()).getTypePtr();
+    Ty = S.Context.getMemberPointerType(Ty, Cls);
+  } else if (isa<CXXConstructorDecl>(Val) || isa<CXXDestructorDecl>(D)) {
+    // TODO: Find a better error message to emit.
+    S.Diag(KWLoc, diag::err_reflection_not_supported);
+    return ExprError();    
+  } else if (CXXMethodDecl* MD = dyn_cast<CXXMethodDecl>(Val)) {
+    const Type* Cls = S.Context.getTagDeclType(MD->getParent()).getTypePtr();
+    Ty = S.Context.getMemberPointerType(Ty, Cls);
+  } else {
+    Ty = S.Context.getPointerType(Ty);
+  }
+
+  DeclRefExpr* Ref = new (S.Context) DeclRefExpr(Val, false, Val->getType(), 
+                                                 VK_LValue, KWLoc);
+  S.MarkDeclRefReferenced(Ref);
+  Expr* Op = new (S.Context) UnaryOperator(Ref, UO_AddrOf, Ty, VK_RValue, 
+                                           OK_Ordinary, KWLoc);
+  return Op;
 }
 
 // Reflects the storage class of the function declaration D.
