@@ -406,10 +406,6 @@ struct Reflector
   ExprResult ReflectMember(Decl*, const llvm::APSInt& N);
   ExprResult ReflectNumMembers(Type*);
   ExprResult ReflectMember(Type*, const llvm::APSInt& N);
-  ExprResult ReflectNumObjects(Type*);
-  ExprResult ReflectObject(Type*, const llvm::APSInt& N);
-  ExprResult ReflectNumFunctions(Type*);
-  ExprResult ReflectFunction(Type*, const llvm::APSInt& N);
 };
 
 
@@ -534,23 +530,10 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Type* T) {
   case URT_ReflectLexicalContext:
     return ReflectLexicalContext(T);
 
-  // Members of a type.
   case URT_ReflectNumMembers:
-    return ReflectNumMembers(T);
+    return ReflectNumMembers(T->getAsTagDecl());
   case BRT_ReflectMember:
-    return ReflectMember(T, Vals[1]);
-
-  // Objects within the type.
-  case URT_ReflectNumObjects:
-    return ReflectNumObjects(T);
-  case BRT_ReflectObject:
-    return ReflectObject(T, Vals[1]);
-
-  // Functions within the type.
-  case URT_ReflectNumFunctions:
-    return ReflectNumFunctions(T);
-  case BRT_ReflectFunction:
-    return ReflectFunction(T, Vals[1]);
+    return ReflectMember(T->getAsTagDecl(), Vals[1]);
 
   default:
     break;
@@ -822,69 +805,25 @@ ExprResult Reflector::GetMember(const llvm::APSInt & N, I First, I Limit) {
 // We probably also need to walk the namespace backwards through previous
 // declarations.
 ExprResult Reflector::ReflectNumMembers(Decl* D) {
-  if (NamespaceDecl* NS = RequireNamespace(*this, D))
-    return GetNumMembers(NS->decls_begin(), NS->decls_end());
+  if (D) {
+    if (TagDecl* TD = dyn_cast<TagDecl>(D))
+      return GetNumMembers(TD->decls_begin(), TD->decls_end());
+    if (NamespaceDecl* NS = RequireNamespace(*this, D))
+      return GetNumMembers(NS->decls_begin(), NS->decls_end());
+  }
+  S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_supported);
   return ExprError();
 }
 
-// Refelects the selected member from the declaration.
+// Reflects the selected member from the declaration.
 ExprResult Reflector::ReflectMember(Decl* D, const llvm::APSInt& N) {
-  if (NamespaceDecl* NS = RequireNamespace(*this, D))
-    return GetMember(N, NS->decls_begin(), NS->decls_end());
-  return ExprError();
-}
-
-ExprResult Reflector::ReflectNumMembers(Type* T) {
-  if (TagDecl* TD = T->getAsTagDecl())
-    return GetNumMembers(TD->decls_begin(), TD->decls_end());
+  if (D) {
+    if (TagDecl* TD = dyn_cast<TagDecl>(D))
+      return GetMember(N, TD->decls_begin(), TD->decls_end());
+    if (NamespaceDecl* NS = RequireNamespace(*this, D))
+      return GetMember(N, NS->decls_begin(), NS->decls_end());
+  }
   S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_supported);
-  return ExprError();
-}
-
-ExprResult Reflector::ReflectMember(Type* T, const llvm::APSInt& N) {
-  if (TagDecl* TD = T->getAsTagDecl())
-    return GetMember(N, TD->decls_begin(), TD->decls_end());
-  S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_supported);
-  return ExprError();
-}
-
-ExprResult Reflector::ReflectNumObjects(Type* T) {
-  // if (TagDecl* TD = T->getAsTagDecl()) {
-  //   DeclContext::specific_decl_iterator<FieldDecl> first(TD->decls_begin());
-  //   DeclContext::specific_decl_iterator<FieldDecl> limit(TD->decls_end());
-  //   return ReflectIterMembers(first, limit);
-  // }
-  S.Diag(KWLoc, diag::err_reflection_not_supported);
-  return ExprError();
-}
-
-ExprResult Reflector::ReflectObject(Type* T, const llvm::APSInt& N) {
-  // if (TagDecl* TD = T->getAsTagDecl()) {
-  //   DeclContext::specific_decl_iterator<FieldDecl> first(TD->decls_begin());
-  //   DeclContext::specific_decl_iterator<FieldDecl> limit(TD->decls_end());
-  //   return ReflectIterMember(first, limit, N);
-  // }
-  S.Diag(KWLoc, diag::err_reflection_not_supported);
-  return ExprError();
-}
-
-ExprResult Reflector::ReflectNumFunctions(Type* T) {
-  // if (TagDecl* TD = T->getAsTagDecl()) {
-  //   DeclContext::specific_decl_iterator<CXXMethodDecl> first(TD->decls_begin());
-  //   DeclContext::specific_decl_iterator<CXXMethodDecl> limit(TD->decls_end());
-  //   return ReflectIterMembers(first, limit);
-  // }
-  S.Diag(KWLoc, diag::err_reflection_not_supported);
-  return ExprError();
-}
-
-ExprResult Reflector::ReflectFunction(Type* T, const llvm::APSInt& N) {
-  // if (TagDecl* TD = T->getAsTagDecl()) {
-  //   DeclContext::specific_decl_iterator<CXXMethodDecl> first(TD->decls_begin());
-  //   DeclContext::specific_decl_iterator<CXXMethodDecl> limit(TD->decls_end());
-  //   return ReflectIterMember(first, limit, N);
-  // }
-  S.Diag(KWLoc, diag::err_reflection_not_supported);
   return ExprError();
 }
 
