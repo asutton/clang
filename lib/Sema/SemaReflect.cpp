@@ -109,6 +109,31 @@ Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec& SS,
   Decl* D = R.getAsSingle<Decl>();
   if (!D)
     return ExprError();  
+
+  // If the declaration is a template parameter, defer until instantiation.
+  //
+  // FIXME: This needs to be adapted for non-type and template template
+  // parameters also. Most likely, we need to allow ReflectExprs to contain
+  // declarations in addition to expressions and types.
+  if (TypeDecl* TD = dyn_cast<TypeDecl>(D)) {
+    QualType T = Context.getTypeDeclType(TD);
+    if (T->isDependentType()) {
+      TypeSourceInfo* TSI = Context.getTrivialTypeSourceInfo(T);
+      return new (Context) ReflectionExpr(OpLoc, TSI, Context.DependentTy);
+    }
+  }
+
+  // If we have a value declaration of dependent type, then make a dependent
+  // decl-ref expression to be resolved later.
+  if (ValueDecl* VD = dyn_cast<ValueDecl>(D)) {
+    QualType T = VD->getType();
+    if (T->isDependentType()) {
+      Expr* E = new (Context) DeclRefExpr(VD, false, Context.DependentTy, 
+                                          VK_LValue, OpLoc);
+      return new (Context) ReflectionExpr(OpLoc, E, Context.DependentTy);
+    }
+  }
+
   return BuildDeclReflection(OpLoc, D);
 }
 
@@ -174,7 +199,7 @@ static char const* GetReflectionClass(Decl* D)
     
     case Decl::EnumConstant:
       return "enumerator";
-    
+
     case Decl::TranslationUnit:
       return "tu";
     
@@ -190,7 +215,7 @@ static char const* GetReflectionClass(Decl* D)
 
 // Return an expression whose type reflects the given node.
 ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl* D) {
-  // Use BuildTypeReflection for types.
+  // Use BuildTypeReflection for type declarations.
   if (TagDecl* TD = dyn_cast<TagDecl>(D))
     return BuildTypeReflection(Loc, Context.getTagDeclType(TD));
 
