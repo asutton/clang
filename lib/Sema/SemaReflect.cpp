@@ -253,6 +253,7 @@ ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl* D) {
 // TODO: Actually populate this table.
 static char const* GetReflectionClass(QualType T)
 {
+  T = T.getCanonicalType();
   switch (T->getTypeClass()) {
   case Type::Record:
     if (T->isUnionType())
