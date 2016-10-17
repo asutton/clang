@@ -4225,7 +4225,7 @@ void Parser::ParseMicrosoftIfExistsClassDeclaration(DeclSpec::TST TagType,
 ///       '$class' identifier metaclass-body
 ///
 ///     metaclass-body:
-///       '{' '}'
+///       compound-statement
 ///
 /// FIXME: [PIM] Actually define the grammar for this thing. Note that
 /// returning nullptr will allow parsing to continue after the tokens
@@ -4235,18 +4235,21 @@ Parser::DeclGroupPtrTy Parser::ParseMetaClassDefinition()
   // We should have matched the `$class` identifier in 
   // ParseExternalDeclaration.
   assert(Tok.is(tok::dollar));
-  ConsumeToken();
+  SourceLocation DollarLoc = ConsumeToken();
   assert(Tok.is(tok::kw_class));
   ConsumeToken();
   assert(Tok.is(tok::identifier));
 
   // Save the identifier and source location.
-  // IdentifierInfo* = Tok.getIdentifierInfo();
+  IdentifierInfo *II = Tok.getIdentifierInfo();
   ConsumeToken();
-
-  BalancedDelimiterTracker T(*this, tok::l_brace);
-  T.consumeOpen();
-  T.consumeClose();
-
-  return nullptr;
+  
+  // Parse the body of the metaclass.
+  if (Tok.isNot(tok::l_brace)) {
+    Diag(Tok, diag::err_expected) << tok::l_brace;
+    return nullptr;
+  }
+  StmtResult Body = ParseCompoundStatement(/*isStmtExpr*/false);
+  DeclResult Def = Actions.ActOnMetaclassDefinition(DollarLoc, II, Body.get());
+  return Actions.ConvertDeclToDeclGroup(Def.get());
 }

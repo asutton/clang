@@ -8202,6 +8202,8 @@ public:
   ExprResult ActOnReflectionTrait(SourceLocation KWLoc, ReflectionTrait Trait,
                                   ArrayRef<Expr *> Args, 
                                   SourceLocation RParenLoc);
+  DeclResult ActOnMetaclassDefinition(SourceLocation DollarLoc, 
+                                      IdentifierInfo *II, Stmt* Body);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

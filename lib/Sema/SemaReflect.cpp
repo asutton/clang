@@ -842,15 +842,27 @@ ExprResult Reflector::ReflectNumMembers(Decl* D) {
 }
 
 // Reflects the selected member from the declaration.
-ExprResult Reflector::ReflectMember(Decl* D, const llvm::APSInt& N) {
+ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   if (D) {
-    if (TagDecl* TD = dyn_cast<TagDecl>(D))
+    if (TagDecl *TD = dyn_cast<TagDecl>(D))
       return GetMember(N, TD->decls_begin(), TD->decls_end());
-    if (NamespaceDecl* NS = RequireNamespace(*this, D))
+    if (NamespaceDecl *NS = RequireNamespace(*this, D))
       return GetMember(N, NS->decls_begin(), NS->decls_end());
   }
   S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_supported);
   return ExprError();
 }
 
+
+DeclResult
+Sema::ActOnMetaclassDefinition(SourceLocation DollarLoc, IdentifierInfo *II,
+                               Stmt *Body)
+{
+  assert(isa<CompoundStmt>(Body));
+
+  // TODO: Create an AST node for the metaclass and actually declare this.
+  Body->dump();
+
+  return DeclResult();
+}
 
