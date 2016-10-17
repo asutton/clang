@@ -8187,23 +8187,23 @@ public:
   // C++ Reflection [PIM]
   //
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Expr *E);
-  ExprResult ActOnCXXReflectExpr(SourceLocation Loc, TypeSourceInfo* TSI);
-  ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Declarator& D);
-  ExprResult ActOnCXXReflectExpr(SourceLocation Loc, CXXScopeSpec& SS, 
+  ExprResult ActOnCXXReflectExpr(SourceLocation Loc, TypeSourceInfo *TSI);
+  ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Declarator &D);
+  ExprResult ActOnCXXReflectExpr(SourceLocation Loc, CXXScopeSpec &SS,
                                  IdentifierInfo *II, SourceLocation IdLoc);
-  ExprResult BuildDeclReflection(SourceLocation Loc, Decl* D);
+  ExprResult BuildDeclReflection(SourceLocation Loc, Decl *D);
   ExprResult BuildTypeReflection(SourceLocation Loc, QualType T);
-  
-  NamespaceDecl* RequireCpp3kNamespace(SourceLocation Loc);
-  NamespaceDecl* RequireCpp3kMetaNamespace(SourceLocation Loc);
-  ClassTemplateDecl* RequireReflectionType(SourceLocation Loc, 
-                                           char const* Name);
+
+  NamespaceDecl *RequireCpp3kNamespace(SourceLocation Loc);
+  NamespaceDecl *RequireCpp3kMetaNamespace(SourceLocation Loc);
+  ClassTemplateDecl *RequireReflectionType(SourceLocation Loc,
+                                           char const *Name);
 
   ExprResult ActOnReflectionTrait(SourceLocation KWLoc, ReflectionTrait Trait,
-                                  ArrayRef<Expr *> Args, 
+                                  ArrayRef<Expr *> Args,
                                   SourceLocation RParenLoc);
-  DeclResult ActOnMetaclassDefinition(SourceLocation DollarLoc, 
-                                      IdentifierInfo *II, Stmt* Body);
+  DeclResult ActOnMetaclassDefinition(SourceLocation DollarLoc,
+                                      IdentifierInfo *II, Stmt *Body);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

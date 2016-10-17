@@ -4235,56 +4235,55 @@ public:
   }
 };
 
-// An expression denoting the reflection of a dependent name, type, or
-// expression. These are used only to preserve dependent expressions in
-// templates.
-//
+/// An expression denoting the reflection of a dependent name, type, or
+/// expression. These are used only to preserve dependent expressions in
+/// templates.
+///
 // TODO: The constructors currently assumes that the expression is type
-// dependent, but not value or instantiation dependent. I don't know if that's 
+// dependent, but not value or instantiation dependent. I don't know if that's
 // true.
 class ReflectionExpr : public Expr {
 protected:
-  llvm::PointerUnion<Expr*, TypeSourceInfo*> Operand;
+  llvm::PointerUnion<Expr *, TypeSourceInfo *> Operand;
   SourceLocation OpLoc;
 
 public:
-  ReflectionExpr(SourceLocation OpLoc, Expr* E, QualType T)
-     : Expr(ReflectionExprClass, T, VK_RValue, OK_Ordinary, 
-            true, // Type dependent
-            false, // Value dependent
-            false, // Instantiation dependent
-            false), // Unexpanded packs
-       Operand(E), OpLoc(OpLoc)
-  {}
+  ReflectionExpr(SourceLocation OpLoc, Expr *E, QualType T)
+      : Expr(ReflectionExprClass, T, VK_RValue, OK_Ordinary,
+             true,   // Type dependent
+             false,  // Value dependent
+             false,  // Instantiation dependent
+             false), // Unexpanded packs
+        Operand(E),
+        OpLoc(OpLoc) {}
 
-  ReflectionExpr(SourceLocation OpLoc, TypeSourceInfo* E, QualType T)
-     : Expr(ReflectionExprClass, T, VK_RValue, OK_Ordinary, 
-            true, // Type dependent
-            false, // Value dependent
-            false, // Instantiation dependent
-            false), // Unexpanded packs
-       Operand(E), OpLoc(OpLoc)
-  {}
+  ReflectionExpr(SourceLocation OpLoc, TypeSourceInfo *E, QualType T)
+      : Expr(ReflectionExprClass, T, VK_RValue, OK_Ordinary,
+             true,   // Type dependent
+             false,  // Value dependent
+             false,  // Instantiation dependent
+             false), // Unexpanded packs
+        Operand(E),
+        OpLoc(OpLoc) {}
 
-  ReflectionExpr(StmtClass SC, EmptyShell Empty)
-      : Expr(SC, Empty) {}
+  ReflectionExpr(StmtClass SC, EmptyShell Empty) : Expr(SC, Empty) {}
 
-  /// Returns true if the operand is a type.
-  bool hasTypeOperand() const { return Operand.is<TypeSourceInfo*>(); }
+  /// Returns \c true if the operand is a type.
+  bool hasTypeOperand() const { return Operand.is<TypeSourceInfo *>(); }
 
-  /// Returns true if the operand is an expression.
-  bool hasExpressionOperand() const { return Operand.is<Expr*>(); }
+  /// Returns \c true if the operand is an expression.
+  bool hasExpressionOperand() const { return Operand.is<Expr *>(); }
 
   /// Returns the type operand.
-  TypeSourceInfo* getTypeOperand() const { 
+  TypeSourceInfo *getTypeOperand() const {
     assert(hasTypeOperand() && "Does not reflect a type");
-    return Operand.get<TypeSourceInfo*>();
+    return Operand.get<TypeSourceInfo *>();
   }
 
   /// Returns the expression operand.
-  Expr* getExpressionOperand() const { 
+  Expr *getExpressionOperand() const {
     assert(hasExpressionOperand() && "Does not reflect an expression");
-    return Operand.get<Expr*>();
+    return Operand.get<Expr *>();
   }
 
   /// Returns the source code location of the trait keyword.
@@ -4294,34 +4293,33 @@ public:
   SourceLocation getLocStart() const { return OpLoc; }
   SourceLocation getLocEnd() const { return OpLoc; }
 
-  child_range children() { 
+  child_range children() {
     if (hasExpressionOperand()) {
-      Stmt **begin = reinterpret_cast<Stmt**>(&Operand);
+      Stmt **begin = reinterpret_cast<Stmt **>(&Operand);
       return child_range(begin, begin + 1);
     }
-    return child_range(child_iterator(), child_iterator()); 
+    return child_range(child_iterator(), child_iterator());
   }
 };
 
-// A reflection trait is a query of an AST node. All traits accept a sequence
-// of arguments (expressions), the first of which is the encoded value of
-// the AST node.
+/// A reflection trait is a query of an AST node. All traits accept a sequence
+/// of arguments (expressions), the first of which is the encoded value of
+/// the AST node.
 class ReflectionTraitExpr : public Expr {
 protected:
   ReflectionTrait Trait;
-  Expr** Args;
+  Expr **Args;
   unsigned NumArgs;
   APValue Value;
   SourceLocation TraitLoc;
-  SourceLocation RParenLoc;  
+  SourceLocation RParenLoc;
 
 public:
-  ReflectionTraitExpr(ASTContext& C, ReflectionTrait RT, QualType T, 
-                      ArrayRef<Expr*> Args, APValue const& Val,
+  ReflectionTraitExpr(ASTContext &C, ReflectionTrait RT, QualType T,
+                      ArrayRef<Expr *> Args, APValue const &Val,
                       SourceLocation TraitLoc, SourceLocation RParenLoc);
 
-  ReflectionTraitExpr(StmtClass SC, EmptyShell Empty)
-      : Expr(SC, Empty) {}
+  ReflectionTraitExpr(StmtClass SC, EmptyShell Empty) : Expr(SC, Empty) {}
 
   /// Returns the kind of reflection trait.
   ReflectionTrait getTrait() const { return Trait; }
@@ -4330,32 +4328,31 @@ public:
   unsigned getNumArgs() const { return NumArgs; }
 
   /// Returns the ith argument of the reflection trait.
-  Expr* getArg(unsigned I) const {
+  Expr *getArg(unsigned I) const {
     assert(I < NumArgs && "Argument out-of-range");
     return cast<Expr>(Args[I]);
   }
 
   /// Returns the operand representing the reflected entity.
-  Expr* getASTNode() const { return cast<Expr>(Args[0]); }
+  Expr *getASTNode() const { return cast<Expr>(Args[0]); }
 
   /// Returns the value of the reflection trait.
-  APValue const& getValue() const { return Value; }
+  APValue const &getValue() const { return Value; }
 
   /// Returns the source code location of the trait keyword.
   SourceLocation getTraitLoc() const { return TraitLoc; }
 
   /// Returns the source code location of the closing parenthesis.
-  SourceLocation getRParenLoc() const { return RParenLoc; }  
-  
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
   SourceLocation getLocStart() const { return TraitLoc; }
   SourceLocation getLocEnd() const { return RParenLoc; }
 
   child_range children() {
-    return child_range(reinterpret_cast<Stmt**>(&Args[0]), 
-                       reinterpret_cast<Stmt**>(&Args[0] + NumArgs));
+    return child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                       reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
   }
 };
-
-}  // end namespace clang
+} // end namespace clang
 
 #endif

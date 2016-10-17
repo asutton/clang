@@ -3236,4 +3236,3 @@ Parser::ParseCXXAmbiguousParenExpression(ParenParseOption &ExprType,
   ConsumeAnyToken();
   return Result;
 }
-

@@ -1419,36 +1419,32 @@ void ArrayTypeTraitExpr::anchor() { }
 //  Reflection Traits
 //===----------------------------------------------------------------------===//
 
-
-static bool AnyValueDependentExprs(ArrayRef<Expr*> Args) {
+static bool AnyValueDependentExprs(ArrayRef<Expr *> Args) {
   for (unsigned i = 0; i < Args.size(); ++i)
     if (Args[i]->isValueDependent())
       return true;
-  return false;  
+  return false;
 }
 
-ReflectionTraitExpr::ReflectionTraitExpr(ASTContext& C, ReflectionTrait RT, 
-                                         QualType T, ArrayRef<Expr*> InitArgs,
-                                         APValue const& Val, 
+ReflectionTraitExpr::ReflectionTraitExpr(ASTContext &C, ReflectionTrait RT,
+                                         QualType T, ArrayRef<Expr *> InitArgs,
+                                         APValue const &Val,
                                          SourceLocation KWLoc,
                                          SourceLocation RParenLoc)
-  : Expr(ReflectionTraitExprClass, T, VK_RValue, OK_Ordinary,
-        // A reflection trait is type dependent when its operand is
-        // value dependent.
+    : Expr(ReflectionTraitExprClass, T, VK_RValue, OK_Ordinary,
+           // A reflection trait is type dependent when its operand is
+           // value dependent.
            AnyValueDependentExprs(InitArgs),
-        // FIXME: When is this expression value dependent? When the node
-        // is a non-type argument?
+           // FIXME: When is this expression value dependent? When the node
+           // is a non-type argument?
            false,
-        // FIXME: When is this expression instantiation dependent? Almost
-        // certainly never.
+           // FIXME: When is this expression instantiation dependent? Almost
+           // certainly never.
            false,
-        // TODO: I don't think that any operands can have unexpanded
-        // parameter packs (there are only two operands).
+           // TODO: I don't think that any operands can have unexpanded
+           // parameter packs (there are only two operands).
            false),
-      Trait(RT),
-      NumArgs(InitArgs.size()),
-      Value(Val),
-      TraitLoc(KWLoc),
+      Trait(RT), NumArgs(InitArgs.size()), Value(Val), TraitLoc(KWLoc),
       RParenLoc(RParenLoc) {
   Args = new (C) Expr *[NumArgs];
   for (unsigned i = 0; i != NumArgs; ++i)

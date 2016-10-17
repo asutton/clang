@@ -690,11 +690,10 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 ///                   '__is_lvalue_expr'
 ///                   '__is_rvalue_expr'
 ///
-/// [PIM]   '$' id-expression 
+/// [PIM]   '$' id-expression
 ///         '$' type-id
 ///          reflection-trait
 /// \endverbatim
-///
 ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
                                        bool isAddressOfOperand,
                                        bool &NotCastExpr,

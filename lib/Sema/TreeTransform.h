@@ -1384,23 +1384,28 @@ public:
 
   // [PIM]
 
-  /// \brief Build a new reflection trait.
+  /// \brief Build a new reflection expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildReflectionExpr(SourceLocation OpLoc, Expr* E) {
+  ExprResult RebuildReflectionExpr(SourceLocation OpLoc, Expr *E) {
     return getSema().ActOnCXXReflectExpr(OpLoc, E);
   }
-  ExprResult RebuildReflectionExpr(SourceLocation OpLoc, TypeSourceInfo* TSI) {
-    return getSema().ActOnCXXReflectExpr(OpLoc, TSI);
-  }
-  
-  /// \brief Build a new reflection trait.
+
+  /// \brief Build a new reflection expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildReflectionTraitExpr(SourceLocation TraitLoc, 
-                                        ReflectionTrait Trait, 
+  ExprResult RebuildReflectionExpr(SourceLocation OpLoc, TypeSourceInfo *TSI) {
+    return getSema().ActOnCXXReflectExpr(OpLoc, TSI);
+  }
+
+  /// \brief Build a new reflection trait expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildReflectionTraitExpr(SourceLocation TraitLoc,
+                                        ReflectionTrait Trait,
                                         ArrayRef<Expr *> Args,
                                         SourceLocation RParenLoc) {
     return getSema().ActOnReflectionTrait(TraitLoc, Trait, Args, RParenLoc);
@@ -6900,9 +6905,9 @@ TreeTransform<Derived>::TransformCoyieldExpr(CoyieldExpr *E) {
 }
 
 // [PIM]
-template<typename Derived>
-ExprResult
-TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
+
+template <typename Derived>
+ExprResult TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
   if (E->hasExpressionOperand()) {
     ExprResult Expr = getDerived().TransformExpr(E->getExpressionOperand());
     if (Expr.isInvalid())
@@ -6916,11 +6921,10 @@ TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
   }
 }
 
-
-template<typename Derived>
+template <typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformReflectionTraitExpr(ReflectionTraitExpr *E) {
-  SmallVector<Expr*, 2> Args;
+  SmallVector<Expr *, 2> Args;
   Args.resize(E->getNumArgs());
   for (unsigned i = 0; i < E->getNumArgs(); ++i) {
     ExprResult Arg = getDerived().TransformExpr(E->getArg(i));
@@ -6931,12 +6935,9 @@ TreeTransform<Derived>::TransformReflectionTraitExpr(ReflectionTraitExpr *E) {
 
   // Always rebuild; we don't know if this needs to be injected into a new
   // context or if the promise type has changed.
-  return getDerived().RebuildReflectionTraitExpr(E->getTraitLoc(), 
-                                                 E->getTrait(),
-                                                 Args,
-                                                 E->getRParenLoc());
+  return getDerived().RebuildReflectionTraitExpr(
+      E->getTraitLoc(), E->getTrait(), Args, E->getRParenLoc());
 }
-
 
 // Objective-C Statements.
 

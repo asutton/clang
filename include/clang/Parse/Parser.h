@@ -205,9 +205,9 @@ class Parser : public CodeCompletionHandler {
 
   /// \brief When true, we are parsing the operand of a reflection. When
   /// parsing an expression operand, this will treat it as if it were the
-  /// operand of a unary '&' expression. Note that these can nest.
+  /// operand of an unary '&' expression. Note that these can nest.
   ///
-  /// TODO: Manage this with an RAII class.
+  // TODO: Manage this with an RAII class.
   int ReflectionExpressionDepth;
 
   /// The "depth" of the template parameters currently being parsed.
@@ -2546,7 +2546,7 @@ private:
 
   //===--------------------------------------------------------------------===//
   // C++ Reflection [PIM]
-  
+
   ExprResult ParseReflectExpression();
   ExprResult ParseReflectionTrait();
   DeclGroupPtrTy ParseMetaClassDefinition();

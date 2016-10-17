@@ -1,4 +1,4 @@
-//===--- ParseExprCXX.cpp - C++ Expression Parsing ------------------------===//
+//===--- ParseReflect.cpp - Reflection Parsing ----------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,11 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the Expression parsing implementation for C++.
+// This file implements parsing for C++ reflection.
 //
 //===----------------------------------------------------------------------===//
-#include "clang/AST/ASTContext.h"
+
 #include "RAIIObjectsForParser.h"
+#include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/Basic/PrettyStackTrace.h"
 #include "clang/Lex/LiteralSupport.h"
@@ -21,20 +22,20 @@
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Scope.h"
 #include "llvm/Support/ErrorHandling.h"
+
 using namespace clang;
 
-
-/// Parse a reflect expression.
+/// \brief Parse a reflect expression.
 ///
+/// \verbatim
 ///   primary-expression:
 ///     '$' id-expression
 ///     '$' type-id
 ///     '$' nested-name-specifier[opt] namespace-name
+/// \endverbatim
 ///
-/// TODO: Consider adding specifiers? $static? $private?
-ExprResult
-Parser::ParseReflectExpression()
-{
+// TODO: Consider adding specifiers? $static? $private?
+ExprResult Parser::ParseReflectExpression() {
   assert(Tok.is(tok::dollar));
   SourceLocation OpLoc = ConsumeToken();
 
@@ -49,7 +50,7 @@ Parser::ParseReflectExpression()
   // of id-expressions and type-ids that must be handled separately.
   if (!SS.isInvalid() && Tok.is(tok::identifier)) {
     SourceLocation IdLoc = Tok.getLocation();
-    IdentifierInfo* II = Tok.getIdentifierInfo();
+    IdentifierInfo *II = Tok.getIdentifierInfo();
     ExprResult Expr = Actions.ActOnCXXReflectExpr(OpLoc, SS, II, IdLoc);
     if (!Expr.isInvalid()) {
       ConsumeToken();
@@ -74,41 +75,44 @@ Parser::ParseReflectExpression()
   return ExprError();
 }
 
-
 static ReflectionTrait ReflectionTraitKind(tok::TokenKind kind) {
   switch (kind) {
-    default: llvm_unreachable("Not a known type trait");
-#define REFLECTION_TRAIT_1(Spelling,K) \
-    case tok::kw_##Spelling: return URT_##K;
-#define REFLECTION_TRAIT_2(Spelling,K) \
-    case tok::kw_##Spelling: return BRT_##K;
+  default:
+    llvm_unreachable("Not a known type trait");
+#define REFLECTION_TRAIT_1(Spelling, K)                                        \
+  case tok::kw_##Spelling:                                                     \
+    return URT_##K;
+#define REFLECTION_TRAIT_2(Spelling, K)                                        \
+  case tok::kw_##Spelling:                                                     \
+    return BRT_##K;
 #include "clang/Basic/TokenKinds.def"
   }
 }
 
 static unsigned ReflectionTraitArity(tok::TokenKind kind) {
   switch (kind) {
-    default: llvm_unreachable("Not a known type trait");
-#define REFLECTION_TRAIT(N,Spelling,K) \
-    case tok::kw_##Spelling: return N;
+  default:
+    llvm_unreachable("Not a known type trait");
+#define REFLECTION_TRAIT(N, Spelling, K)                                       \
+  case tok::kw_##Spelling:                                                     \
+    return N;
 #include "clang/Basic/TokenKinds.def"
   }
 }
 
-
-/// Parse a reflection trait.
+/// \brief Parse a reflection trait.
 ///
-///       primary-expression:
-///          reflection-trait '(' expression-list ')'
+/// \verbatim
+///   primary-expression:
+///     reflection-trait '(' expression-list ')'
 ///
-///       reflection-trait: one of
-///          ...
-ExprResult
-Parser::ParseReflectionTrait()
-{
+///   reflection-trait: one of
+///     ...
+/// \endverbatim
+ExprResult Parser::ParseReflectionTrait() {
   tok::TokenKind Kind = Tok.getKind();
   SourceLocation Loc = ConsumeToken();
-  
+
   // Parse any number of arguments in parens.
   BalancedDelimiterTracker Parens(*this, tok::l_paren);
   if (Parens.expectAndConsume())
@@ -130,12 +134,10 @@ Parser::ParseReflectionTrait()
   unsigned Arity = ReflectionTraitArity(Kind);
   if (Args.size() != Arity) {
     Diag(EndLoc, diag::err_type_trait_arity)
-      << Arity << 0 << (Arity > 1) << (int)Args.size() << SourceRange(Loc);
+        << Arity << 0 << (Arity > 1) << (int)Args.size() << SourceRange(Loc);
     return ExprError();
   }
 
   ReflectionTrait Trait = ReflectionTraitKind(Kind);
   return Actions.ActOnReflectionTrait(Loc, Trait, Args, EndLoc);
 }
-
-

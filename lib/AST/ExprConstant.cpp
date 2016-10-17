@@ -10490,8 +10490,8 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::ChooseExprClass: {
     return CheckICE(cast<ChooseExpr>(E)->getChosenSubExpr(), Ctx);
   }
-  case Expr::ReflectionExprClass: 
-  case Expr::ReflectionTraitExprClass: 
+  case Expr::ReflectionExprClass:
+  case Expr::ReflectionTraitExprClass:
     llvm_unreachable("not implemented");
   }
 
