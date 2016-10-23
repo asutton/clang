@@ -541,6 +541,13 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::MSDependentExistsStmtClass:
     K = CXCursor_UnexposedStmt;
     break;
+
+  // TODO: Add new CXCursorKind for reflection expressions?
+  case Stmt::ReflectionExprClass:
+  case Stmt::ReflectionTraitExprClass:
+    K = CXCursor_UnexposedExpr;
+    break;
+
   case Stmt::OMPParallelDirectiveClass:
     K = CXCursor_OMPParallelDirective;
     break;
