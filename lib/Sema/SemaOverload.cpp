@@ -12839,33 +12839,6 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
                          MemExpr->getMemberLoc());
   }
 
-  // [PIM] If the resolved function is eager (and we're not already in an
-  // eager context), then try to evaluate it. The actual value is recomputed 
-  // as needed during constexpr evaluation or code gen.
-  //
-  // TODO: Cache the value for eager functions and simply regurgitate
-  // that during code-gen and evaluation?
-  //
-  // FIXME: This only applies to member declarations. Clearly, we want this
-  // to apply to all functions. Maybe we should handle this in the
-  // MaybeBindToTemporary function. Or not, it depends whether all resolution
-  // algorithms funnel through that function (they should?).
-  if (TheCall->getMethodDecl()->isEager()) {
-    FunctionDecl* Fn = getCurFunctionDecl();
-    if (Fn && !Fn->isEager()) {
-      Expr::EvalResult R;
-      SmallVector<PartialDiagnosticAt, 8> Notes;
-      R.Diag = &Notes;
-      if (!TheCall->EvaluateAsRValue(R, Context)) {
-        Diag(TheCall->getLocStart(), diag::err_expr_not_cce) 
-            << 1 << TheCall->getSourceRange();
-        for (const PartialDiagnosticAt &Note : Notes)
-          Diag(Note.first, Note.second);
-        return ExprResult();
-      }
-    }  
-  }
-
   return MaybeBindToTemporary(TheCall);
 }
 

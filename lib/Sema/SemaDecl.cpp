@@ -7966,7 +7966,6 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     bool isVirtual = D.getDeclSpec().isVirtualSpecified();
     bool isExplicit = D.getDeclSpec().isExplicitSpecified();
     bool isConstexpr = D.getDeclSpec().isConstexprSpecified();
-    bool isEager = D.getDeclSpec().isEagerSpecified();
     bool isConcept = D.getDeclSpec().isConceptSpecified();
     isFriend = D.getDeclSpec().isFriendSpecified();
     if (isFriend && !isInline && D.isFunctionDefinition()) {
@@ -8167,26 +8166,16 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       }
     }
 
-    if (isConstexpr || isEager) {
+    if (isConstexpr) {
       // C++11 [dcl.constexpr]p2: constexpr functions and constexpr constructors
       // are implicitly inline.
       NewFD->setImplicitlyInline();
 
-      // An eager function is implicitly constexpr.
-      if (isEager) {
-        if (!isConstexpr)
-          NewFD->setConstexpr(true);
-        NewFD->setEager(true);
-      }
-
       // C++11 [dcl.constexpr]p3: functions declared constexpr are required to
       // be either constructors or to return a literal type. Therefore,
       // destructors cannot be declared constexpr.
-      SourceLocation Loc = isEager ? 
-          D.getDeclSpec().getEagerSpecLoc() : 
-          D.getDeclSpec().getConstexprSpecLoc();
       if (isa<CXXDestructorDecl>(NewFD))
-        Diag(Loc, diag::err_constexpr_dtor);
+        Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_constexpr_dtor);
     }
 
     if (isConcept) {

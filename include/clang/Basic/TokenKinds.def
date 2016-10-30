@@ -504,10 +504,9 @@ TYPE_TRAIT_2(__is_convertible, IsConvertible, KEYCXX)
 KEYWORD(__array_rank                , KEYCXX)
 KEYWORD(__array_extent              , KEYCXX)
 
-// [PIM] Extensions for Reflection
+// [cpp3k] Extensions for Reflection
 //
 // TODO: Put these in a KEYREFLECTION category.
-KEYWORD(__eager                     , KEYCXX)
 REFLECTION_TRAIT_1(__reflect_name, ReflectName)
 REFLECTION_TRAIT_1(__reflect_qualified_name, ReflectQualifiedName)
 REFLECTION_TRAIT_1(__reflect_type, ReflectType)
