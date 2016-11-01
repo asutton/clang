@@ -113,19 +113,16 @@ namespace clang {
     // Value and function declaration properties.
     URT_ReflectType,
     URT_ReflectStorage,
-    URT_ReflectPointer,
+    URT_ReflectPointer, // For stored values
+    URT_ReflectValue,   // For named values
     
     // Function declarations.
     URT_ReflectNumParameters,
     BRT_ReflectParameter,
 
-    // Type declarations.
+    // Scope members.
     URT_ReflectNumMembers,
     BRT_ReflectMember,
-    URT_ReflectNumObjects,
-    BRT_ReflectObject,
-    URT_ReflectNumFunctions,
-    BRT_ReflectFunction,
   };
 }
 

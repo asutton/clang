@@ -394,6 +394,7 @@ struct Reflector {
   ExprResult ReflectFunctionStorage(FunctionDecl *D);
   ExprResult ReflectStorage(Decl *D);
   ExprResult ReflectPointer(Decl *D);
+  ExprResult ReflectValue(Decl *D);
   ExprResult ReflectType(Decl *D);
 
   ExprResult ReflectNumParameters(Decl *D);
@@ -491,6 +492,9 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
 
   case URT_ReflectPointer:
     return ReflectPointer(D);
+
+  case URT_ReflectValue:
+    return ReflectValue(D);
 
   case URT_ReflectType:
     return ReflectType(D);
@@ -700,6 +704,23 @@ ExprResult Reflector::ReflectPointer(Decl *D) {
   Expr *Op = new (S.Context)
       UnaryOperator(Ref, UO_AddrOf, Ty, VK_RValue, OK_Ordinary, KWLoc);
   return Op;
+}
+
+// Reflects the value of an enumerator.
+//
+// TODO: Consider allowing this for instantiated non-type template arguments
+// as well.
+ExprResult Reflector::ReflectValue(Decl *D) {
+  if (!isa<EnumConstantDecl>(D)) {
+    S.Diag(KWLoc, diag::err_reflection_not_supported);
+    return ExprError();
+  }
+  EnumConstantDecl *Enum = cast<EnumConstantDecl>(D);
+  QualType Ty = Enum->getType();
+  DeclRefExpr *Ref = 
+    new (S.Context) DeclRefExpr(Enum, false, Ty, VK_RValue, KWLoc);
+  S.MarkDeclRefReferenced(Ref);
+  return Ref;
 }
 
 // Reflects the storage class of the function declaration D.
