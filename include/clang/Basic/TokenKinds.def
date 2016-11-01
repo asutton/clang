@@ -519,10 +519,6 @@ REFLECTION_TRAIT_1(__reflect_declaration_context, ReflectDeclarationContext)
 REFLECTION_TRAIT_1(__reflect_lexical_context, ReflectLexicalContext)
 REFLECTION_TRAIT_1(__reflect_num_members, ReflectNumMembers)
 REFLECTION_TRAIT_2(__reflect_member, ReflectMember)
-REFLECTION_TRAIT_1(__reflect_num_objects, ReflectNumObjects)
-REFLECTION_TRAIT_2(__reflect_object, ReflectObject)
-REFLECTION_TRAIT_1(__reflect_num_functions, ReflectNumFunctions)
-REFLECTION_TRAIT_2(__reflect_function, ReflectFunction)
 
 // Apple Extension.
 KEYWORD(__private_extern__          , KEYALL)
