@@ -842,6 +842,11 @@ Decl *TemplateDeclInstantiator::VisitMSPropertyDecl(MSPropertyDecl *D) {
   return Property;
 }
 
+Decl *TemplateDeclInstantiator::VisitMetaclassDecl(MetaclassDecl *D) {
+  // FIXME: I'm pretty sure that a metaclass can be a template. 
+  return D;
+}
+
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   NamedDecl **NamedChain =
     new (SemaRef.Context)NamedDecl*[D->getChainingSize()];

@@ -3595,6 +3595,52 @@ public:
   friend class ASTDeclReader;
 };
 
+/// \brief Represents a metaclass definition.
+///
+/// For example:
+/// \code
+///    $class Ifoo { ... };
+/// \endcode
+class MetaclassDecl : public NamedDecl {
+  void anchor() override;
+  
+  /// \brief The location of the \c '$' operator
+  SourceLocation DollarLoc;
+
+  /// \brief The location of the identifier.
+  SourceLocation IdentLoc;
+
+  MetaclassDecl(DeclContext *DC, SourceLocation DL,
+                     const DeclarationNameInfo &NameInfo)
+    : NamedDecl(Metaclass, DC, NameInfo.getLoc(), NameInfo.getName()),
+      DollarLoc(DL), IdentLoc(NameInfo.getLoc()) { }
+
+public:
+  /// \brief Returns the location of the '$' keyword.
+  SourceLocation getDollarLocation() const { return DollarLoc; }
+
+  /// \brief Returns the location of the '$' keyword.
+  SourceLocation geIdentLocation() const { return IdentLoc; }
+
+
+  static MetaclassDecl *Create(ASTContext &C, DeclContext *DC,
+                               SourceLocation DL, 
+                               const DeclarationNameInfo& NameInfo);
+  static MetaclassDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  SourceRange getSourceRange() const override LLVM_READONLY {
+    return SourceRange(DollarLoc, IdentLoc);
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == Metaclass; }
+
+  // Friend for getUsingDirectiveName.
+  friend class DeclContext;
+
+  friend class ASTDeclReader;
+};
+
 /// An instance of this class represents the declaration of a property
 /// member.  This is a Microsoft extension to C++, first introduced in
 /// Visual Studio .NET 2003 as a parallel to similar features in C#

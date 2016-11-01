@@ -2455,3 +2455,16 @@ const PartialDiagnostic &clang::operator<<(const PartialDiagnostic &DB,
                                            AccessSpecifier AS) {
   return DB << getAccessName(AS);
 }
+
+MetaclassDecl *MetaclassDecl::Create(ASTContext &C, DeclContext *DC,
+                                     SourceLocation DL, 
+                                     const DeclarationNameInfo& NameInfo) {
+  return new (C, DC) MetaclassDecl(DC, DL, NameInfo);
+}
+
+MetaclassDecl *MetaclassDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  return new (C, ID) MetaclassDecl(nullptr, SourceLocation(), 
+                                   DeclarationNameInfo());
+}
+
+void MetaclassDecl::anchor() { }
