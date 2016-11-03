@@ -6917,7 +6917,7 @@ ExprResult TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
     TypeSourceInfo *TSI = getDerived().TransformType(E->getTypeOperand());
     if (!TSI)
       return ExprError();
-    return RebuildReflectionExpr(E->getOperatorLoc(), TSI);
+    return getDerived().RebuildReflectionExpr(E->getOperatorLoc(), TSI);
   }
 }
 
@@ -6926,6 +6926,7 @@ ExprResult
 TreeTransform<Derived>::TransformReflectionTraitExpr(ReflectionTraitExpr *E) {
   SmallVector<Expr *, 2> Args;
   Args.resize(E->getNumArgs());
+
   for (unsigned i = 0; i < E->getNumArgs(); ++i) {
     ExprResult Arg = getDerived().TransformExpr(E->getArg(i));
     if (Arg.isInvalid())
@@ -6933,8 +6934,6 @@ TreeTransform<Derived>::TransformReflectionTraitExpr(ReflectionTraitExpr *E) {
     Args[i] = Arg.get();
   }
 
-  // Always rebuild; we don't know if this needs to be injected into a new
-  // context or if the promise type has changed.
   return getDerived().RebuildReflectionTraitExpr(
       E->getTraitLoc(), E->getTrait(), Args, E->getRParenLoc());
 }
