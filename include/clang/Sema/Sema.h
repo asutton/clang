@@ -8186,6 +8186,14 @@ public:
   //===--------------------------------------------------------------------===//
   // C++ Reflection [Cpp3K]
   //
+
+  // __compiler_error("...")
+  ExprResult ActOnCompilerErrorExpr(Expr *Message, SourceLocation BuiltinLoc,
+                                    SourceLocation RParenLoc);
+  ExprResult BuildCompilerErrorExpr(StringLiteral *Message,
+                                    SourceLocation BuiltinLoc,
+                                    SourceLocation RParenLoc);
+
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Expr *E);
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, TypeSourceInfo *TSI);
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Declarator &D);

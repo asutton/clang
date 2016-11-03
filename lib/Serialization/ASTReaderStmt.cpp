@@ -386,14 +386,6 @@ void ASTStmtReader::VisitCoyieldExpr(CoyieldExpr *S) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtReader::VisitReflectionExpr(ReflectionExpr *E) {
-  llvm_unreachable("unimplemented");
-}
-
-void ASTStmtReader::VisitReflectionTraitExpr(ReflectionTraitExpr *E) {
-  llvm_unreachable("unimplemented");
-}
-
 void ASTStmtReader::VisitCapturedStmt(CapturedStmt *S) {
   VisitStmt(S);
   Record.skipInts(1);
@@ -944,6 +936,21 @@ void ASTStmtReader::VisitAtomicExpr(AtomicExpr *E) {
     E->SubExprs[I] = Record.readSubExpr();
   E->BuiltinLoc = ReadSourceLocation();
   E->RParenLoc = ReadSourceLocation();
+}
+
+void ASTStmtReader::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
+  VisitExpr(E);
+  E->setMessage(cast_or_null<StringLiteral>(Record.readSubExpr()));
+  E->setBuiltinLoc(ReadSourceLocation());
+  E->setRParenLoc(ReadSourceLocation());
+}
+
+void ASTStmtReader::VisitReflectionExpr(ReflectionExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
+void ASTStmtReader::VisitReflectionTraitExpr(ReflectionTraitExpr *E) {
+  llvm_unreachable("unimplemented");
 }
 
 //===----------------------------------------------------------------------===//
@@ -3902,6 +3909,10 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       S = LambdaExpr::CreateDeserialized(Context, NumCaptures);
       break;
     }
+
+    case EXPR_COMPILER_ERROR:
+      S = CompilerErrorExpr::CreateEmpty(Context, Empty);
+      break;
     }
 
     // We hit a STMT_STOP, so we're done with this expression.

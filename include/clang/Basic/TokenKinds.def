@@ -507,6 +507,7 @@ KEYWORD(__array_extent              , KEYCXX)
 // [cpp3k] Extensions for Reflection
 //
 // TODO: Put these in a KEYREFLECTION category.
+KEYWORD(__compiler_error            , KEYALL)
 REFLECTION_TRAIT_1(__reflect_name, ReflectName)
 REFLECTION_TRAIT_1(__reflect_qualified_name, ReflectQualifiedName)
 REFLECTION_TRAIT_1(__reflect_type, ReflectType)

@@ -1603,6 +1603,10 @@ void StmtProfiler::VisitCoyieldExpr(const CoyieldExpr *S) {
   VisitExpr(S);
 }
 
+void StmtProfiler::VisitCompilerErrorExpr(const CompilerErrorExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitReflectionExpr(const ReflectionExpr *E) {
   VisitExpr(E);
 }

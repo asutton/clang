@@ -690,7 +690,9 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 ///                   '__is_lvalue_expr'
 ///                   '__is_rvalue_expr'
 ///
-/// [PIM]   '$' id-expression
+/// [PIM] primary-expression:
+///         '__compiler_error' '(' string-literal ')'
+///         '$' id-expression
 ///         '$' type-id
 ///         '$' nested-name-specifier[opt] namespace-name
 ///         reflection-trait
@@ -1336,6 +1338,11 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
                                          Result.get(), T.getCloseLocation());
     return Result;
   }
+
+  // [PIM] primary-expression: '__compiler_error' '(' string-literal ')'
+  case tok::kw___compiler_error:
+    Res = ParseCompilerErrorExpression();
+    break;
 
   case tok::dollar:  // [PIM] '$' [id-expression | type-name | namespace-name]
     Res = ParseReflectExpression();
@@ -3024,4 +3031,35 @@ ExprResult Parser::ParseAvailabilityCheckExpr(SourceLocation BeginLoc) {
 
   return Actions.ActOnObjCAvailabilityCheckExpr(AvailSpecs, BeginLoc,
                                                 Parens.getCloseLocation());
+}
+
+ExprResult Parser::ParseCompilerErrorExpression() {
+  assert(Tok.is(tok::kw___compiler_error) && "Not '__compiler_error'");
+
+  SourceLocation BuiltinLoc = ConsumeToken();
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "__compiler_error"))
+    return ExprError();
+
+  ExprResult MessageExpr;
+
+  if (!isTokenStringLiteral()) {
+    Diag(Tok, diag::err_expected_string_literal) << /*Source='in...'*/ 0
+                                                 << "'__compiler_error'";
+    return ExprError();
+  }
+
+  MessageExpr = ParseStringLiteralExpression();
+
+  if (MessageExpr.isInvalid()) {
+    SkipUntil(tok::r_paren, StopAtSemi);
+    return ExprError();
+  }
+
+  if (T.consumeClose())
+    return ExprError();
+
+  return Actions.ActOnCompilerErrorExpr(MessageExpr.get(), BuiltinLoc,
+                                        T.getCloseLocation());
 }

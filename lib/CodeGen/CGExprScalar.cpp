@@ -267,6 +267,12 @@ public:
     return CGF.getOpaqueRValueMapping(E).getScalarVal();
   }
 
+  Value *VisitCompilerErrorExpr(CompilerErrorExpr *E) {
+    // Technically, a __compiler_error expression that is evaluated at run-time
+    // is undefined behavior.
+    return CGF.EmitTrapCall(llvm::Intrinsic::trap);
+  }
+
   // l-values.
   Value *VisitDeclRefExpr(DeclRefExpr *E) {
     if (CodeGenFunction::ConstantEmission result = CGF.tryEmitAsConstant(E)) {

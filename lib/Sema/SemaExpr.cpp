@@ -15453,3 +15453,29 @@ ExprResult Sema::ActOnObjCAvailabilityCheckExpr(
   return new (Context)
       ObjCAvailabilityCheckExpr(Version, AtLoc, RParen, Context.BoolTy);
 }
+
+/// Handle a call to \c __compiler_error.
+ExprResult Sema::ActOnCompilerErrorExpr(Expr *Message,
+                                        SourceLocation BuiltinLoc,
+                                        SourceLocation RParenLoc) {
+  StringLiteral *MessageLiteral = cast_or_null<StringLiteral>(Message);
+  return BuildCompilerErrorExpr(MessageLiteral, BuiltinLoc, RParenLoc);
+}
+
+/// Build a \c __compiler_error expression.
+ExprResult Sema::BuildCompilerErrorExpr(StringLiteral *Message,
+                                        SourceLocation BuiltinLoc,
+                                        SourceLocation RParenLoc) {
+  assert(Message != nullptr);
+
+  if (!CurContext->isDependentContext() && isEvaluatableContext(*this)) {
+    // Emit a diagnostic that contains the message.
+    SmallString<256> MsgBuffer;
+    llvm::raw_svector_ostream Msg(MsgBuffer);
+    Message->printPretty(Msg, nullptr, getPrintingPolicy());
+    Diag(BuiltinLoc, diag::err_compiler_error) << Msg.str();
+  }
+
+  return CompilerErrorExpr::Create(Context, Context.VoidTy, Message, BuiltinLoc,
+                                   RParenLoc);
+}

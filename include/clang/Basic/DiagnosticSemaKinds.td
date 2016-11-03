@@ -8832,6 +8832,10 @@ def err_coroutine_promise_return_ill_formed : Error<
   "%0 declares both 'return_value' and 'return_void'">;
 }
 
+let CategoryName = "User-Defined Issue" in {
+def err_compiler_error : Error<"%0">;
+}
+
 // [PIM] Reflection
 let CategoryName = "Reflection Issue" in {
 def err_not_implemented : Error<

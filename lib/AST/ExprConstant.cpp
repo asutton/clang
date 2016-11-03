@@ -9760,6 +9760,11 @@ public:
       return true;
     }
   }
+
+  bool VisitCompilerErrorExpr(const CompilerErrorExpr *E) {
+    // Allow the use of __compiler_error within constant expressions.
+    return true;
+  }
 };
 } // end anonymous namespace
 
@@ -10199,6 +10204,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CXXFoldExprClass:
   case Expr::CoawaitExprClass:
   case Expr::CoyieldExprClass:
+  case Expr::CompilerErrorExprClass:
     return ICEDiag(IK_NotICE, E->getLocStart());
 
   case Expr::InitListExprClass: {

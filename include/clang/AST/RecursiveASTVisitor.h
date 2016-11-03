@@ -2528,6 +2528,7 @@ DEF_TRAVERSE_STMT(CoyieldExpr, {
 })
 
 // [PIM] Reflection traits
+DEF_TRAVERSE_STMT(CompilerErrorExpr, {})
 DEF_TRAVERSE_STMT(ReflectionExpr, {
   // If this is a type, traverse that. Note that expression operands
   // are handled by the child visitor.
