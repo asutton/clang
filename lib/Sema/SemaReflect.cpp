@@ -11,27 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "TreeTransform.h"
-#include "TypeLocBuilder.h"
-#include "clang/AST/ASTContext.h"
 #include "clang/AST/ExprCXX.h"
-#include "clang/AST/RecursiveASTVisitor.h"
-#include "clang/AST/TypeLoc.h"
-#include "clang/Basic/PartialDiagnostic.h"
-#include "clang/Basic/TargetInfo.h"
 #include "clang/Lex/Preprocessor.h"
-#include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/Initialization.h"
-#include "clang/Sema/Lookup.h"
-#include "clang/Sema/ParsedTemplate.h"
-#include "clang/Sema/Scope.h"
-#include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaInternal.h"
-#include "clang/Sema/Template.h"
-#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/PointerSumType.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/Support/ErrorHandling.h"
 
 using namespace clang;
 using namespace sema;
@@ -239,8 +223,7 @@ static char const *GetReflectionClass(QualType T) {
   case Type::Record:
     if (T->isUnionType())
       return "union_type";
-    else
-      return "class_type";
+    return "class_type";
   case Type::Enum:
     return "enum_type";
   default:
