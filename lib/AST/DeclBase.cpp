@@ -730,6 +730,10 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case Empty:
       // Never looked up by name.
       return 0;
+
+    case Metaclass:
+      // Metaclasses probably aren't found by normal lookup.
+      return 0;
   }
 
   llvm_unreachable("Invalid DeclKind!");

@@ -3610,10 +3610,13 @@ class MetaclassDecl : public NamedDecl {
   /// \brief The location of the identifier.
   SourceLocation IdentLoc;
 
+  /// \brief The body of the metaclass definition.
+  Stmt* Body;
+
   MetaclassDecl(DeclContext *DC, SourceLocation DL,
-                     const DeclarationNameInfo &NameInfo)
-    : NamedDecl(Metaclass, DC, NameInfo.getLoc(), NameInfo.getName()),
-      DollarLoc(DL), IdentLoc(NameInfo.getLoc()) { }
+                const DeclarationNameInfo &NI, Stmt *B)
+    : NamedDecl(Metaclass, DC, NI.getLoc(), NI.getName()),
+      DollarLoc(DL), IdentLoc(NI.getLoc()), Body(B) { }
 
 public:
   /// \brief Returns the location of the '$' keyword.
@@ -3622,10 +3625,12 @@ public:
   /// \brief Returns the location of the '$' keyword.
   SourceLocation geIdentLocation() const { return IdentLoc; }
 
+  /// \brief Returns the boy of the metaclass definition.
+  Stmt *getBody() const override { return Body; }
 
   static MetaclassDecl *Create(ASTContext &C, DeclContext *DC,
                                SourceLocation DL, 
-                               const DeclarationNameInfo& NameInfo);
+                               const DeclarationNameInfo &NI, Stmt *B);
   static MetaclassDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   SourceRange getSourceRange() const override LLVM_READONLY {

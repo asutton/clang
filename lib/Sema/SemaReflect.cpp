@@ -1135,8 +1135,7 @@ DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DollarLoc,
                                           IdentifierInfo *II, Stmt *Body) {
   assert(isa<CompoundStmt>(Body));
 
-  // TODO: Create an AST node for the metaclass and actually declare this.
-  Body->dump();
+  // MetaclassDecl* D = MetaclassDecl::Create(Context, )
 
   return DeclResult();
 }
