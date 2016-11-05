@@ -1131,11 +1131,43 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   return ExprError();
 }
 
-DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DollarLoc,
+DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DL, SourceLocation IL,
                                           IdentifierInfo *II, Stmt *Body) {
   assert(isa<CompoundStmt>(Body));
+  assert(II);
 
-  // MetaclassDecl* D = MetaclassDecl::Create(Context, )
+  // Make sure that this definition doesn't conflict with existing tag 
+  // definitions.
+  //
+  // TODO: Should this be valid?
+  //
+  //    int x;
+  //    $class x { }
+  //
+  // I think that pinning $class x to a tag name means that the variable 
+  // declaration will effectively hide $class x. We'd have to add $class to
+  // the elaborated-type-specifier grammar.
+  //
+  // This is probably fine for now.
+  LookupResult R(*this, II, IL, LookupAnyName, ForRedeclaration);
+  LookupName(R, CurScope);
+  if (!R.empty()) {
+    if (MetaclassDecl* D = R.getAsSingle<MetaclassDecl>()) {
+      Diag(IL, diag::err_redefinition) << II;
+      Diag(D->getLocation(), diag::note_previous_definition);
+    }
+    else {
+      Diag(IL, diag::err_redefinition_different_kind) << II;
+      if (Decl *D = R.getAsSingle<Decl>())
+        Diag(D->getLocation(), diag::note_previous_definition);
+    }
+    return DeclResult();
+  }
 
-  return DeclResult();
+  MetaclassDecl* D = 
+    MetaclassDecl::Create(Context, CurContext, DL, IL, II, Body);
+  CurScope->AddDecl(D);
+  IdResolver.AddDecl(D);
+
+  return D;
 }

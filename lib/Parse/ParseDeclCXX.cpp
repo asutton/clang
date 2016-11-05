@@ -4234,14 +4234,14 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
   // We should have matched the `$class` identifier in
   // ParseExternalDeclaration.
   assert(Tok.is(tok::dollar));
-  SourceLocation DollarLoc = ConsumeToken();
+  SourceLocation DL = ConsumeToken();
   assert(Tok.is(tok::kw_class));
   ConsumeToken();
   assert(Tok.is(tok::identifier));
 
   // Save the identifier and source location.
   IdentifierInfo *II = Tok.getIdentifierInfo();
-  ConsumeToken();
+  SourceLocation IL = ConsumeToken();
   
   // Parse the body of the metaclass.
   if (Tok.isNot(tok::l_brace)) {
@@ -4249,6 +4249,6 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
     return nullptr;
   }
   StmtResult Body = ParseCompoundStatement(/*isStmtExpr*/false);
-  DeclResult Def = Actions.ActOnMetaclassDefinition(DollarLoc, II, Body.get());
+  DeclResult Def = Actions.ActOnMetaclassDefinition(DL, IL, II, Body.get());
   return Actions.ConvertDeclToDeclGroup(Def.get());
 }

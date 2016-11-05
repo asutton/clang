@@ -682,6 +682,11 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case Enum:
       return IDNS_Tag | IDNS_Type;
 
+    case Metaclass:
+      // FIXME: This is probably wrong. I wonder if we need a new kind
+      // of IDNS for metaclasses.
+      return IDNS_Tag | IDNS_Type;
+
     case Namespace:
     case NamespaceAlias:
       return IDNS_Namespace;
@@ -729,10 +734,6 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case OMPCapturedExpr:
     case Empty:
       // Never looked up by name.
-      return 0;
-
-    case Metaclass:
-      // Metaclasses probably aren't found by normal lookup.
       return 0;
   }
 

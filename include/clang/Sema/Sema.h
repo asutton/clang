@@ -8202,7 +8202,7 @@ public:
   ExprResult ActOnReflectionTrait(SourceLocation KWLoc, ReflectionTrait Trait,
                                   ArrayRef<Expr *> Args,
                                   SourceLocation RParenLoc);
-  DeclResult ActOnMetaclassDefinition(SourceLocation DollarLoc,
+  DeclResult ActOnMetaclassDefinition(SourceLocation DL, SourceLocation IL, 
                                       IdentifierInfo *II, Stmt *Body);
 
   //===--------------------------------------------------------------------===//

@@ -3607,34 +3607,28 @@ class MetaclassDecl : public NamedDecl {
   /// \brief The location of the \c '$' operator
   SourceLocation DollarLoc;
 
-  /// \brief The location of the identifier.
-  SourceLocation IdentLoc;
-
   /// \brief The body of the metaclass definition.
   Stmt* Body;
 
-  MetaclassDecl(DeclContext *DC, SourceLocation DL,
-                const DeclarationNameInfo &NI, Stmt *B)
-    : NamedDecl(Metaclass, DC, NI.getLoc(), NI.getName()),
-      DollarLoc(DL), IdentLoc(NI.getLoc()), Body(B) { }
+  MetaclassDecl(DeclContext *DC, SourceLocation DL, SourceLocation IL, 
+                IdentifierInfo *II, Stmt *B)
+    : NamedDecl(Metaclass, DC, IL, II),
+      DollarLoc(DL), Body(B) { }
 
 public:
   /// \brief Returns the location of the '$' keyword.
   SourceLocation getDollarLocation() const { return DollarLoc; }
 
-  /// \brief Returns the location of the '$' keyword.
-  SourceLocation geIdentLocation() const { return IdentLoc; }
-
   /// \brief Returns the boy of the metaclass definition.
   Stmt *getBody() const override { return Body; }
 
   static MetaclassDecl *Create(ASTContext &C, DeclContext *DC,
-                               SourceLocation DL, 
-                               const DeclarationNameInfo &NI, Stmt *B);
+                               SourceLocation DL, SourceLocation IL, 
+                               IdentifierInfo *II, Stmt *B);
   static MetaclassDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   SourceRange getSourceRange() const override LLVM_READONLY {
-    return SourceRange(DollarLoc, IdentLoc);
+    return SourceRange(DollarLoc, getLocation());
   }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }

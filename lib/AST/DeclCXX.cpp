@@ -2432,6 +2432,19 @@ MSPropertyDecl *MSPropertyDecl::CreateDeserialized(ASTContext &C,
                                     SourceLocation(), nullptr, nullptr);
 }
 
+MetaclassDecl *MetaclassDecl::Create(ASTContext &C, DeclContext *DC,
+                                     SourceLocation DL, SourceLocation IL,
+                                     IdentifierInfo *II, Stmt *B) {
+  return new (C, DC) MetaclassDecl(DC, DL, IL, II, B);
+}
+
+MetaclassDecl *MetaclassDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  return new (C, ID) MetaclassDecl(nullptr, SourceLocation(), SourceLocation(), 
+                                   nullptr, nullptr);
+}
+
+void MetaclassDecl::anchor() { }
+
 static const char *getAccessName(AccessSpecifier AS) {
   switch (AS) {
     case AS_none:
@@ -2456,15 +2469,3 @@ const PartialDiagnostic &clang::operator<<(const PartialDiagnostic &DB,
   return DB << getAccessName(AS);
 }
 
-MetaclassDecl *MetaclassDecl::Create(ASTContext &C, DeclContext *DC,
-                                     SourceLocation DL, 
-                                     const DeclarationNameInfo& NI, Stmt* B) {
-  return new (C, DC) MetaclassDecl(DC, DL, NI, B);
-}
-
-MetaclassDecl *MetaclassDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) MetaclassDecl(nullptr, SourceLocation(), 
-                                   DeclarationNameInfo(), nullptr);
-}
-
-void MetaclassDecl::anchor() { }
