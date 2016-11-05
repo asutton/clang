@@ -3847,6 +3847,10 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     // Nothing to do.
     break;
 
+  case Decl::Metaclass:
+    // No code gen needed for metaclasses.
+    break;
+
   // Objective-C Decls
 
   // Forward declarations, no (immediate) code generation.
