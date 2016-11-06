@@ -2442,6 +2442,9 @@ TypeWithKeyword::getTagTypeKindForTypeSpec(unsigned TypeSpec) {
   case TST_interface: return TTK_Interface;
   case TST_union: return TTK_Union;
   case TST_enum: return TTK_Enum;
+  case TST_metaclass: 
+    // FIXME: This probably isn't right.
+    return TTK_Struct;
   }
   
   llvm_unreachable("Type specifier is not a tag type kind.");

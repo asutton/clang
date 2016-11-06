@@ -65,6 +65,7 @@ namespace clang {
     TST_class,        // C++ class type
     TST_interface,    // C++ (Microsoft-specific) __interface type
     TST_typename,     // Typedef, C++ class-name or enum name, etc.
+    TST_metaclass,    // C++ class type w/ metaclass
     TST_typeofType,
     TST_typeofExpr,
     TST_decltype,         // C++11 decltype

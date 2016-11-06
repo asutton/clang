@@ -2880,6 +2880,12 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
           isConstructorDeclarator(/*Unqualified*/ false))
         goto DoneWithDeclSpec;
 
+      // This will introduce a class-specifier. If the identifier is a scope 
+      // specifier, the scope token will be consumed.
+      if (TryAnnotateMetaclassName(&SS, Next.getLocation(), 
+                                   Next.getIdentifierInfo()))
+        continue;
+
       ParsedType TypeRep =
           Actions.getTypeName(*Next.getIdentifierInfo(), Next.getLocation(),
                               getCurScope(), &SS, false, false, nullptr,
@@ -3023,6 +3029,12 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         ConsumeToken();
         continue;
       }
+
+      // If the identifier refers to a metaclass, then this will introduce
+      // a class-specifier.
+      if (TryAnnotateMetaclassName(nullptr, Tok.getLocation(), 
+                                   Tok.getIdentifierInfo()))
+        continue;
 
       ParsedType TypeRep = Actions.getTypeName(
           *Tok.getIdentifierInfo(), Tok.getLocation(), getCurScope(), nullptr,
@@ -3430,7 +3442,8 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
     case tok::kw_class:
     case tok::kw_struct:
     case tok::kw___interface:
-    case tok::kw_union: {
+    case tok::kw_union: 
+    case tok::annot_metaclass: {
       tok::TokenKind Kind = Tok.getKind();
       ConsumeToken();
 

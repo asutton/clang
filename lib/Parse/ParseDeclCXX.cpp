@@ -1332,6 +1332,11 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     TagType = DeclSpec::TST_interface;
   else if (TagTokKind == tok::kw_class)
     TagType = DeclSpec::TST_class;
+  else if (TagTokKind == tok::annot_metaclass) {
+    // FIXME: This is just a placeholder until we can work through
+    // the semantics of what a metaclass declared type actually is.
+    TagType = DeclSpec::TST_struct;
+  }
   else {
     assert(TagTokKind == tok::kw_union && "Not a class specifier");
     TagType = DeclSpec::TST_union;

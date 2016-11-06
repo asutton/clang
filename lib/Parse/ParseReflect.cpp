@@ -145,3 +145,38 @@ ExprResult Parser::ParseReflectionTrait() {
   ReflectionTrait Trait = ReflectionTraitKind(Kind);
   return Actions.ActOnReflectionTrait(Loc, Trait, Args, EndLoc);
 }
+
+// If the identifier refers to a metaclass name, then annotate the current
+// token with the referenced metaclass information.
+//
+// TODO: Check for metaclass template specializations.
+bool Parser::TryAnnotateMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
+                                      IdentifierInfo *Id) {
+  DeclResult MC = Actions.CheckMetaclassName(SS, IdLoc, Id);
+  if (MC.isInvalid())
+    return false;
+  
+  // If the scope specifier was given, then consume it now, so we can
+  // annotate the identifier token immediately after. 
+  //
+  // Also, build the source range for the annotation. If SS was given, then
+  // the token spans the SS through the identifier.
+  SourceRange Range;
+  if (SS) {
+    Range = SourceRange(SS->getRange());
+    ConsumeToken();
+  }
+  else
+    Range = SourceRange(IdLoc);
+  Range.setEnd(IdLoc);
+
+  // Annotate the token.
+  Tok.setKind(tok::annot_metaclass);
+  Tok.setAnnotationValue(MC.get());
+  Tok.setAnnotationRange(Range);
+
+  // Update any cached tokens.
+  PP.AnnotateCachedTokens(Tok);
+ 
+  return true;
+}

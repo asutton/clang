@@ -1171,3 +1171,21 @@ DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DL, SourceLocation IL,
 
   return D;
 }
+
+// If II refers to a metaclass in the given scope, prefixed by an optional
+// scope specifier, returns that declaration. If lookup fails, or if the
+// name refers to some other declaration, the return an invalid result.
+DeclResult Sema::CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc, 
+                                    IdentifierInfo *Id) {
+  LookupResult R(*this, Id, IdLoc, LookupTagName);
+  if (SS)
+    LookupQualifiedName(R, CurContext, *SS);
+  else
+    LookupName(R, CurScope);
+
+  if (MetaclassDecl* D = R.getAsSingle<MetaclassDecl>())
+    return D;
+  else
+    return DeclResult();
+}
+
