@@ -3042,15 +3042,13 @@ ExprResult Parser::ParseCompilerErrorExpression() {
   if (T.expectAndConsume(diag::err_expected_lparen_after, "__compiler_error"))
     return ExprError();
 
-  ExprResult MessageExpr;
-
   if (!isTokenStringLiteral()) {
     Diag(Tok, diag::err_expected_string_literal) << /*Source='in...'*/ 0
                                                  << "'__compiler_error'";
     return ExprError();
   }
 
-  MessageExpr = ParseStringLiteralExpression();
+  ExprResult MessageExpr = ParseStringLiteralExpression();
 
   if (MessageExpr.isInvalid()) {
     SkipUntil(tok::r_paren, StopAtSemi);

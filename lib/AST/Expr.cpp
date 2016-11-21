@@ -3967,7 +3967,7 @@ CompilerErrorExpr *CompilerErrorExpr::Create(const ASTContext &C, QualType Type,
                                              StringLiteral *Message,
                                              SourceLocation BuiltinLoc,
                                              SourceLocation RParenLoc) {
-  assert(Type == C.VoidTy && "Invalid type for CompilerErrorExpr");
+  assert(Type->isVoidType() && "Invalid type for CompilerErrorExpr");
   return new (C) CompilerErrorExpr(Type, Message, BuiltinLoc, RParenLoc);
 }
 
