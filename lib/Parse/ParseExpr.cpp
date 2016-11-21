@@ -691,7 +691,7 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 ///                   '__is_rvalue_expr'
 ///
 /// [PIM] primary-expression:
-///         '__compiler_error' '(' string-literal ')'
+///         '__compiler_error' '(' constant-expression ')'
 ///         '$' id-expression
 ///         '$' type-id
 ///         '$' nested-name-specifier[opt] namespace-name
@@ -1339,7 +1339,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return Result;
   }
 
-  // [PIM] primary-expression: '__compiler_error' '(' string-literal ')'
+  // [PIM] primary-expression: '__compiler_error' '(' constant-expression ')'
   case tok::kw___compiler_error:
     Res = ParseCompilerErrorExpression();
     break;
@@ -3042,13 +3042,7 @@ ExprResult Parser::ParseCompilerErrorExpression() {
   if (T.expectAndConsume(diag::err_expected_lparen_after, "__compiler_error"))
     return ExprError();
 
-  if (!isTokenStringLiteral()) {
-    Diag(Tok, diag::err_expected_string_literal) << /*Source='in...'*/ 0
-                                                 << "'__compiler_error'";
-    return ExprError();
-  }
-
-  ExprResult MessageExpr = ParseStringLiteralExpression();
+  ExprResult MessageExpr = ParseConstantExpression();
 
   if (MessageExpr.isInvalid()) {
     SkipUntil(tok::r_paren, StopAtSemi);

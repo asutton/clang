@@ -940,7 +940,7 @@ void ASTStmtReader::VisitAtomicExpr(AtomicExpr *E) {
 
 void ASTStmtReader::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
   VisitExpr(E);
-  E->setMessage(cast_or_null<StringLiteral>(Record.readSubExpr()));
+  E->setMessage(Record.readSubExpr());
   E->setBuiltinLoc(ReadSourceLocation());
   E->setRParenLoc(ReadSourceLocation());
 }

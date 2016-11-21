@@ -1388,8 +1388,7 @@ public:
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildCompilerErrorExpr(StringLiteral *Message,
-                                      SourceLocation BuiltinLoc,
+  ExprResult RebuildCompilerErrorExpr(Expr *Message, SourceLocation BuiltinLoc,
                                       SourceLocation RParenLoc) {
     return getSema().ActOnCompilerErrorExpr(Message, BuiltinLoc, RParenLoc);
   }
@@ -6925,8 +6924,7 @@ TreeTransform<Derived>::TransformCompilerErrorExpr(CompilerErrorExpr *E) {
   // Always rebuild so that __compiler_error diagnostics can be emitted within
   // template instantiations.
   return getDerived().RebuildCompilerErrorExpr(
-      cast<StringLiteral>(Message.get()), E->getBuiltinLoc(),
-      E->getRParenLoc());
+      Message.get(), E->getBuiltinLoc(), E->getRParenLoc());
 }
 
 template <typename Derived>

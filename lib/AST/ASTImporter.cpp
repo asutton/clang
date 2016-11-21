@@ -6866,8 +6866,8 @@ Expr *ASTNodeImporter::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
   if (T.isNull())
     return nullptr;
 
-  StringLiteral *FromMsg = E->getMessage();
-  StringLiteral *ToMsg = cast_or_null<StringLiteral>(Importer.Import(FromMsg));
+  Expr *FromMsg = E->getMessage();
+  Expr *ToMsg = Importer.Import(FromMsg);
   if (!ToMsg && FromMsg)
     return nullptr;
 

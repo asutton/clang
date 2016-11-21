@@ -5051,19 +5051,21 @@ public:
 /// Represents a call to the builtin function \c __compiler_error.
 ///
 /// This AST node provides support for issuing a compile-time error. It takes a
-/// single string literal argument. Its effect is similar to that of an \c
+/// single constant string argument. Its effect is similar to that of an \c
 /// \#error directive or a failed static assertion: the program becomes
-/// ill-formed, and the text of the given string literal is included in the
-/// resulting diagnostic message.
+/// ill-formed, and the text of the given string is included in the resulting
+/// diagnostic message.
 class CompilerErrorExpr : public Expr {
 private:
   Stmt *Message;
   SourceLocation BuiltinLoc, RParenLoc;
 
-  CompilerErrorExpr(QualType Type, StringLiteral *Message,
-                    SourceLocation BuiltinLoc, SourceLocation RParenLoc)
-      : Expr(CompilerErrorExprClass, Type, VK_RValue, OK_Ordinary, false, false,
-             false, false),
+  CompilerErrorExpr(QualType Type, Expr *Message, SourceLocation BuiltinLoc,
+                    SourceLocation RParenLoc)
+      : Expr(CompilerErrorExprClass, Type, VK_RValue, OK_Ordinary, false,
+             Message->isTypeDependent() || Message->isValueDependent(),
+             Message->isInstantiationDependent(),
+             Message->containsUnexpandedParameterPack()),
         Message(Message), BuiltinLoc(BuiltinLoc), RParenLoc(RParenLoc) {}
 
   explicit CompilerErrorExpr(EmptyShell Empty)
@@ -5072,23 +5074,20 @@ private:
 public:
   /// Construct a \c __compiler_error expression.
   static CompilerErrorExpr *Create(const ASTContext &C, QualType Type,
-                                   StringLiteral *Message,
-                                   SourceLocation BuiltinLoc,
+                                   Expr *Message, SourceLocation BuiltinLoc,
                                    SourceLocation RParenLoc);
 
   /// Construct an empty \c __compiler_error expression.
   static CompilerErrorExpr *CreateEmpty(const ASTContext &C, EmptyShell Empty);
 
-  /// Return the string literal to be included in the diagnostic message.
-  StringLiteral *getMessage() { return cast<StringLiteral>(Message); }
+  /// Return the string to be included in the diagnostic message.
+  Expr *getMessage() { return cast<Expr>(Message); }
 
-  /// Return the string literal to be included in the diagnostic message.
-  const StringLiteral *getMessage() const {
-    return cast<StringLiteral>(Message);
-  }
+  /// Return the string to be included in the diagnostic message.
+  const Expr *getMessage() const { return cast<Expr>(Message); }
 
-  /// Set the string literal to be included in the diagnostic message.
-  void setMessage(StringLiteral *M) { Message = M; }
+  /// Set the string to be included in the diagnostic message.
+  void setMessage(Expr *M) { Message = M; }
 
   /// Return the location of the \c __compiler_error token.
   SourceLocation getBuiltinLoc() const { return BuiltinLoc; }

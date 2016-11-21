@@ -3964,7 +3964,7 @@ unsigned AtomicExpr::getNumSubExprs(AtomicOp Op) {
 }
 
 CompilerErrorExpr *CompilerErrorExpr::Create(const ASTContext &C, QualType Type,
-                                             StringLiteral *Message,
+                                             Expr *Message,
                                              SourceLocation BuiltinLoc,
                                              SourceLocation RParenLoc) {
   assert(Type->isVoidType() && "Invalid type for CompilerErrorExpr");

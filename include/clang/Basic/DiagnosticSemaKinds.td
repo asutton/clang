@@ -7762,6 +7762,10 @@ def err_os_log_argument_too_big : Error<
 def warn_os_log_format_narg : Error<
  "os_log() '%%n' format specifier is not allowed">, DefaultError;
 
+// __compiler_error checking
+def err_compiler_error_message_not_string_constant : Error<
+  "__compiler_error message is not a string constant">;
+
 // Statements.
 def err_continue_not_in_loop : Error<
   "'continue' statement not in loop statement">;

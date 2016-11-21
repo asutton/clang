@@ -8187,10 +8187,11 @@ public:
   // C++ Reflection [Cpp3K]
   //
 
-  // __compiler_error("...")
-  ExprResult ActOnCompilerErrorExpr(Expr *Message, SourceLocation BuiltinLoc,
+  // __compiler_error(constExpr)
+  ExprResult ActOnCompilerErrorExpr(Expr *MessageExpr,
+                                    SourceLocation BuiltinLoc,
                                     SourceLocation RParenLoc);
-  ExprResult BuildCompilerErrorExpr(StringLiteral *Message,
+  ExprResult BuildCompilerErrorExpr(Expr *MessageExpr,
                                     SourceLocation BuiltinLoc,
                                     SourceLocation RParenLoc);
 
