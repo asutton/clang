@@ -153,7 +153,7 @@ ExprResult Parser::ParseReflectionTrait() {
 bool Parser::TryAnnotateMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
                                       IdentifierInfo *Id) {
   DeclResult MC = Actions.CheckMetaclassName(SS, IdLoc, Id);
-  if (MC.isInvalid())
+  if (MC.isUnset())
     return false;
   
   // If the scope specifier was given, then consume it now, so we can
