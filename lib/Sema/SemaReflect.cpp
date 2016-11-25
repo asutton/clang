@@ -388,6 +388,7 @@ struct Reflector {
   ExprResult ReflectLexicalContext(Decl *D);
   ExprResult ReflectLexicalContext(Type *T);
 
+  ExprResult ReflectSpecifiers(Decl *D);
   ExprResult ReflectLinkage(Decl *D);
 
   ExprResult ReflectVariableStorage(VarDecl *D);
@@ -484,6 +485,9 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
   case URT_ReflectLexicalContext:
     return ReflectLexicalContext(D);
 
+  case URT_ReflectSpecifiers:
+    return ReflectSpecifiers(D);
+  
   case URT_ReflectLinkage:
     return ReflectLinkage(D);
 
@@ -508,9 +512,6 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
     return ReflectNumMembers(D);
   case BRT_ReflectMember:
     return ReflectMember(D, Vals[1]);
-
-  default:
-    break;
   }
 
   // FIXME: Improve this error message.
@@ -628,6 +629,186 @@ ExprResult Reflector::ReflectLexicalContext(Type *T) {
   }
   S.Diag(KWLoc, diag::err_reflection_not_supported);
   return ExprError();
+}
+
+enum LinkageSpec : unsigned {
+  LinkNone,
+  LinkInternal,
+  LinkExternal
+};
+
+// Remap linkage specifiers into a 2 bit value.
+static LinkageSpec getLinkageSpec(NamedDecl* D) {
+  switch (D->getFormalLinkage()) {
+    case NoLinkage: return LinkNone;
+    case InternalLinkage: return LinkInternal;
+    case ExternalLinkage: return LinkExternal;
+    default:
+      break;
+  }
+  llvm_unreachable("Invalid linkage specification");
+}
+
+enum AccessSpec : unsigned {
+  AccessGlobal,
+  AccessPublic,
+  AccessPrivate,
+  AccessProtected
+};
+
+// Returns the access specifiers for D.
+static AccessSpec getAccessSpec(Decl* D) {
+  switch (D->getAccess()) {
+    case AS_public: return AccessPublic;
+    case AS_private: return AccessPrivate;
+    case AS_protected: return AccessProtected;
+    case AS_none: return AccessGlobal;
+  }
+}
+
+// All declaration specifiers are packed into a single bitfield. This
+// is primarily done to make the library implementation a little easier.
+// It avoids the need of having to re-cast bitfields depending on their
+// kind.
+//
+struct DeclSpecs {
+  bool Defined : 1;
+  LinkageSpec Linkage : 2;
+  AccessSpec Access : 2;
+  bool Virtual : 1;   // polymorphic for types
+  bool Abstract : 1;  // pure virtual for methods
+  bool Inline : 1;
+  bool Constexpr : 1;
+  bool Explicit : 1;
+  bool Mutable : 1;
+  bool Friend : 1;
+  bool Final : 1;
+  bool Override : 1;
+  unsigned Unused : 18; // out of 32.
+};
+
+// Returns the specifiers for variable declarations.
+static DeclSpecs getVariableSpecs(VarDecl *D) {
+  DeclSpecs S{};
+  S.Defined = D->getDefinition() != nullptr;
+  S.Linkage = getLinkageSpec(D);
+  S.Access = getAccessSpec(D);
+  S.Inline = D->isInline();
+  S.Constexpr = D->isConstexpr();
+  return S;
+}
+
+// Returns specifiers for a class member.
+static DeclSpecs getVariableSpecs(FieldDecl *D) {
+  DeclSpecs S{};
+  S.Defined = true;
+  S.Linkage = getLinkageSpec(D);
+  S.Access = getAccessSpec(D);
+  S.Mutable = D->isMutable();
+  return S;
+}
+
+// Get function specifications based on the kind of function.
+static DeclSpecs getFunctionSpecs(FunctionDecl *F) {
+  DeclSpecs S{};
+  S.Defined = F->getDefinition() != nullptr;
+  S.Linkage = getLinkageSpec(F);
+  S.Access = getAccessSpec(F);
+  if (CXXMethodDecl *M = dyn_cast<CXXMethodDecl>(F))
+    S.Virtual = M->isVirtual();
+  S.Abstract = F->isPure();
+  S.Inline = F->isInlined();
+  S.Constexpr = F->isConstexpr();
+  S.Final = F->hasAttr<FinalAttr>();
+  S.Override = F->hasAttr<OverrideAttr>();
+  if (CXXConstructorDecl *C = dyn_cast<CXXConstructorDecl>(F))
+    S.Explicit = C->isExplicit();
+  else if (CXXConversionDecl *C = dyn_cast<CXXConversionDecl>(F))
+    S.Explicit = C->isExplicit();
+  return S;
+}
+
+// Get function specifiers for a friend function declaration.
+static DeclSpecs getFunctionSpecs(FriendDecl *F) {
+  FunctionDecl *Fn = cast<FunctionDecl>(F->getFriendDecl());
+  DeclSpecs S = getFunctionSpecs(Fn);
+  S.Friend = true;
+  return S;
+}
+
+// Get specifiers for enumerators.
+static DeclSpecs getValueSpecs(EnumConstantDecl *E) {
+  DeclSpecs S{};
+  S.Defined = true;
+  S.Linkage = getLinkageSpec(E);
+  S.Access = getAccessSpec(E);
+  return S;
+}
+
+// Get specifiers for type definitions.
+static DeclSpecs getTypeSpecs(CXXRecordDecl *D) {
+  DeclSpecs S{};
+  S.Defined = D->getDefinition() != nullptr;
+  S.Linkage = getLinkageSpec(D);
+  S.Access = getAccessSpec(D);
+  if (CXXRecordDecl *R = dyn_cast<CXXRecordDecl>(D)) {
+    S.Virtual = R->isPolymorphic();
+    S.Abstract = R->isAbstract();
+  }
+  S.Final = D->hasAttr<FinalAttr>();
+  S.Friend = false;
+  return S;
+}
+
+// Get type specifiers for a friend class.
+static DeclSpecs getTypeSpecs(FriendDecl *D) {
+  QualType T = D->getFriendType()->getType();
+  DeclSpecs S = getTypeSpecs(T->getAsCXXRecordDecl());
+  S.Friend = true;
+  return S;
+}
+
+// Returns the specifiers for a namespace.
+static DeclSpecs getNamespaceSpecs(NamespaceDecl *NS) {
+  DeclSpecs S{};
+  S.Defined = true;
+  S.Linkage = getLinkageSpec(NS);
+  S.Access = getAccessSpec(NS);
+  S.Inline = NS->isInline();
+  return S;
+}
+
+// Convert a bitfield structure into a uint32.
+static inline std::uint32_t MakeUnsigned(DeclSpecs DS)
+{
+  static_assert(sizeof(std::uint32_t) == sizeof(DS), "Size mismatch");
+  unsigned ret{};
+  std::memcpy(&ret, &DS, sizeof(DS));
+  return ret;
+}
+
+// Reflects the specifiers of the declaration D.
+ExprResult Reflector::ReflectSpecifiers(Decl *D) {
+  ASTContext &C = S.Context;
+
+  std::uint32_t Specs;
+  if (VarDecl *Var = dyn_cast<VarDecl>(D))
+    Specs = MakeUnsigned(getVariableSpecs(Var));
+  else if (FieldDecl *Field = dyn_cast<FieldDecl>(D))
+    Specs = MakeUnsigned(getVariableSpecs(Field));
+  else if (FunctionDecl *Fn = dyn_cast<FunctionDecl>(D))
+    Specs = MakeUnsigned(getFunctionSpecs(Fn));
+  else if (EnumConstantDecl *Enum = dyn_cast<EnumConstantDecl>(D))
+    Specs = MakeUnsigned(getValueSpecs(Enum));
+  else if (NamespaceDecl *Ns = dyn_cast<NamespaceDecl>(D))
+    Specs = MakeUnsigned(getNamespaceSpecs(Ns));
+  else
+    assert(false && "Unsupported declaration");
+
+  // FIXME: This needs to be at least 32 bits, 0 extended if greater.
+  QualType T = C.UnsignedIntTy;
+  llvm::APSInt N = C.MakeIntValue(Specs, T);
+  return IntegerLiteral::Create(C, N, T, KWLoc);
 }
 
 // Reflects the linkage of the declaration D.
