@@ -388,7 +388,8 @@ struct Reflector {
   ExprResult ReflectLexicalContext(Decl *D);
   ExprResult ReflectLexicalContext(Type *T);
 
-  ExprResult ReflectSpecifiers(Decl *D);
+  ExprResult ReflectTraits(Decl *D);
+  ExprResult ReflectTraits(Type *T);
   ExprResult ReflectLinkage(Decl *D);
 
   ExprResult ReflectVariableStorage(VarDecl *D);
@@ -486,7 +487,7 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
     return ReflectLexicalContext(D);
 
   case URT_ReflectSpecifiers:
-    return ReflectSpecifiers(D);
+    return ReflectTraits(D);
   
   case URT_ReflectLinkage:
     return ReflectLinkage(D);
@@ -532,6 +533,9 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
 
   case URT_ReflectLexicalContext:
     return ReflectLexicalContext(T);
+
+  case URT_ReflectSpecifiers:
+    return ReflectTraits(T);
 
   case URT_ReflectNumMembers:
     return ReflectNumMembers(T->getAsTagDecl());
@@ -631,14 +635,14 @@ ExprResult Reflector::ReflectLexicalContext(Type *T) {
   return ExprError();
 }
 
-enum LinkageSpec : unsigned {
+enum LinkageTrait : unsigned {
   LinkNone,
   LinkInternal,
   LinkExternal
 };
 
 // Remap linkage specifiers into a 2 bit value.
-static LinkageSpec getLinkageSpec(NamedDecl* D) {
+static LinkageTrait getLinkage(NamedDecl* D) {
   switch (D->getFormalLinkage()) {
     case NoLinkage: return LinkNone;
     case InternalLinkage: return LinkInternal;
@@ -649,7 +653,7 @@ static LinkageSpec getLinkageSpec(NamedDecl* D) {
   llvm_unreachable("Invalid linkage specification");
 }
 
-enum AccessSpec : unsigned {
+enum AccessTrait : unsigned {
   AccessGlobal,
   AccessPublic,
   AccessPrivate,
@@ -657,7 +661,7 @@ enum AccessSpec : unsigned {
 };
 
 // Returns the access specifiers for D.
-static AccessSpec getAccessSpec(Decl* D) {
+static AccessTrait getAccess(Decl* D) {
   switch (D->getAccess()) {
     case AS_public: return AccessPublic;
     case AS_private: return AccessPrivate;
@@ -666,150 +670,311 @@ static AccessSpec getAccessSpec(Decl* D) {
   }
 }
 
-// All declaration specifiers are packed into a single bitfield. This
-// is primarily done to make the library implementation a little easier.
-// It avoids the need of having to re-cast bitfields depending on their
-// kind.
-//
-struct DeclSpecs {
-  bool Defined : 1;
-  LinkageSpec Linkage : 2;
-  AccessSpec Access : 2;
-  bool Virtual : 1;   // polymorphic for types
-  bool Abstract : 1;  // pure virtual for methods
-  bool Inline : 1;
-  bool Constexpr : 1;
-  bool Explicit : 1;
-  bool Mutable : 1;
-  bool Friend : 1;
-  bool Final : 1;
-  bool Override : 1;
-  unsigned Unused : 18; // out of 32.
+// This gives the storage duration of declared objects, not the storage
+// specifier, which incorporates aspects of duration and linkage.
+enum StorageTrait : unsigned {
+  NoStorage,
+  StaticStorage,
+  AutomaticStorage,
+  ThreadStorage,
 };
 
-// Returns the specifiers for variable declarations.
-static DeclSpecs getVariableSpecs(VarDecl *D) {
-  DeclSpecs S{};
-  S.Defined = D->getDefinition() != nullptr;
-  S.Linkage = getLinkageSpec(D);
-  S.Access = getAccessSpec(D);
-  S.Inline = D->isInline();
-  S.Constexpr = D->isConstexpr();
-  return S;
-}
-
-// Returns specifiers for a class member.
-static DeclSpecs getVariableSpecs(FieldDecl *D) {
-  DeclSpecs S{};
-  S.Defined = true;
-  S.Linkage = getLinkageSpec(D);
-  S.Access = getAccessSpec(D);
-  S.Mutable = D->isMutable();
-  return S;
-}
-
-// Get function specifications based on the kind of function.
-static DeclSpecs getFunctionSpecs(FunctionDecl *F) {
-  DeclSpecs S{};
-  S.Defined = F->getDefinition() != nullptr;
-  S.Linkage = getLinkageSpec(F);
-  S.Access = getAccessSpec(F);
-  if (CXXMethodDecl *M = dyn_cast<CXXMethodDecl>(F))
-    S.Virtual = M->isVirtual();
-  S.Abstract = F->isPure();
-  S.Inline = F->isInlined();
-  S.Constexpr = F->isConstexpr();
-  S.Final = F->hasAttr<FinalAttr>();
-  S.Override = F->hasAttr<OverrideAttr>();
-  if (CXXConstructorDecl *C = dyn_cast<CXXConstructorDecl>(F))
-    S.Explicit = C->isExplicit();
-  else if (CXXConversionDecl *C = dyn_cast<CXXConversionDecl>(F))
-    S.Explicit = C->isExplicit();
-  return S;
-}
-
-// Get function specifiers for a friend function declaration.
-static DeclSpecs getFunctionSpecs(FriendDecl *F) {
-  FunctionDecl *Fn = cast<FunctionDecl>(F->getFriendDecl());
-  DeclSpecs S = getFunctionSpecs(Fn);
-  S.Friend = true;
-  return S;
-}
-
-// Get specifiers for enumerators.
-static DeclSpecs getValueSpecs(EnumConstantDecl *E) {
-  DeclSpecs S{};
-  S.Defined = true;
-  S.Linkage = getLinkageSpec(E);
-  S.Access = getAccessSpec(E);
-  return S;
-}
-
-// Get specifiers for type definitions.
-static DeclSpecs getTypeSpecs(CXXRecordDecl *D) {
-  DeclSpecs S{};
-  S.Defined = D->getDefinition() != nullptr;
-  S.Linkage = getLinkageSpec(D);
-  S.Access = getAccessSpec(D);
-  if (CXXRecordDecl *R = dyn_cast<CXXRecordDecl>(D)) {
-    S.Virtual = R->isPolymorphic();
-    S.Abstract = R->isAbstract();
+// Returns the storage duration of D.
+static StorageTrait getStorage(VarDecl* D) {
+  switch (D->getStorageDuration()) {
+    case SD_Automatic: return AutomaticStorage;
+    case SD_Thread: return ThreadStorage;
+    case SD_Static: return StaticStorage;
+    default:
+      break;
   }
-  S.Final = D->hasAttr<FinalAttr>();
-  S.Friend = false;
-  return S;
+  return NoStorage;
 }
 
-// Get type specifiers for a friend class.
-static DeclSpecs getTypeSpecs(FriendDecl *D) {
-  QualType T = D->getFriendType()->getType();
-  DeclSpecs S = getTypeSpecs(T->getAsCXXRecordDecl());
-  S.Friend = true;
-  return S;
+// Traits for named objects.
+//
+// Note that a variable can be declared extern and not defined.
+struct VariableTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  StorageTrait Storage : 2;
+  bool Constexpr : 1;
+  bool Defined : 1;
+  bool Inline : 1; // Valid only when defined.
+};
+
+static VariableTraits getVariableTraits(VarDecl* D) {
+  VariableTraits T{};
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Storage = getStorage(D);
+  T.Constexpr = D->isConstexpr();
+  T.Defined = D->getDefinition() != nullptr;
+  T.Inline = D->isInline();
+  return T;
 }
 
-// Returns the specifiers for a namespace.
-static DeclSpecs getNamespaceSpecs(NamespaceDecl *NS) {
-  DeclSpecs S{};
-  S.Defined = true;
-  S.Linkage = getLinkageSpec(NS);
-  S.Access = getAccessSpec(NS);
-  S.Inline = NS->isInline();
-  return S;
+// Traits for named sub-objects of a class (or union?).
+struct FieldTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  bool Mutable : 1;
+};
+
+// Get the traits for a non-static member of a class or union.
+static FieldTraits getFieldTraits(FieldDecl *D) {
+  FieldTraits T{};
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Mutable = D->isMutable();
+  return T;
+}
+
+// Computed traits of normal, extern local, and static class functions.
+//
+// TODO: Add calling conventions to function traits.
+struct FunctionTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  bool Constexpr : 1;
+  bool Nothrow : 1; // Called noexcept in C++
+  bool Defined : 1;
+  bool Inline : 1;  // Valid only when defined
+  bool Deleted : 1; // Valid only when defined
+};
+
+static bool getNothrow(ASTContext &C,  FunctionDecl *D) {
+  if (const FunctionProtoType *Ty = D->getType()->getAs<FunctionProtoType>())
+    return Ty->isNothrow(C);
+  else
+    return false;
+}
+
+static FunctionTraits getFunctionTraits(ASTContext& C, FunctionDecl *D) {
+  FunctionTraits T{};
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Constexpr = D->isConstexpr();
+  T.Nothrow = getNothrow(C, D);
+  T.Defined = D->getDefinition() != nullptr;
+  T.Inline = D->isInlined();
+  T.Deleted = D->isDeleted();
+  return T;
+}
+
+// Traits for normal member functions.
+struct MethodTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  bool Constexpr : 1;
+  bool Explicit : 1;
+  bool Virtual : 1;
+  bool Pure : 1;
+  bool Final : 1;
+  bool Override : 1;
+  bool Nothrow : 1; // Called noexcept in C++
+  bool Defined : 1;
+  bool Inline : 1;
+  bool Deleted : 1;
+  bool Defaulted : 1;
+  bool Trivial : 1;
+};
+
+static MethodTraits getMethodTraits(ASTContext& C, CXXConstructorDecl *D) {
+  MethodTraits T{};
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Constexpr = D->isConstexpr();
+  T.Nothrow = getNothrow(C, D);
+  T.Defined = D->getDefinition() != nullptr;
+  T.Inline = D->isInlined();
+  T.Deleted = D->isDeleted();
+  T.Defaulted = D->isDefaulted();
+  T.Trivial = D->isTrivial();
+  return T;
+}
+
+static MethodTraits getMethodTraits(ASTContext& C, CXXDestructorDecl *D) {
+  MethodTraits T{};
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Virtual = D->isVirtual();
+  T.Pure = D->isPure();
+  T.Final = D->hasAttr<FinalAttr>();
+  T.Override = D->hasAttr<OverrideAttr>();
+  T.Nothrow = getNothrow(C, D);
+  T.Defined = D->getDefinition() != nullptr;
+  T.Inline = D->isInlined();
+  T.Deleted = D->isDeleted();
+  T.Defaulted = D->isDefaulted();
+  T.Trivial = D->isTrivial();
+  return T;
+}
+
+static MethodTraits getMethodTraits(ASTContext& C, CXXConversionDecl *D) {
+  MethodTraits T{};
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Constexpr = D->isConstexpr();
+  T.Explicit = D->isExplicit();
+  T.Virtual = D->isVirtual();
+  T.Pure = D->isPure();
+  T.Final = D->hasAttr<FinalAttr>();
+  T.Override = D->hasAttr<OverrideAttr>();
+  T.Nothrow = getNothrow(C, D);
+  T.Defined = D->getDefinition() != nullptr;
+  T.Inline = D->isInlined();
+  T.Deleted = D->isDeleted();
+  return T;
+}
+
+static MethodTraits getMethodTraits(ASTContext& C, CXXMethodDecl *D) {
+  MethodTraits T{};
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Constexpr = D->isConstexpr();
+  T.Virtual = D->isVirtual();
+  T.Pure = D->isPure();
+  T.Final = D->hasAttr<FinalAttr>();
+  T.Override = D->hasAttr<OverrideAttr>();
+  T.Nothrow = getNothrow(C, D);
+  T.Defined = D->getDefinition() != nullptr;
+  T.Inline = D->isInlined();
+  T.Deleted = D->isDeleted();
+  return T;
+}
+
+struct ValueTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+};
+
+static ValueTraits getValueTraits(EnumConstantDecl *D) {
+  ValueTraits T{};
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  return T;
+}
+
+struct NamespaceTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  bool Inline : 1;
+};
+
+static NamespaceTraits getNamespaceTraits(NamespaceDecl *D) {
+  NamespaceTraits T{};
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Inline = D->isInline();
+  return T;
+}
+
+// TODO: Accumulate all known type traits for classes.
+struct ClassTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  bool Complete : 1;
+  bool Polymoprhic : 1;
+  bool Abstract : 1;
+  bool Final : 1;
+  bool Empty : 1;
+};
+
+static ClassTraits getClassTraits(CXXRecordDecl *D) {
+  ClassTraits T{};
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Complete = D->getDefinition() != nullptr;
+  if (T.Complete) {
+    T.Polymoprhic = D->isPolymorphic();
+    T.Abstract = D->isAbstract();
+    T.Final = D->hasAttr<FinalAttr>();
+    T.Empty = D->isEmpty();
+  }
+  return T;
+}
+
+struct EnumTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  bool Scoped;
+  bool Complete;
+};
+
+static EnumTraits getEnumTraits(EnumDecl *D) {
+  EnumTraits T{};
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Scoped = D->isScoped();
+  T.Complete = D->isComplete();
+  return T;
 }
 
 // Convert a bitfield structure into a uint32.
-static inline std::uint32_t MakeUnsigned(DeclSpecs DS)
+template<typename Traits>
+static inline std::uint32_t LaunderTraits(Traits S)
 {
-  static_assert(sizeof(std::uint32_t) == sizeof(DS), "Size mismatch");
+  static_assert(sizeof(std::uint32_t) == sizeof(Traits), "Size mismatch");
   unsigned ret{};
-  std::memcpy(&ret, &DS, sizeof(DS));
+  std::memcpy(&ret, &S, sizeof(S));
   return ret;
 }
 
 // Reflects the specifiers of the declaration D.
-ExprResult Reflector::ReflectSpecifiers(Decl *D) {
+ExprResult Reflector::ReflectTraits(Decl *D) {
   ASTContext &C = S.Context;
 
-  std::uint32_t Specs;
+  std::uint32_t Traits;
   if (VarDecl *Var = dyn_cast<VarDecl>(D))
-    Specs = MakeUnsigned(getVariableSpecs(Var));
+    Traits = LaunderTraits(getVariableTraits(Var));
   else if (FieldDecl *Field = dyn_cast<FieldDecl>(D))
-    Specs = MakeUnsigned(getVariableSpecs(Field));
+    Traits = LaunderTraits(getFieldTraits(Field));
+  else if (CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D))
+    Traits = LaunderTraits(getMethodTraits(C, Ctor));
+  else if (CXXDestructorDecl *Dtor = dyn_cast<CXXDestructorDecl>(D))
+    Traits = LaunderTraits(getMethodTraits(C, Dtor));
+  else if (CXXConversionDecl *Conv = dyn_cast<CXXConversionDecl>(D))
+    Traits = LaunderTraits(getMethodTraits(C, Conv));
+  else if (CXXMethodDecl *Meth = dyn_cast<CXXMethodDecl>(D))
+    Traits = LaunderTraits(getMethodTraits(C, Meth));
   else if (FunctionDecl *Fn = dyn_cast<FunctionDecl>(D))
-    Specs = MakeUnsigned(getFunctionSpecs(Fn));
+    Traits = LaunderTraits(getFunctionTraits(C, Fn));
   else if (EnumConstantDecl *Enum = dyn_cast<EnumConstantDecl>(D))
-    Specs = MakeUnsigned(getValueSpecs(Enum));
+    Traits = LaunderTraits(getValueTraits(Enum));
   else if (NamespaceDecl *Ns = dyn_cast<NamespaceDecl>(D))
-    Specs = MakeUnsigned(getNamespaceSpecs(Ns));
+    Traits = LaunderTraits(getNamespaceTraits(Ns));
   else
     assert(false && "Unsupported declaration");
 
   // FIXME: This needs to be at least 32 bits, 0 extended if greater.
-  QualType T = C.UnsignedIntTy;
-  llvm::APSInt N = C.MakeIntValue(Specs, T);
-  return IntegerLiteral::Create(C, N, T, KWLoc);
+  llvm::APSInt N = C.MakeIntValue(Traits, C.UnsignedIntTy);
+  return IntegerLiteral::Create(C, N, C.UnsignedIntTy, KWLoc);
 }
+
+ExprResult Reflector::ReflectTraits(Type *T) {
+  ASTContext &C = S.Context;
+
+  // Traits are only defined for user-defined types.
+  TagDecl *TD = T->getAsTagDecl();
+  if (!TD) {
+    S.Diag(KWLoc, diag::err_reflection_not_supported);
+    return ExprError();
+  }
+
+  std::uint32_t Traits;
+  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(TD))
+    Traits = LaunderTraits(getClassTraits(Class));
+  else if (EnumDecl *Enum = dyn_cast<EnumDecl>(TD))
+    Traits = LaunderTraits(getEnumTraits(Enum));
+  else
+    assert(false && "Unsupported type");
+
+  // FIXME: This needs to be at least 32 bits, 0 extended if greater.
+  llvm::APSInt N = C.MakeIntValue(Traits, C.UnsignedIntTy);
+  return IntegerLiteral::Create(C, N, C.UnsignedIntTy, KWLoc);
+}
+
 
 // Reflects the linkage of the declaration D.
 ExprResult Reflector::ReflectLinkage(Decl *D) {
