@@ -108,12 +108,12 @@ namespace clang {
     URT_ReflectQualifiedName,
     URT_ReflectDeclarationContext,
     URT_ReflectLexicalContext,
-    URT_ReflectSpecifiers,
-    URT_ReflectLinkage,
+
+    URT_ReflectTraits,     // Computed properties of declarations
+    URT_ReflectSpecifiers, // Written properties of declarations
     
     // Value and function declaration properties.
     URT_ReflectType,
-    URT_ReflectStorage,
     URT_ReflectPointer, // For stored values
     URT_ReflectValue,   // For named values
     

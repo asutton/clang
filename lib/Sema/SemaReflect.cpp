@@ -390,11 +390,7 @@ struct Reflector {
 
   ExprResult ReflectTraits(Decl *D);
   ExprResult ReflectTraits(Type *T);
-  ExprResult ReflectLinkage(Decl *D);
 
-  ExprResult ReflectVariableStorage(VarDecl *D);
-  ExprResult ReflectFunctionStorage(FunctionDecl *D);
-  ExprResult ReflectStorage(Decl *D);
   ExprResult ReflectPointer(Decl *D);
   ExprResult ReflectValue(Decl *D);
   ExprResult ReflectType(Decl *D);
@@ -486,15 +482,9 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
   case URT_ReflectLexicalContext:
     return ReflectLexicalContext(D);
 
-  case URT_ReflectSpecifiers:
+  case URT_ReflectTraits:
     return ReflectTraits(D);
   
-  case URT_ReflectLinkage:
-    return ReflectLinkage(D);
-
-  case URT_ReflectStorage:
-    return ReflectStorage(D);
-
   case URT_ReflectPointer:
     return ReflectPointer(D);
 
@@ -534,7 +524,7 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
   case URT_ReflectLexicalContext:
     return ReflectLexicalContext(T);
 
-  case URT_ReflectSpecifiers:
+  case URT_ReflectTraits:
     return ReflectTraits(T);
 
   case URT_ReflectNumMembers:
@@ -975,26 +965,6 @@ ExprResult Reflector::ReflectTraits(Type *T) {
   return IntegerLiteral::Create(C, N, C.UnsignedIntTy, KWLoc);
 }
 
-
-// Reflects the linkage of the declaration D.
-ExprResult Reflector::ReflectLinkage(Decl *D) {
-  if (NamedDecl *ND = RequireNamedDecl(*this, D)) {
-    ASTContext &C = S.Context;
-    QualType T = C.IntTy;
-    llvm::APSInt N = C.MakeIntValue((int)ND->getFormalLinkage(), T);
-    return IntegerLiteral::Create(C, N, T, KWLoc);
-  }
-  return ExprError();
-}
-
-// Reflects the storage class of the variable declaration D.
-ExprResult Reflector::ReflectVariableStorage(VarDecl *D) {
-  ASTContext &C = S.Context;
-  QualType T = C.IntTy;
-  llvm::APSInt N = C.MakeIntValue((int)D->getStorageClass(), T);
-  return IntegerLiteral::Create(C, N, T, KWLoc);
-}
-
 // Reflects a pointer the given declaration. This only applies to global
 // variables, member variables, and functions.
 //
@@ -1067,27 +1037,6 @@ ExprResult Reflector::ReflectValue(Decl *D) {
     new (S.Context) DeclRefExpr(Enum, false, Ty, VK_RValue, KWLoc);
   S.MarkDeclRefReferenced(Ref);
   return Ref;
-}
-
-// Reflects the storage class of the function declaration D.
-ExprResult Reflector::ReflectFunctionStorage(FunctionDecl *D) {
-  ASTContext &C = S.Context;
-  QualType T = C.IntTy;
-  llvm::APSInt N = C.MakeIntValue((int)D->getStorageClass(), T);
-  return IntegerLiteral::Create(C, N, T, KWLoc);
-}
-
-// Reflects the storage class of the declaration D.
-ExprResult Reflector::ReflectStorage(Decl *D) {
-  if (VarDecl *Var = dyn_cast<VarDecl>(D))
-    return ReflectVariableStorage(Var);
-  if (FunctionDecl *Fn = dyn_cast<FunctionDecl>(D))
-    return ReflectFunctionStorage(Fn);
-
-  // FIXME: This is the wrong error message. Should be D does not have
-  // a storage class.
-  S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_named);
-  return ExprError();
 }
 
 // Reflects the type the typed declaration D.
