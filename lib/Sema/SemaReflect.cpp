@@ -1131,12 +1131,13 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   return ExprError();
 }
 
-DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DL, SourceLocation IL,
+DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
+                                          SourceLocation IdLoc,
                                           IdentifierInfo *II, Stmt *Body) {
   assert(isa<CompoundStmt>(Body));
   assert(II);
 
-  // Make sure that this definition doesn't conflict with existing tag 
+  // Make sure that this definition doesn't conflict with existing tag
   // definitions.
   //
   // TODO: Should this be valid?
@@ -1144,48 +1145,46 @@ DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DL, SourceLocation IL,
   //    int x;
   //    $class x { }
   //
-  // I think that pinning $class x to a tag name means that the variable 
+  // I think that pinning $class x to a tag name means that the variable
   // declaration will effectively hide $class x. We'd have to add $class to
   // the elaborated-type-specifier grammar.
   //
   // This is probably fine for now.
-  LookupResult R(*this, II, IL, LookupAnyName, ForRedeclaration);
+  LookupResult R(*this, II, IdLoc, LookupAnyName, ForRedeclaration);
   LookupName(R, CurScope);
   if (!R.empty()) {
-    if (MetaclassDecl* D = R.getAsSingle<MetaclassDecl>()) {
-      Diag(IL, diag::err_redefinition) << II;
+    if (MetaclassDecl *D = R.getAsSingle<MetaclassDecl>()) {
+      Diag(IdLoc, diag::err_redefinition) << II;
       Diag(D->getLocation(), diag::note_previous_definition);
-    }
-    else {
-      Diag(IL, diag::err_redefinition_different_kind) << II;
+    } else {
+      Diag(IdLoc, diag::err_redefinition_different_kind) << II;
       if (Decl *D = R.getAsSingle<Decl>())
         Diag(D->getLocation(), diag::note_previous_definition);
     }
     return DeclResult();
   }
 
-  MetaclassDecl* D = 
-    MetaclassDecl::Create(Context, CurContext, DL, IL, II, Body);
+  MetaclassDecl *D =
+      MetaclassDecl::Create(Context, CurContext, DLoc, IdLoc, II, Body);
   CurScope->AddDecl(D);
   IdResolver.AddDecl(D);
 
   return D;
 }
 
-// If II refers to a metaclass in the given scope, prefixed by an optional
-// scope specifier, returns that declaration. If lookup fails, or if the
-// name refers to some other declaration, the return an invalid result.
-DeclResult Sema::CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc, 
-                                    IdentifierInfo *Id) {
-  LookupResult R(*this, Id, IdLoc, LookupTagName);
+/// If \p II refers to a metaclass in the given scope, prefixed by an optional
+/// scope specifier, return that declaration. If lookup fails, or if the
+/// name refers to some other declaration, then return an invalid result.
+DeclResult Sema::CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
+                                    IdentifierInfo *II) {
+  LookupResult R(*this, II, IdLoc, LookupTagName);
   if (SS)
     LookupQualifiedName(R, CurContext, *SS);
   else
     LookupName(R, CurScope);
 
-  if (MetaclassDecl* D = R.getAsSingle<MetaclassDecl>())
+  if (MetaclassDecl *D = R.getAsSingle<MetaclassDecl>())
     return D;
-  else
-    return DeclResult();
-}
 
+  return DeclResult();
+}

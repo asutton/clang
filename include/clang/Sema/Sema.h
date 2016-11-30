@@ -8202,9 +8202,9 @@ public:
   ExprResult ActOnReflectionTrait(SourceLocation KWLoc, ReflectionTrait Trait,
                                   ArrayRef<Expr *> Args,
                                   SourceLocation RParenLoc);
-  DeclResult ActOnMetaclassDefinition(SourceLocation DL, SourceLocation IL, 
+  DeclResult ActOnMetaclassDefinition(SourceLocation DLoc, SourceLocation IdLoc,
                                       IdentifierInfo *II, Stmt *Body);
-  DeclResult CheckMetaclassName(CXXScopeSpec *SS, SourceLocation Loc, 
+  DeclResult CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
                                 IdentifierInfo *II);
 
   //===--------------------------------------------------------------------===//

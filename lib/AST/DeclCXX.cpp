@@ -2439,11 +2439,11 @@ MetaclassDecl *MetaclassDecl::Create(ASTContext &C, DeclContext *DC,
 }
 
 MetaclassDecl *MetaclassDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) MetaclassDecl(nullptr, SourceLocation(), SourceLocation(), 
+  return new (C, ID) MetaclassDecl(nullptr, SourceLocation(), SourceLocation(),
                                    nullptr, nullptr);
 }
 
-void MetaclassDecl::anchor() { }
+void MetaclassDecl::anchor() {}
 
 static const char *getAccessName(AccessSpecifier AS) {
   switch (AS) {

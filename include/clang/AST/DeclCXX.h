@@ -3598,32 +3598,31 @@ public:
 /// \brief Represents a metaclass definition.
 ///
 /// For example:
-/// \code
-///    $class Ifoo { ... };
+/// \code{.cpp}
+/// $class Ifoo { ... }
 /// \endcode
 class MetaclassDecl : public NamedDecl {
   void anchor() override;
-  
-  /// \brief The location of the \c '$' operator
+
+  /// \brief The location of the \c $ operator.
   SourceLocation DollarLoc;
 
   /// \brief The body of the metaclass definition.
-  Stmt* Body;
+  Stmt *Body;
 
-  MetaclassDecl(DeclContext *DC, SourceLocation DL, SourceLocation IL, 
+  MetaclassDecl(DeclContext *DC, SourceLocation DL, SourceLocation IL,
                 IdentifierInfo *II, Stmt *B)
-    : NamedDecl(Metaclass, DC, IL, II),
-      DollarLoc(DL), Body(B) { }
+      : NamedDecl(Metaclass, DC, IL, II), DollarLoc(DL), Body(B) {}
 
 public:
-  /// \brief Returns the location of the '$' keyword.
+  /// \brief Returns the location of the \c $ keyword.
   SourceLocation getDollarLocation() const { return DollarLoc; }
 
-  /// \brief Returns the boy of the metaclass definition.
+  /// \brief Returns the body of the metaclass definition.
   Stmt *getBody() const override { return Body; }
 
   static MetaclassDecl *Create(ASTContext &C, DeclContext *DC,
-                               SourceLocation DL, SourceLocation IL, 
+                               SourceLocation DL, SourceLocation IL,
                                IdentifierInfo *II, Stmt *B);
   static MetaclassDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
@@ -3634,9 +3633,7 @@ public:
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == Metaclass; }
 
-  // Friend for getUsingDirectiveName.
-  friend class DeclContext;
-
+  friend class DeclContext; // Friend for getUsingDirectiveName.
   friend class ASTDeclReader;
 };
 

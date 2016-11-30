@@ -4226,12 +4226,14 @@ void Parser::ParseMicrosoftIfExistsClassDeclaration(DeclSpec::TST TagType,
 
 /// Parse a metaclass definition.
 ///
-///     metaclass-definition:
-///       '$class' identifier metaclass-body
+/// \verbatim
+///   metaclass-definition:
+///     '$class' identifier metaclass-body
 ///
-///     metaclass-body:
-///       compound-statement
-///
+///   metaclass-body:
+///     compound-statement
+/// \endverbatim
+/// 
 // FIXME: [PIM] Actually define the grammar for this thing. Note that
 // returning nullptr will allow parsing to continue after the tokens
 // have been consumed.
@@ -4247,13 +4249,13 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
   // Save the identifier and source location.
   IdentifierInfo *II = Tok.getIdentifierInfo();
   SourceLocation IL = ConsumeToken();
-  
+
   // Parse the body of the metaclass.
   if (Tok.isNot(tok::l_brace)) {
     Diag(Tok, diag::err_expected) << tok::l_brace;
     return nullptr;
   }
-  StmtResult Body = ParseCompoundStatement(/*isStmtExpr*/false);
+  StmtResult Body = ParseCompoundStatement(/*isStmtExpr*/ false);
   DeclResult Def = Actions.ActOnMetaclassDefinition(DL, IL, II, Body.get());
   return Actions.ConvertDeclToDeclGroup(Def.get());
 }
