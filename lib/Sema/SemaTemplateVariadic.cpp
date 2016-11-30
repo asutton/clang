@@ -735,6 +735,7 @@ bool Sema::containsUnexpandedParameterPacks(Declarator &D) {
   case TST_struct:
   case TST_interface:
   case TST_class:
+  case TST_metaclass: // FIXME: Is this correct?
   case TST_auto:
   case TST_auto_type:
   case TST_decltype_auto:

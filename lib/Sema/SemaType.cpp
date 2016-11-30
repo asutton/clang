@@ -1421,7 +1421,9 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
   case DeclSpec::TST_enum:
   case DeclSpec::TST_union:
   case DeclSpec::TST_struct:
-  case DeclSpec::TST_interface: {
+  case DeclSpec::TST_interface:
+  case DeclSpec::TST_metaclass: // FIXME: Is this correct?
+  {
     TypeDecl *D = dyn_cast_or_null<TypeDecl>(DS.getRepAsDecl());
     if (!D) {
       // This can happen in C++ with ambiguous lookups.

@@ -336,15 +336,16 @@ bool Declarator::isDeclarationOfFunction() const {
     case TST_decimal32:
     case TST_decimal64:
     case TST_double:
-    case TST_float128:
     case TST_enum:
     case TST_error:
     case TST_float:
+    case TST_float128:
     case TST_half:
     case TST_int:
     case TST_int128:
-    case TST_struct:
     case TST_interface:
+    case TST_metaclass:
+    case TST_struct:
     case TST_union:
     case TST_unknown_anytype:
     case TST_unspecified:
@@ -515,6 +516,7 @@ const char *DeclSpec::getSpecifierName(DeclSpec::TST T,
   case DeclSpec::TST_union:       return "union";
   case DeclSpec::TST_struct:      return "struct";
   case DeclSpec::TST_interface:   return "__interface";
+  case DeclSpec::TST_metaclass:   return "$class";
   case DeclSpec::TST_typename:    return "type-name";
   case DeclSpec::TST_typeofType:
   case DeclSpec::TST_typeofExpr:  return "typeof";
