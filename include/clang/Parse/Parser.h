@@ -205,7 +205,9 @@ class Parser : public CodeCompletionHandler {
 
   /// \brief When true, we are parsing the operand of a reflection. When
   /// parsing an expression operand, this will treat it as if it were the
-  /// operand of an unary '&' expression. Note that these can nest.
+  /// operand of an unary '&' expression.
+  /// 
+  /// Note that these can nest.
   ///
   // TODO: Manage this with an RAII class.
   int ReflectionExpressionDepth;

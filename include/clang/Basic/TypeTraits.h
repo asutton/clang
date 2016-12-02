@@ -104,29 +104,35 @@ namespace clang {
   /// two arguments, both expressions. The first is the reflected node, and the
   /// second is usually an integer value that indexes into an array.
   enum ReflectionTrait {
-    // General declaration properties.
+    /// \name General Declaration Properties
+    /// @{
     URT_ReflectName,
     URT_ReflectQualifiedName,
     URT_ReflectDeclarationContext,
     URT_ReflectLexicalContext,
-
-    URT_ReflectTraits,     // Computed properties of declarations
-    URT_ReflectSpecifiers, // Written properties of declarations
+    URT_ReflectTraits,     ///< Computed properties of declarations.
+    URT_ReflectSpecifiers, ///< Written properties of declarations.
+    /// @}
     
-    // Value and function declaration properties.
+    /// \name Value and Function Declaration Properties
+    /// @{
     URT_ReflectType,
-    URT_ReflectPointer, // For stored values
-    URT_ReflectValue,   // For named values
+    URT_ReflectPointer, ///< For stored values.
+    URT_ReflectValue,   ///< For named values.
+    /// @}
     
-    // Function declarations.
+    /// \name Function Declarations
+    /// @{
     URT_ReflectNumParameters,
     BRT_ReflectParameter,
+    /// @}
 
-    // Scope members.
+    /// \name Scope Members
+    /// @{
     URT_ReflectNumMembers,
     BRT_ReflectMember,
+    /// @}
   };
 }
-
 
 #endif

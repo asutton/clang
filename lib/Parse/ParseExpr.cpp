@@ -692,7 +692,23 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 ///
 /// [PIM]   '$' id-expression
 ///         '$' type-id
-///          reflection-trait
+///         '$' nested-name-specifier[opt] namespace-name
+///         reflection-trait
+///
+///       reflection-trait:
+///         '__reflect_name'
+///         '__reflect_qualified_name'
+///         '__reflect_type'
+///         '__reflect_traits'
+///         '__reflect_specifiers'
+///         '__reflect_pointer'
+///         '__reflect_value'
+///         '__reflect_num_parameters'
+///         '__reflect_parameter'
+///         '__reflect_declaration_context'
+///         '__reflect_lexical_context'
+///         '__reflect_num_members'
+///         '__reflect_member'
 /// \endverbatim
 ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
                                        bool isAddressOfOperand,

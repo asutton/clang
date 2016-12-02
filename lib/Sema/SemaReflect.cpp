@@ -51,7 +51,7 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr *E) {
   return BuildDeclReflection(OpLoc, cast<DeclRefExpr>(E)->getDecl());
 }
 
-// \brief Build a reflection for the type wrapped by \p TSI.
+/// \brief Build a reflection for the type wrapped by \p TSI.
 ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc,
                                      TypeSourceInfo *TSI) {
   QualType T = TSI->getType();
@@ -63,18 +63,19 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc,
   return BuildTypeReflection(OpLoc, T);
 }
 
-// \brief Build a reflection for the type-id stored in \p D.
+/// \brief Build a reflection for the type-id stored in \p D.
 ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Declarator &D) {
   return ActOnCXXReflectExpr(OpLoc, GetTypeForDeclarator(D, CurScope));
 }
 
-/// Try to construct a reflection for the declaration named by \p II. This will
-/// reflect:
+/// Try to construct a reflection for the declaration named by \p II.
+/// 
+/// This will reflect:
 ///
 ///   - id-expressions whose unqualified-id is an identifier
 ///   - type-names that are identifiers, and
 ///   - namespace-names
-///
+///   
 // TODO: Handle ambiguous and overloaded lookups.
 ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec &SS,
                                      IdentifierInfo *II, SourceLocation IdLoc) {
@@ -114,11 +115,13 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec &SS,
   return BuildDeclReflection(OpLoc, D);
 }
 
-// Used to encode the kind of entity reflected. This value is packed into
-// the low order bits of each reflected pointer. Because we stuff pointer
-// values, all must be aligned at 2 bytes (which is generally guaranteed).
-//
-// TODO: Could we safely use high order bits?
+/// Used to encode the kind of entity reflected.
+///
+/// This value is packed into the low-order bits of each reflected pointer.
+/// Because we stuff pointer values, all must be aligned at 2 bytes (which is
+/// generally guaranteed).
+///
+// TODO: Could we safely use high-order bits?
 enum ReflectionKind { RK_Decl = 1, RK_Type = 2, RK_Expr = 3 };
 
 using ReflectionValue =
@@ -138,8 +141,8 @@ static std::pair<ReflectionKind, void *> ExplodeOpaqueValue(std::uintptr_t N) {
   return {K, P};
 }
 
-// Returns the name of the class we're going to instantiate.
-//
+/// Returns the name of the class we're going to instantiate.
+///
 // TODO: Add templates and... other stuff?
 //
 // TODO: Do we want a more precise set of types for these things?
@@ -214,8 +217,8 @@ ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
   return InitSeq.Perform(*this, Entity, Kind, Args);
 }
 
-// Returns the reflection class name for the type.
-//
+/// Returns the reflection class name for the type \p T.
+///
 // TODO: Actually populate this table.
 static char const *GetReflectionClass(QualType T) {
   T = T.getCanonicalType();
@@ -347,8 +350,8 @@ ClassTemplateDecl *Sema::RequireReflectionType(SourceLocation Loc,
   return Decl;
 }
 
-// Information supporting reflection operations.
-//
+/// Information supporting reflection operations.
+///
 // TODO: Move all of the functions below into this class since it provides
 // the context for their evaluation.
 struct Reflector {
@@ -381,7 +384,8 @@ struct Reflector {
   ExprResult ReflectNumParameters(Decl *D);
   ExprResult ReflectParameter(Decl *D, const llvm::APSInt &N);
 
-  template <typename I> ExprResult GetNumMembers(I First, I Limit);
+  template <typename I>
+  ExprResult GetNumMembers(I First, I Limit);
 
   template <typename I>
   ExprResult GetMember(const llvm::APSInt &N, I First, I Limit);
@@ -442,7 +446,7 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
   llvm_unreachable("Unhandled reflection");
 }
 
-// Returns a string literal having the given name.
+/// Returns a string literal that has the given name.
 static ExprResult MakeString(ASTContext &C, const std::string &Str) {
   llvm::APSInt Size = C.MakeIntValue(Str.size() + 1, C.getSizeType());
   QualType Elem = C.getConstType(C.CharTy);
@@ -467,7 +471,7 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
 
   case URT_ReflectTraits:
     return ReflectTraits(D);
-  
+
   case URT_ReflectPointer:
     return ReflectPointer(D);
 
@@ -524,7 +528,7 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
   return ExprError();
 }
 
-// Returns a named declaration or emits an error and returns nullptr.
+/// Returns a named declaration or emits an error and returns \c nullptr.
 static NamedDecl *RequireNamedDecl(Reflector &R, Decl *D) {
   Sema &S = R.S;
   if (!isa<NamedDecl>(D)) {
@@ -566,7 +570,7 @@ ExprResult Reflector::ReflectQualifiedName(Type *T) {
 // translation unit and for builtin types (because they aren't declared).
 // Perhaps we should return an empty context?
 
-// Reflects the declaration context of D.
+/// Reflects the declaration context of \p D.
 ExprResult Reflector::ReflectDeclarationContext(Decl *D) {
   if (isa<TranslationUnitDecl>(D)) {
     S.Diag(KWLoc, diag::err_reflection_not_supported);
@@ -575,8 +579,8 @@ ExprResult Reflector::ReflectDeclarationContext(Decl *D) {
   return S.BuildDeclReflection(KWLoc, cast<Decl>(D->getDeclContext()));
 }
 
-// Reflects the declaration context of a user-defined type T.
-//
+/// Reflects the declaration context of a user-defined type \p T.
+///
 // TODO: Emit a better error for non-declared types.
 ExprResult Reflector::ReflectDeclarationContext(Type *T) {
   if (TagDecl *TD = T->getAsTagDecl()) {
@@ -587,7 +591,7 @@ ExprResult Reflector::ReflectDeclarationContext(Type *T) {
   return ExprError();
 }
 
-// Reflects the lexical declaration context of D.
+/// Reflects the lexical declaration context of \p D.
 ExprResult Reflector::ReflectLexicalContext(Decl *D) {
   if (isa<TranslationUnitDecl>(D)) {
     S.Diag(KWLoc, diag::err_reflection_not_supported);
@@ -596,8 +600,8 @@ ExprResult Reflector::ReflectLexicalContext(Decl *D) {
   return S.BuildDeclReflection(KWLoc, cast<Decl>(D->getLexicalDeclContext()));
 }
 
-// Reflects the lexical declaration context of a user-defined type T.
-//
+/// Reflects the lexical declaration context of a user-defined type \p T.
+///
 // TODO: Emit a better error for non-declared types.
 ExprResult Reflector::ReflectLexicalContext(Type *T) {
   if (TagDecl *TD = T->getAsTagDecl()) {
@@ -608,20 +612,19 @@ ExprResult Reflector::ReflectLexicalContext(Type *T) {
   return ExprError();
 }
 
-enum LinkageTrait : unsigned {
-  LinkNone,
-  LinkInternal,
-  LinkExternal
-};
+enum LinkageTrait : unsigned { LinkNone, LinkInternal, LinkExternal };
 
-// Remap linkage specifiers into a 2 bit value.
-static LinkageTrait getLinkage(NamedDecl* D) {
+/// Remap linkage specifiers into a 2-bit value.
+static LinkageTrait getLinkage(NamedDecl *D) {
   switch (D->getFormalLinkage()) {
-    case NoLinkage: return LinkNone;
-    case InternalLinkage: return LinkInternal;
-    case ExternalLinkage: return LinkExternal;
-    default:
-      break;
+  case NoLinkage:
+    return LinkNone;
+  case InternalLinkage:
+    return LinkInternal;
+  case ExternalLinkage:
+    return LinkExternal;
+  default:
+    break;
   }
   llvm_unreachable("Invalid linkage specification");
 }
@@ -633,18 +636,22 @@ enum AccessTrait : unsigned {
   AccessProtected
 };
 
-// Returns the access specifiers for D.
-static AccessTrait getAccess(Decl* D) {
+/// Returns the access specifiers for \p D.
+static AccessTrait getAccess(Decl *D) {
   switch (D->getAccess()) {
-    case AS_public: return AccessPublic;
-    case AS_private: return AccessPrivate;
-    case AS_protected: return AccessProtected;
-    case AS_none: return AccessGlobal;
+  case AS_public:
+    return AccessPublic;
+  case AS_private:
+    return AccessPrivate;
+  case AS_protected:
+    return AccessProtected;
+  case AS_none:
+    return AccessGlobal;
   }
 }
 
-// This gives the storage duration of declared objects, not the storage
-// specifier, which incorporates aspects of duration and linkage.
+/// This gives the storage duration of declared objects, not the storage
+/// specifier, which incorporates aspects of duration and linkage.
 enum StorageTrait : unsigned {
   NoStorage,
   StaticStorage,
@@ -652,31 +659,34 @@ enum StorageTrait : unsigned {
   ThreadStorage,
 };
 
-// Returns the storage duration of D.
-static StorageTrait getStorage(VarDecl* D) {
+/// Returns the storage duration of \p D.
+static StorageTrait getStorage(VarDecl *D) {
   switch (D->getStorageDuration()) {
-    case SD_Automatic: return AutomaticStorage;
-    case SD_Thread: return ThreadStorage;
-    case SD_Static: return StaticStorage;
-    default:
-      break;
+  case SD_Automatic:
+    return AutomaticStorage;
+  case SD_Thread:
+    return ThreadStorage;
+  case SD_Static:
+    return StaticStorage;
+  default:
+    break;
   }
   return NoStorage;
 }
 
-// Traits for named objects.
-//
-// Note that a variable can be declared extern and not defined.
+/// Traits for named objects.
+///
+/// Note that a variable can be declared \c extern and not be defined.
 struct VariableTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
   StorageTrait Storage : 2;
   bool Constexpr : 1;
   bool Defined : 1;
-  bool Inline : 1; // Valid only when defined.
+  bool Inline : 1; ///< Valid only when defined.
 };
 
-static VariableTraits getVariableTraits(VarDecl* D) {
+static VariableTraits getVariableTraits(VarDecl *D) {
   VariableTraits T{};
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
@@ -687,14 +697,14 @@ static VariableTraits getVariableTraits(VarDecl* D) {
   return T;
 }
 
-// Traits for named sub-objects of a class (or union?).
+/// Traits for named sub-objects of a class (or union?).
 struct FieldTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
   bool Mutable : 1;
 };
 
-// Get the traits for a non-static member of a class or union.
+/// Get the traits for a non-static member of a class or union.
 static FieldTraits getFieldTraits(FieldDecl *D) {
   FieldTraits T{};
   T.Linkage = getLinkage(D);
@@ -703,27 +713,27 @@ static FieldTraits getFieldTraits(FieldDecl *D) {
   return T;
 }
 
-// Computed traits of normal, extern local, and static class functions.
-//
+/// Computed traits of normal, extern local, and static class functions.
+///
 // TODO: Add calling conventions to function traits.
 struct FunctionTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
   bool Constexpr : 1;
-  bool Nothrow : 1; // Called noexcept in C++
+  bool Nothrow : 1; ///< Called \c noexcept in C++.
   bool Defined : 1;
-  bool Inline : 1;  // Valid only when defined
-  bool Deleted : 1; // Valid only when defined
+  bool Inline : 1;  ///< Valid only when defined.
+  bool Deleted : 1; ///< Valid only when defined.
 };
 
-static bool getNothrow(ASTContext &C,  FunctionDecl *D) {
+static bool getNothrow(ASTContext &C, FunctionDecl *D) {
   if (const FunctionProtoType *Ty = D->getType()->getAs<FunctionProtoType>())
     return Ty->isNothrow(C);
   else
     return false;
 }
 
-static FunctionTraits getFunctionTraits(ASTContext& C, FunctionDecl *D) {
+static FunctionTraits getFunctionTraits(ASTContext &C, FunctionDecl *D) {
   FunctionTraits T{};
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
@@ -735,7 +745,7 @@ static FunctionTraits getFunctionTraits(ASTContext& C, FunctionDecl *D) {
   return T;
 }
 
-// Traits for normal member functions.
+/// Traits for normal member functions.
 struct MethodTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
@@ -745,7 +755,7 @@ struct MethodTraits {
   bool Pure : 1;
   bool Final : 1;
   bool Override : 1;
-  bool Nothrow : 1; // Called noexcept in C++
+  bool Nothrow : 1; ///< Called \c noexcept in C++.
   bool Defined : 1;
   bool Inline : 1;
   bool Deleted : 1;
@@ -753,7 +763,7 @@ struct MethodTraits {
   bool Trivial : 1;
 };
 
-static MethodTraits getMethodTraits(ASTContext& C, CXXConstructorDecl *D) {
+static MethodTraits getMethodTraits(ASTContext &C, CXXConstructorDecl *D) {
   MethodTraits T{};
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
@@ -767,7 +777,7 @@ static MethodTraits getMethodTraits(ASTContext& C, CXXConstructorDecl *D) {
   return T;
 }
 
-static MethodTraits getMethodTraits(ASTContext& C, CXXDestructorDecl *D) {
+static MethodTraits getMethodTraits(ASTContext &C, CXXDestructorDecl *D) {
   MethodTraits T{};
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
@@ -784,7 +794,7 @@ static MethodTraits getMethodTraits(ASTContext& C, CXXDestructorDecl *D) {
   return T;
 }
 
-static MethodTraits getMethodTraits(ASTContext& C, CXXConversionDecl *D) {
+static MethodTraits getMethodTraits(ASTContext &C, CXXConversionDecl *D) {
   MethodTraits T{};
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
@@ -801,7 +811,7 @@ static MethodTraits getMethodTraits(ASTContext& C, CXXConversionDecl *D) {
   return T;
 }
 
-static MethodTraits getMethodTraits(ASTContext& C, CXXMethodDecl *D) {
+static MethodTraits getMethodTraits(ASTContext &C, CXXMethodDecl *D) {
   MethodTraits T{};
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
@@ -884,17 +894,16 @@ static EnumTraits getEnumTraits(EnumDecl *D) {
   return T;
 }
 
-// Convert a bitfield structure into a uint32.
-template<typename Traits>
-static inline std::uint32_t LaunderTraits(Traits S)
-{
+/// Convert a bit-field structure into a uint32.
+template <typename Traits>
+static inline std::uint32_t LaunderTraits(Traits S) {
   static_assert(sizeof(std::uint32_t) == sizeof(Traits), "Size mismatch");
   unsigned ret{};
   std::memcpy(&ret, &S, sizeof(S));
   return ret;
 }
 
-// Reflects the specifiers of the declaration D.
+/// Reflects the specifiers of the declaration \p D.
 ExprResult Reflector::ReflectTraits(Decl *D) {
   ASTContext &C = S.Context;
 
@@ -948,16 +957,18 @@ ExprResult Reflector::ReflectTraits(Type *T) {
   return IntegerLiteral::Create(C, N, C.UnsignedIntTy, KWLoc);
 }
 
-// Reflects a pointer the given declaration. This only applies to global
-// variables, member variables, and functions.
-//
+/// Reflects a pointer.
+/// 
+/// This only applies to global variables, member variables, and functions.
+///
 // TODO: We can actually reflect pointers to local variables by storing
 // them within the reflected object. For example:
 //
 //    void f() {
 //      int x = 0;
-//      auto p = $x; // constructs a temp with a pointer to x.
-//      (void)*p.pointer(); // evaluates to 0.
+//      auto p = $x; // Constructs a temp with a pointer to x.
+//      (void)*p.pointer(); // Evaluates to 0.
+//    }
 //
 // This would require that local declarations reflect differently than
 // global declarations.
@@ -1005,8 +1016,8 @@ ExprResult Reflector::ReflectPointer(Decl *D) {
   return Op;
 }
 
-// Reflects the value of an enumerator.
-//
+/// Reflects the value of an enumerator.
+///
 // TODO: Consider allowing this for instantiated non-type template arguments
 // as well.
 ExprResult Reflector::ReflectValue(Decl *D) {
@@ -1016,13 +1027,13 @@ ExprResult Reflector::ReflectValue(Decl *D) {
   }
   EnumConstantDecl *Enum = cast<EnumConstantDecl>(D);
   QualType Ty = Enum->getType();
-  DeclRefExpr *Ref = 
-    new (S.Context) DeclRefExpr(Enum, false, Ty, VK_RValue, KWLoc);
+  DeclRefExpr *Ref =
+      new (S.Context) DeclRefExpr(Enum, false, Ty, VK_RValue, KWLoc);
   S.MarkDeclRefReferenced(Ref);
   return Ref;
 }
 
-// Reflects the type the typed declaration D.
+/// Reflects the type of the typed declaration \p D.
 ExprResult Reflector::ReflectType(Decl *D) {
   if (ValueDecl *VD = dyn_cast<ValueDecl>(D))
     return S.BuildTypeReflection(KWLoc, VD->getType());
@@ -1030,7 +1041,7 @@ ExprResult Reflector::ReflectType(Decl *D) {
   return ExprError();
 }
 
-// Returns a function declaration or emits a diagnostic and returns null.
+/// Returns a function declaration or emits a diagnostic and returns \c nullptr.
 static FunctionDecl *RequireFunctionDecl(Reflector &R, Decl *D) {
   if (!isa<FunctionDecl>(D)) {
     R.S.Diag(R.Args[0]->getLocStart(), diag::err_reflection_not_function);
@@ -1039,7 +1050,7 @@ static FunctionDecl *RequireFunctionDecl(Reflector &R, Decl *D) {
   return cast<FunctionDecl>(D);
 }
 
-// Reflects the number of parameters of a function declaration.
+/// Reflects the number of parameters of a function declaration.
 ExprResult Reflector::ReflectNumParameters(Decl *D) {
   if (FunctionDecl *Fn = RequireFunctionDecl(*this, D)) {
     ASTContext &C = S.Context;
@@ -1050,7 +1061,7 @@ ExprResult Reflector::ReflectNumParameters(Decl *D) {
   return ExprError();
 }
 
-// Reflects a selected parameter of a function.
+/// Reflects a selected parameter of a function.
 ExprResult Reflector::ReflectParameter(Decl *D, const llvm::APSInt &N) {
   if (FunctionDecl *Fn = RequireFunctionDecl(*this, D)) {
     unsigned Num = N.getExtValue();
@@ -1070,8 +1081,9 @@ static NamespaceDecl *RequireNamespace(Reflector &R, Decl *D) {
   return nullptr;
 }
 
-// Reflects the number of elements in the context.
-template <typename I> ExprResult Reflector::GetNumMembers(I First, I Limit) {
+/// Reflects the number of elements in the context.
+template <typename I>
+ExprResult Reflector::GetNumMembers(I First, I Limit) {
   ASTContext &C = S.Context;
   QualType T = C.UnsignedIntTy;
   unsigned D = std::distance(First, Limit);
@@ -1079,7 +1091,7 @@ template <typename I> ExprResult Reflector::GetNumMembers(I First, I Limit) {
   return IntegerLiteral::Create(C, N, T, KWLoc);
 }
 
-// Reflects the selected member from the declaration.
+/// Reflects the selected member from the declaration.
 template <typename I>
 ExprResult Reflector::GetMember(const llvm::APSInt &N, I First, I Limit) {
   unsigned Ix = N.getExtValue();
@@ -1107,7 +1119,7 @@ ExprResult Reflector::ReflectNumMembers(Decl *D) {
   return ExprError();
 }
 
-// Reflects the selected member from the declaration.
+/// Reflects the selected member from the declaration.
 ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   if (D) {
     if (TagDecl *TD = dyn_cast<TagDecl>(D))

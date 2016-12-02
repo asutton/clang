@@ -4235,9 +4235,10 @@ public:
   }
 };
 
-/// An expression denoting the reflection of a dependent name, type, or
-/// expression. These are used only to preserve dependent expressions in
-/// templates.
+/// \brief An expression denoting the reflection of a dependent name, type, or
+/// expression.
+/// 
+/// These are used only to preserve dependent expressions in templates.
 ///
 // TODO: The constructors currently assumes that the expression is type
 // dependent, but not value or instantiation dependent. I don't know if that's
@@ -4302,6 +4303,8 @@ public:
   }
 };
 
+/// \brief A reflection trait intrinsic.
+/// 
 /// A reflection trait is a query of an AST node. All traits accept a sequence
 /// of arguments (expressions), the first of which is the encoded value of
 /// the AST node.

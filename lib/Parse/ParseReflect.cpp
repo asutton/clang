@@ -98,8 +98,20 @@ static unsigned ReflectionTraitArity(tok::TokenKind kind) {
 ///   primary-expression:
 ///     reflection-trait '(' expression-list ')'
 ///
-///   reflection-trait: one of
-///     ...
+///   reflection-trait:
+///     '__reflect_name'
+///     '__reflect_qualified_name'
+///     '__reflect_type'
+///     '__reflect_traits'
+///     '__reflect_specifiers'
+///     '__reflect_pointer'
+///     '__reflect_value'
+///     '__reflect_num_parameters'
+///     '__reflect_parameter'
+///     '__reflect_declaration_context'
+///     '__reflect_lexical_context'
+///     '__reflect_num_members'
+///     '__reflect_member'
 /// \endverbatim
 ExprResult Parser::ParseReflectionTrait() {
   tok::TokenKind Kind = Tok.getKind();
