@@ -2551,7 +2551,7 @@ private:
 
   ExprResult ParseReflectExpression();
   ExprResult ParseReflectionTrait();
-  DeclGroupPtrTy ParseMetaClassDefinition();
+  DeclGroupPtrTy ParseMetaclassDefinition();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

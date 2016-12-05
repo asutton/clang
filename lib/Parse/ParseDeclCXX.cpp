@@ -4230,7 +4230,7 @@ void Parser::ParseMicrosoftIfExistsClassDeclaration(DeclSpec::TST TagType,
 // FIXME: [PIM] Actually define the grammar for this thing. Note that
 // returning nullptr will allow parsing to continue after the tokens
 // have been consumed.
-Parser::DeclGroupPtrTy Parser::ParseMetaClassDefinition() {
+Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
   // We should have matched the `$class` identifier in
   // ParseExternalDeclaration.
   assert(Tok.is(tok::dollar));
