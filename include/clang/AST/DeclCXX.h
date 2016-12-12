@@ -3595,7 +3595,7 @@ public:
   friend class ASTDeclReader;
 };
 
-/// \brief Represents a metaclass definition.
+/// \brief Represents a C++ metaclass.
 ///
 /// For example:
 /// \code{.cpp}
@@ -3610,25 +3610,52 @@ class MetaclassDecl : public NamedDecl {
   /// \brief The body of the metaclass definition.
   Stmt *Body;
 
-  MetaclassDecl(DeclContext *DC, SourceLocation DL, SourceLocation IL,
+  MetaclassDecl(DeclContext *DC, SourceLocation DLoc, SourceLocation IdLoc,
                 IdentifierInfo *II, Stmt *B)
-      : NamedDecl(Metaclass, DC, IL, II), DollarLoc(DL), Body(B) {}
+      : NamedDecl(Metaclass, DC, IdLoc, II), DollarLoc(DLoc), Body(B) {}
 
 public:
   /// \brief Returns the location of the \c $ keyword.
-  SourceLocation getDollarLocation() const { return DollarLoc; }
+  SourceLocation getDollarLoc() const { return DollarLoc; }
 
   /// \brief Returns the body of the metaclass definition.
   Stmt *getBody() const override { return Body; }
 
+  MetaclassDecl *getCanonicalDecl() override {
+    return cast<MetaclassDecl>(NamedDecl::getCanonicalDecl());
+  }
+
+  const MetaclassDecl *getCanonicalDecl() const {
+    return const_cast<MetaclassDecl *>(this)->getCanonicalDecl();
+  }
+
+  MetaclassDecl *getPreviousDecl() {
+    return cast_or_null<MetaclassDecl>(
+        static_cast<NamedDecl *>(this)->getPreviousDecl());
+  }
+
+  const MetaclassDecl *getPreviousDecl() const {
+    return const_cast<MetaclassDecl *>(this)->getPreviousDecl();
+  }
+
+  MetaclassDecl *getMostRecentDecl() {
+    return cast<MetaclassDecl>(
+        static_cast<NamedDecl *>(this)->getMostRecentDecl());
+  }
+
+  const MetaclassDecl *getMostRecentDecl() const {
+    return const_cast<MetaclassDecl *>(this)->getMostRecentDecl();
+  }
+
+  /// \brief Create a metaclass node.
   static MetaclassDecl *Create(ASTContext &C, DeclContext *DC,
-                               SourceLocation DL, SourceLocation IL,
+                               SourceLocation DLoc, SourceLocation IdLoc,
                                IdentifierInfo *II, Stmt *B);
+  
+  /// \brief Create an empty metaclass node.
   static MetaclassDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
-  SourceRange getSourceRange() const override LLVM_READONLY {
-    return SourceRange(DollarLoc, getLocation());
-  }
+  SourceRange getSourceRange() const override LLVM_READONLY;
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == Metaclass; }
