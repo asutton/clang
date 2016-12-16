@@ -1166,8 +1166,7 @@ DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
 
   MetaclassDecl *D =
       MetaclassDecl::Create(Context, CurContext, DLoc, IdLoc, II, Body);
-  CurScope->AddDecl(D);
-  IdResolver.AddDecl(D);
+  CurContext->addDecl(D);
 
   return D;
 }
