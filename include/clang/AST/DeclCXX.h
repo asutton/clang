@@ -43,6 +43,7 @@ class CXXFinalOverriderMap;
 class CXXIndirectPrimaryBaseSet;
 class FriendDecl;
 class LambdaExpr;
+class MetaclassDecl;
 class UsingDecl;
 
 /// \brief Represents any kind of function declaration, whether it is a
@@ -616,6 +617,8 @@ class CXXRecordDecl : public RecordDecl {
   /// instantiated or specialized.
   llvm::PointerUnion<ClassTemplateDecl*, MemberSpecializationInfo*>
     TemplateOrInstantiation;
+
+  MetaclassDecl *Meta;
 
   friend class DeclContext;
   friend class LambdaExpr;
@@ -1731,6 +1734,15 @@ public:
   TypeSourceInfo *getLambdaTypeInfo() const {
     return getLambdaData().MethodTyInfo;
   }
+
+  /// \brief Associates a metaclass definition with this class.
+  ///
+  /// When the class definition is completed, the metaclass is instantiated
+  /// and evaluated, ultimately replacing this class with the generated one.
+  void setMetaclass(MetaclassDecl *MC) { Meta = MC; }
+
+  /// \brief Returns the metaclass the class was declared with. May be null.
+  MetaclassDecl *getMetaclass() const { return Meta; }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) {

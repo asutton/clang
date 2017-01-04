@@ -12836,12 +12836,15 @@ static bool isAcceptableTagRedeclContext(Sema &S, DeclContext *OldDC,
 /// TagSpec indicates what kind of tag this is. TUK indicates whether this is a
 /// reference/declaration/definition of a tag.
 ///
+/// \param MC A pointer to a metaclass declaration, if the tag was introduced
+/// by a metaclass name. May be null.
+///
 /// \param IsTypeSpecifier \c true if this is a type-specifier (or
 /// trailing-type-specifier) other than one in an alias-declaration.
 ///
 /// \param SkipBody If non-null, will be set to indicate if the caller should
 /// skip the definition of this tag and treat it as if it were a declaration.
-Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
+Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, Decl *MC, TagUseKind TUK,
                      SourceLocation KWLoc, CXXScopeSpec &SS,
                      IdentifierInfo *Name, SourceLocation NameLoc,
                      AttributeList *Attr, AccessSpecifier AS,
@@ -13546,11 +13549,17 @@ CreateNewDecl:
     // struct X { int A; } D;    D should chain to X.
     if (getLangOpts().CPlusPlus) {
       // FIXME: Look for a way to use RecordDecl for simple structs.
-      New = CXXRecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, Name,
-                                  cast_or_null<CXXRecordDecl>(PrevDecl));
+      CXXRecordDecl* Class = 
+        CXXRecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, Name,
+                              cast_or_null<CXXRecordDecl>(PrevDecl));
 
       if (isStdBadAlloc && (!StdBadAlloc || getStdBadAlloc()->isImplicit()))
-        StdBadAlloc = cast<CXXRecordDecl>(New);
+        StdBadAlloc = Class;
+
+      if (MC)
+        Class->setMetaclass(cast<MetaclassDecl>(MC));
+
+      New = Class;
     } else
       New = RecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, Name,
                                cast_or_null<RecordDecl>(PrevDecl));
@@ -13770,6 +13779,23 @@ void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
          "Broken injected-class-name");
 }
 
+
+// Instantiate and evaluate the metaclass.
+//
+// The class C is the innermost template parameter for the 
+//
+// FIXME: MC should be a metaclass template.
+//
+// FIXME: Move this into SemaReflect.cpp or into a new file, SemaMetaclass?
+// This will also need to be a member of Sema.
+static CXXRecordDecl*
+EvaluateMetaclass(MetaclassDecl *MC, CXXRecordDecl *C)
+{
+  C->dump();
+  return C;
+}
+
+
 void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
                                     SourceRange BraceRange) {
   AdjustDeclIfTemplate(TagD);
@@ -13799,6 +13825,29 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
   // Notify the consumer that we've defined a tag.
   if (!Tag->isInvalidDecl())
     Consumer.HandleTagDeclDefinition(Tag);
+
+  // Lastly... apply the metaclass, if it exists.
+  if (CXXRecordDecl* Old = dyn_cast<CXXRecordDecl>(Tag)) {
+    if (MetaclassDecl*MC = Old->getMetaclass()) {
+      CXXRecordDecl* New = EvaluateMetaclass(MC, Old);
+
+      // TODO: This is not efficient. Removing declarations from a DC is a 
+      // linear in the number of declarations in the DC. It would be more 
+      // efficient to simply swap the values of the old and new classes.
+
+      // Replace the old declaration with the new declaration in its context.
+      DeclContext* SemaDC = Old->getDeclContext();
+      DeclContext* LexDC = Old->getDeclContext();
+      SemaDC->removeDecl(Old);
+      if (SemaDC !=LexDC)
+        LexDC->removeDecl(Old);
+      SemaDC->addDecl(New);
+
+      // Replace the old declaration
+      IdResolver.RemoveDecl(Old);
+      IdResolver.AddDecl(New);
+    }
+  }
 }
 
 void Sema::ActOnObjCContainerFinishDefinition() {

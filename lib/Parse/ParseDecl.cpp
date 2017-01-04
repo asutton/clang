@@ -3445,6 +3445,8 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
     case tok::kw_union: 
     case tok::annot_metaclass: {
       tok::TokenKind Kind = Tok.getKind();
+      if (Kind == tok::annot_metaclass)
+        DS.setMetaclass((Decl*)Tok.getAnnotationValue());
       ConsumeToken();
 
       // These are attributes following class specifiers.
@@ -4121,7 +4123,7 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   bool IsDependent = false;
   const char *PrevSpec = nullptr;
   unsigned DiagID;
-  Decl *TagDecl = Actions.ActOnTag(getCurScope(), DeclSpec::TST_enum, TUK,
+  Decl *TagDecl = Actions.ActOnTag(getCurScope(), DeclSpec::TST_enum, nullptr, TUK,
                                    StartLoc, SS, Name, NameLoc, attrs.getList(),
                                    AS, DS.getModulePrivateSpecLoc(), TParams,
                                    Owned, IsDependent, ScopedEnumKWLoc,

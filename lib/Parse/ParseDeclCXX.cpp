@@ -1859,7 +1859,8 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     stripTypeAttributesOffDeclSpec(attrs, DS, TUK);
 
     // Declaration or definition of a class type
-    TagOrTempResult = Actions.ActOnTag(getCurScope(), TagType, TUK, StartLoc,
+    TagOrTempResult = Actions.ActOnTag(getCurScope(), TagType, 
+                                       DS.getMetaclass(), TUK, StartLoc,
                                        SS, Name, NameLoc, attrs.getList(), AS,
                                        DS.getModulePrivateSpecLoc(),
                                        TParams, Owned, IsDependent,

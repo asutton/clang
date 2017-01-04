@@ -370,6 +370,9 @@ private:
     Expr *ExprRep;
   };
 
+  // An optional metaclass introduced as a type specifier.
+  Decl *Meta;
+
   // attributes.
   ParsedAttributes Attrs;
 
@@ -440,6 +443,7 @@ public:
       Friend_specified(false),
       Constexpr_specified(false),
       Concept_specified(false),
+      Meta(nullptr),
       Attrs(attrFactory),
       writtenBS(),
       ObjCQualifiers(nullptr) {
@@ -721,6 +725,9 @@ public:
     Concept_specified = false;
     ConceptLoc = SourceLocation();
   }
+
+  void setMetaclass(Decl *MC) { Meta = MC; }
+  Decl *getMetaclass() const { return Meta; }
 
   AttributePool &getAttributePool() const {
     return Attrs.getPool();

@@ -8473,7 +8473,7 @@ Sema::ActOnExplicitInstantiation(Scope *S,
 
   bool Owned = false;
   bool IsDependent = false;
-  Decl *TagD = ActOnTag(S, TagSpec, Sema::TUK_Reference,
+  Decl *TagD = ActOnTag(S, TagSpec, nullptr, Sema::TUK_Reference,
                         KWLoc, SS, Name, NameLoc, Attr, AS_none,
                         /*ModulePrivateLoc=*/SourceLocation(),
                         MultiTemplateParamsArg(), Owned, IsDependent,
