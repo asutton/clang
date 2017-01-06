@@ -320,6 +320,7 @@ namespace clang {
     void VisitUsingPackDecl(UsingPackDecl *D);
     void VisitUsingShadowDecl(UsingShadowDecl *D);
     void VisitConstructorUsingShadowDecl(ConstructorUsingShadowDecl *D);
+    void VisitMetaclassDecl(MetaclassDecl *D);
     void VisitLinkageSpecDecl(LinkageSpecDecl *D);
     void VisitExportDecl(ExportDecl *D);
     void VisitFileScopeAsmDecl(FileScopeAsmDecl *AD);
@@ -1455,6 +1456,12 @@ void ASTDeclReader::VisitConstructorUsingShadowDecl(
   D->NominatedBaseClassShadowDecl = ReadDeclAs<ConstructorUsingShadowDecl>();
   D->ConstructedBaseClassShadowDecl = ReadDeclAs<ConstructorUsingShadowDecl>();
   D->IsVirtual = Record.readInt();
+}
+
+void ASTDeclReader::VisitMetaclassDecl(MetaclassDecl *D) {
+  VisitNamedDecl(D);
+  D->DollarLoc = ReadSourceLocation();
+  D->Body = cast_or_null<CompoundStmt>(Record.readStmt());
 }
 
 void ASTDeclReader::VisitUsingDirectiveDecl(UsingDirectiveDecl *D) {
@@ -3550,6 +3557,9 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
     break;
   case DECL_OBJC_TYPE_PARAM:
     D = ObjCTypeParamDecl::CreateDeserialized(Context, ID);
+    break;
+  case DECL_METACLASS:
+    D = MetaclassDecl::CreateDeserialized(Context, ID);
     break;
   }
 

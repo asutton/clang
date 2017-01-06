@@ -111,6 +111,7 @@ namespace clang {
     void VisitUsingPackDecl(UsingPackDecl *D);
     void VisitUsingShadowDecl(UsingShadowDecl *D);
     void VisitConstructorUsingShadowDecl(ConstructorUsingShadowDecl *D);
+    void VisitMetaclassDecl(MetaclassDecl *D);
     void VisitLinkageSpecDecl(LinkageSpecDecl *D);
     void VisitExportDecl(ExportDecl *D);
     void VisitFileScopeAsmDecl(FileScopeAsmDecl *D);
@@ -1177,6 +1178,13 @@ void ASTDeclWriter::VisitConstructorUsingShadowDecl(
   Record.AddDeclRef(D->ConstructedBaseClassShadowDecl);
   Record.push_back(D->IsVirtual);
   Code = serialization::DECL_CONSTRUCTOR_USING_SHADOW;
+}
+
+void ASTDeclWriter::VisitMetaclassDecl(MetaclassDecl *D) {
+  VisitNamedDecl(D);
+  Record.AddSourceLocation(D->getDollarLoc());
+  Record.AddStmt(D->getBody());
+  Code = serialization::DECL_METACLASS;
 }
 
 void ASTDeclWriter::VisitUsingDirectiveDecl(UsingDirectiveDecl *D) {

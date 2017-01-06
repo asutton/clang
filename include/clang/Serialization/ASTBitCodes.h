@@ -1197,6 +1197,8 @@ namespace clang {
       DECL_PRAGMA_DETECT_MISMATCH,
       /// \brief An OMPDeclareReductionDecl record.
       DECL_OMP_DECLARE_REDUCTION,
+      /// \brief A MetaclassDecl record.
+      DECL_METACLASS
     };
 
     /// \brief Record codes for each kind of statement or expression.
