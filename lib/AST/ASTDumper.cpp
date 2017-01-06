@@ -448,6 +448,7 @@ namespace  {
     void VisitTypeAliasDecl(const TypeAliasDecl *D);
     void VisitTypeAliasTemplateDecl(const TypeAliasTemplateDecl *D);
     void VisitCXXRecordDecl(const CXXRecordDecl *D);
+    void VisitMetaclassDecl(const MetaclassDecl *D);
     void VisitStaticAssertDecl(const StaticAssertDecl *D);
     template<typename SpecializationDecl>
     void VisitTemplateDeclSpecialization(const SpecializationDecl *D,
@@ -1345,6 +1346,15 @@ void ASTDumper::VisitCXXRecordDecl(const CXXRecordDecl *D) {
         OS << "...";
     });
   }
+}
+
+void ASTDumper::VisitMetaclassDecl(const MetaclassDecl *D) {
+  OS << " $class";
+  dumpName(D);
+  if (D->isModulePrivate())
+    OS << " __module_private__";
+  OS << " definition";
+  dumpStmt(D->getBody());
 }
 
 void ASTDumper::VisitStaticAssertDecl(const StaticAssertDecl *D) {

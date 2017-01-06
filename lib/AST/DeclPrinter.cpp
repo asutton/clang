@@ -74,6 +74,7 @@ namespace {
     void VisitUsingDirectiveDecl(UsingDirectiveDecl *D);
     void VisitNamespaceAliasDecl(NamespaceAliasDecl *D);
     void VisitCXXRecordDecl(CXXRecordDecl *D);
+    void VisitMetaclassDecl(MetaclassDecl *D);
     void VisitLinkageSpecDecl(LinkageSpecDecl *D);
     void VisitTemplateDecl(const TemplateDecl *D);
     void VisitFunctionTemplateDecl(FunctionTemplateDecl *D);
@@ -361,12 +362,14 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
         Terminator = nullptr;
       else
         Terminator = ";";
-    } else if (isa<NamespaceDecl>(*D) || isa<LinkageSpecDecl>(*D) ||
-             isa<ObjCImplementationDecl>(*D) ||
-             isa<ObjCInterfaceDecl>(*D) ||
-             isa<ObjCProtocolDecl>(*D) ||
-             isa<ObjCCategoryImplDecl>(*D) ||
-             isa<ObjCCategoryDecl>(*D))
+    } else if (isa<NamespaceDecl>(*D) ||
+               isa<MetaclassDecl>(*D) ||
+               isa<LinkageSpecDecl>(*D) ||
+               isa<ObjCImplementationDecl>(*D) ||
+               isa<ObjCInterfaceDecl>(*D) ||
+               isa<ObjCProtocolDecl>(*D) ||
+               isa<ObjCCategoryImplDecl>(*D) ||
+               isa<ObjCCategoryDecl>(*D))
       Terminator = nullptr;
     else if (isa<EnumConstantDecl>(*D)) {
       DeclContext::decl_iterator Next = D;
@@ -382,7 +385,8 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
         ((isa<FunctionDecl>(*D) &&
           cast<FunctionDecl>(*D)->doesThisDeclarationHaveABody()) ||
          (isa<FunctionTemplateDecl>(*D) &&
-          cast<FunctionTemplateDecl>(*D)->getTemplatedDecl()->doesThisDeclarationHaveABody())))
+          cast<FunctionTemplateDecl>(*D)->getTemplatedDecl()->doesThisDeclarationHaveABody()) ||
+         isa<MetaclassDecl>(*D)))
       ; // StmtPrinter already added '\n' after CompoundStmt.
     else
       Out << "\n";
@@ -926,6 +930,27 @@ void DeclPrinter::VisitCXXRecordDecl(CXXRecordDecl *D) {
       VisitDeclContext(D);
       Indent() << "}";
     }
+  }
+}
+
+void DeclPrinter::VisitMetaclassDecl(MetaclassDecl *D) {
+  // FIXME: add printing of pragma attributes if required.
+  if (!Policy.SuppressSpecifiers && D->isModulePrivate())
+    Out << "__module_private__ ";
+  Out << "$class";
+
+  prettyPrintAttributes(D);
+
+  if (D->getIdentifier())
+    Out << ' ' << *D;
+
+  // Print the metaclass definition.
+  if (Policy.TerseOutput) {
+    Out << " {}";
+  } else {
+    Out << ' ';
+    if (D->getBody())
+      D->getBody()->printPretty(Out, nullptr, Policy, Indentation);
   }
 }
 
