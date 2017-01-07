@@ -13791,7 +13791,7 @@ void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
 static CXXRecordDecl*
 EvaluateMetaclass(MetaclassDecl *MC, CXXRecordDecl *C)
 {
-  C->dump();
+  // C->dump();
   return C;
 }
 
