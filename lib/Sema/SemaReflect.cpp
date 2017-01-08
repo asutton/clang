@@ -202,6 +202,9 @@ ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
   QualType IntPtrTy = Context.getIntPtrType();
   llvm::APSInt IntPtrVal = Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
   TemplateArgument Arg(Context, IntPtrVal, IntPtrTy);
+  // FIXME: WE Probably want to create a TemplateArgumentLocInfo with an
+  // expression just in case this somehow fails to be a valid template
+  // argument.
   TemplateArgumentLoc ArgLoc(Arg, TemplateArgumentLocInfo());
   TemplateArgumentListInfo TempArgs(Loc, Loc);
   TempArgs.addArgument(ArgLoc);
