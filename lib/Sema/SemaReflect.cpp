@@ -206,8 +206,9 @@ ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
   TemplateArgumentListInfo TempArgs(Loc, Loc);
   TempArgs.addArgument(ArgLoc);
   QualType TempType = CheckTemplateIdType(TempName, Loc, TempArgs);
+
   if (RequireCompleteType(Loc, TempType, diag::err_incomplete_type))
-    assert(false && "Failed to instantiate reflection type");
+    return ExprError();
 
   // Produce a value-initialized temporary of the required type.
   SmallVector<Expr *, 1> Args;
@@ -277,8 +278,9 @@ ExprResult Sema::BuildTypeReflection(SourceLocation Loc, QualType QT) {
   TemplateArgumentListInfo TempArgs(Loc, Loc);
   TempArgs.addArgument(ArgLoc);
   QualType TempType = CheckTemplateIdType(TempName, Loc, TempArgs);
+
   if (RequireCompleteType(Loc, TempType, diag::err_incomplete_type))
-    assert(false && "Failed to instantiate reflection type");
+    return ExprError();
 
   // Produce a value-initialized temporary of the required type.
   SmallVector<Expr *, 1> Args;
@@ -927,7 +929,7 @@ ExprResult Reflector::ReflectTraits(Decl *D) {
   else if (NamespaceDecl *Ns = dyn_cast<NamespaceDecl>(D))
     Traits = LaunderTraits(getNamespaceTraits(Ns));
   else
-    assert(false && "Unsupported declaration");
+    llvm_unreachable("Unsupported declaration");
 
   // FIXME: This needs to be at least 32 bits, 0 extended if greater.
   llvm::APSInt N = C.MakeIntValue(Traits, C.UnsignedIntTy);
@@ -950,7 +952,7 @@ ExprResult Reflector::ReflectTraits(Type *T) {
   else if (EnumDecl *Enum = dyn_cast<EnumDecl>(TD))
     Traits = LaunderTraits(getEnumTraits(Enum));
   else
-    assert(false && "Unsupported type");
+    llvm_unreachable("Unsupported type");
 
   // FIXME: This needs to be at least 32 bits, 0 extended if greater.
   llvm::APSInt N = C.MakeIntValue(Traits, C.UnsignedIntTy);
