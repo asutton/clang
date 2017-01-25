@@ -87,6 +87,38 @@ const VarDecl *CXXForRangeStmt::getLoopVariable() const {
   return const_cast<CXXForRangeStmt *>(this)->getLoopVariable();
 }
 
+
+CXXForTupleStmt::CXXForTupleStmt(DeclStmt *Range, DeclStmt *LoopVar, Stmt *Body,
+                                 SourceLocation FL, SourceLocation CL, 
+                                 SourceLocation RPL)
+    : Stmt(CXXForTupleStmtClass), ForLoc(FL), ColonLoc(CL), RParenLoc(RPL) {
+  SubExprs[RANGE] = Range;
+  SubExprs[LOOP] = LoopVar;
+  SubExprs[BODY] = Body;
+}
+
+VarDecl *CXXForTupleStmt::getLoopVariable() {
+  Decl *LV = cast<DeclStmt>(getLoopVarStmt())->getSingleDecl();
+  assert(LV && "No loop variable in CXXForTupleStmt");
+  return cast<VarDecl>(LV);
+}
+
+const VarDecl *CXXForTupleStmt::getLoopVariable() const {
+  return const_cast<CXXForTupleStmt *>(this)->getLoopVariable();
+}
+
+Expr *CXXForTupleStmt::getRangeInit() {
+  DeclStmt *RangeStmt = getRangeStmt();
+  VarDecl *RangeDecl = dyn_cast_or_null<VarDecl>(RangeStmt->getSingleDecl());
+  assert(RangeDecl && "for-range should have a single var decl");
+  return RangeDecl->getInit();
+}
+
+const Expr *CXXForTupleStmt::getRangeInit() const {
+  return const_cast<CXXForTupleStmt *>(this)->getRangeInit();
+}
+
+
 CoroutineBodyStmt *CoroutineBodyStmt::Create(
     const ASTContext &C, CoroutineBodyStmt::CtorArgs const& Args) {
   std::size_t Size = totalSizeToAlloc<Stmt *>(

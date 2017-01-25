@@ -1941,7 +1941,7 @@ static bool ObjCEnumerationCollection(Expr *Collection) {
 }
 
 
-// FIXME; Look away.
+// FIXME: Look away.
 extern ExprResult FinishOverloadedCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
                                            UnresolvedLookupExpr *ULE,
                                            SourceLocation LParenLoc,
@@ -2003,6 +2003,9 @@ GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
 }
 
 // Contains information resulting from the tuple lookups.
+//
+// FIXME: Reserve lookups for begin() and end() so that we can defer
+// to range-for when we find both.
 struct TupleForInfo
 {
   // The number of elements in the tuple.
@@ -2037,62 +2040,6 @@ CheckForTupleMembers(Sema &SemaRef,
   if (GetTupleSize(SemaRef, Loc, RangeNonRefType, TupleInfo.Size))
     return false;
  return true;
-
-#if 0
-  // Build a reference to the cv-unqualified range var (`ref`), so we
-  // can check for overloads of `get<I>(ref)`.
-  Expr* RangeRef = S.BuildDeclRefExpr(RangeVar, RangeNonRefType, VK_LValue, 
-                                      ColonLoc).get();
-
-  // Get the 'get' name for use in overload resolution.
-  IdentifierInfo *GetName = &S.PP.getIdentifierTable().get("get");
-  DeclarationNameInfo GetNameInfo(GetName, ColonLoc);
-
-  // Build the lookup expression get<I>.
-  const QualType SizeTy = S.Context.getSizeType();
-  llvm::APSInt I = S.Context.MakeIntValue(0, SizeTy);
-  TemplateArgument Arg(S.Context, I, SizeTy);
-  Expr* E = IntegerLiteral::Create(S.Context, I, SizeTy, ColonLoc);
-  TemplateArgumentLocInfo ArgLocInfo(E);
-  TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
-  TemplateArgumentListInfo TempArgs(ColonLoc, ColonLoc);
-  TempArgs.addArgument(ArgLoc);
-  UnresolvedSet<0> FoundNames;
-  UnresolvedLookupExpr *Fn =
-    UnresolvedLookupExpr::Create(S.Context, 
-                                 /*NamingClass=*/nullptr,
-                                 NestedNameSpecifierLoc(), 
-                                 /*TemplateKWLoc=*/SourceLocation(),
-                                 GetNameInfo,
-                                 /*NeedsADL=*/true, 
-                                 &TempArgs,
-                                 FoundNames.begin(), FoundNames.end());
-  Fn->dump();
-
-  // Build an overload set for get<I>(range-var)
-  OverloadCandidateSet CandidateSet(RangeLoc, OverloadCandidateSet::CSK_Normal);
-  ExprResult CallExpr;
-  bool Err = S.buildOverloadedCallSet(/*Scope=*/nullptr, Fn, Fn, RangeRef, 
-                                      ColonLoc, &CandidateSet, &CallExpr);
-  OverloadCandidateSet::iterator Best;
-  OverloadingResult OverloadResult = 
-    CandidateSet.BestViableFunction(S, Fn->getLocStart(), Best);
-
-  if (OverloadResult == OR_No_Viable_Function) {
-    llvm::outs() << "FUCK\n";
-    return;
-  }
-  CallExpr = FinishOverloadedCallExpr(S, /*Scope=*/nullptr, Fn, Fn, ColonLoc, RangeRef,
-                                      ColonLoc, nullptr, &CandidateSet, &Best,
-                                      OverloadResult,
-                                      /*AllowTypoCorrection=*/false);
-  if (CallExpr.isInvalid() || OverloadResult != OR_Success) {
-    llvm::outs() << "ALSO FUCK\n";
-    return;
-  }
-
-  CallExpr.get()->dump();
-  #endif
 }
 
 // Build a for-tuple statement.
@@ -2108,18 +2055,122 @@ BuildCXXForTupleStmt(Sema &SemaRef,
                      Stmt* LoopDecl,
                      TupleForInfo TupleInfo)
 {
-  // if (RangeType->isDependentType()) {
-  //   // The range is implicitly used as a placeholder when it is dependent.
-  //   RangeVar->markUsed(SemaRef.Context);
+  Scope *S = SemaRef.getCurScope();
 
-  //   // Deduce any 'auto's in the loop variable as 'DependentTy'. We'll fill
-  //   // them in properly when we instantiate the loop.
-  //   if (!LoopVar->isInvalidDecl() && Kind != Sema::BFRK_Check)
-  //     LoopVar->setType(
-  //       SemaRef.SubstAutoType(LoopVar->getType(), SemaRef.Context.DependentTy));
-  // }
+  DeclStmt *RangeDS = cast<DeclStmt>(RangeDecl);
+  VarDecl *RangeVar = cast<VarDecl>(RangeDS->getSingleDecl());
+  QualType RangeVarType = RangeVar->getType();
+  QualType RangeExprType = RangeVarType.getNonReferenceType();
 
+  DeclStmt *LoopVarDS = cast<DeclStmt>(LoopDecl);
+  VarDecl *LoopVar = cast<VarDecl>(LoopVarDS->getSingleDecl());
+
+  if (RangeVarType->isDependentType()) {
+    // The range is implicitly used as a placeholder when it is dependent.
+    RangeVar->markUsed(SemaRef.Context);
+
+    // Deduce any 'auto's in the loop variable as 'DependentTy'. We'll fill
+    // them in properly when we instantiate the loop.
+    if (!LoopVar->isInvalidDecl()/* && Kind != BFRK_Check*/)
+      LoopVar->setType(SemaRef.SubstAutoType(LoopVar->getType(), 
+                                             SemaRef.Context.DependentTy));
+  } else {
+    // Build the dependent expression `get<__N>(__range)`.
+
+    // Declare a new template parameter that we can refer to.
+    //
+    // FIXME: Do we need to compute the depth and position? Not really.
+    IdentifierInfo *ParmName = &SemaRef.PP.getIdentifierTable().get("__N");
+    const QualType ParmTy = SemaRef.Context.getSizeType();
+    TypeSourceInfo *ParmTI 
+      = SemaRef.Context.getTrivialTypeSourceInfo(ParmTy, ColonLoc);
+    NonTypeTemplateParmDecl *Parm
+      = NonTypeTemplateParmDecl::Create(SemaRef.Context, 
+                                        SemaRef.Context.getTranslationUnitDecl(),
+                                        ColonLoc, ColonLoc,
+                                        /*Depth=*/0, /*Position=*/0, 
+                                        ParmName, ParmTy, false, ParmTI);
+
+    // Dependent template argument N.
+    ExprResult ParmRef = 
+      SemaRef.BuildDeclRefExpr(Parm, ParmTy, VK_RValue, ColonLoc);
+    if (ParmRef.isInvalid())
+      return StmtError(); 
+
+    TemplateArgument Arg(ParmRef.get());
+    TemplateArgumentLocInfo ArgLocInfo(ParmRef.get());
+    TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
+    TemplateArgumentListInfo TempArgs(ColonLoc, ColonLoc);
+    TempArgs.addArgument(ArgLoc);
+
+    // Get the 'get' name for use in overload resolution.
+    IdentifierInfo *GetName = &SemaRef.PP.getIdentifierTable().get("get");
+    DeclarationNameInfo GetNameInfo(GetName, ColonLoc);
+
+    // Build the lookup expression get<I>.
+    UnresolvedSet<0> FoundNames;
+    UnresolvedLookupExpr *Fn =
+      UnresolvedLookupExpr::Create(SemaRef.Context, 
+                                   /*NamingClass=*/nullptr,
+                                   NestedNameSpecifierLoc(), 
+                                   /*TemplateKWLoc=*/SourceLocation(),
+                                   GetNameInfo,
+                                   /*NeedsADL=*/true, 
+                                   &TempArgs,
+                                   FoundNames.begin(), FoundNames.end());
+
+    // The __range expression.
+    ExprResult RangeRef = 
+      SemaRef.BuildDeclRefExpr(RangeVar, RangeExprType, VK_LValue, ColonLoc);
+    if (RangeRef.isInvalid())
+      return StmtError();  
+
+    // Build the actual call expression.
+    Expr* Args[] { RangeRef.get() };
+    ExprResult Call = SemaRef.ActOnCallExpr(S, Fn, ColonLoc, Args, ColonLoc);
+    // Call.get()->dump();
+    // Call.get()->dumpPretty(SemaRef.Context);
+
+    SemaRef.AddInitializerToDecl(LoopVar, Call.get(), false);
+    if (LoopVar->isInvalidDecl()) {
+      // FIXME: Actually handle this error!
+      llvm::outs() << "Can't initialize loop var?\n";
+      return StmtError();
+    }
+  }
   return StmtResult();
+
+  #if 0
+  // Build an overload set for get<I>(__range)
+  OverloadCandidateSet CandidateSet(ColonLoc, OverloadCandidateSet::CSK_Normal);
+  ExprResult CallExpr;
+  Expr* Args[] { RangeRef.get() };
+  bool Err = SemaRef.buildOverloadedCallSet(S, Fn, Fn, Args, 
+                                            ColonLoc, &CandidateSet, &CallExpr);
+  // if (!Err) {
+  //   // FIXME: Is this a hard error?
+  //   llvm::outs() << "Can't build overload set\n";
+  //   return StmtError();
+  // }
+  OverloadCandidateSet::iterator Best;
+  OverloadingResult OverloadResult = 
+    CandidateSet.BestViableFunction(SemaRef, Fn->getLocStart(), Best);
+  if (OverloadResult == OR_No_Viable_Function) {
+    // FIXME: Is this a hard error?
+    llvm::outs() << "No viable function\n";
+    return StmtError();
+  }
+  CallExpr = FinishOverloadedCallExpr(SemaRef, S, Fn, Fn, 
+                                      ColonLoc, Args, ColonLoc, nullptr, 
+                                      &CandidateSet, &Best, OverloadResult,
+                                      /*AllowTypoCorrection=*/false);
+  if (CallExpr.isInvalid() || OverloadResult != OR_Success) {
+    // FIXME: Is this a hard error?
+    llvm::outs() << "Can't produce call expression\n";
+    return StmtError();
+  }
+  CallExpr.get()->dump();
+  #endif
 }
 
 

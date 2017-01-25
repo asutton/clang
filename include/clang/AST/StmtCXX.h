@@ -210,6 +210,71 @@ public:
   }
 };
 
+/// CXXForRangeStmt - This represents C++0x [stmt.ranged]'s ranged for
+/// statement, represented as 'for (range-declarator : range-expression)'.
+///
+/// This is stored in a partially-desugared form to allow full semantic
+/// analysis of the constituent components. The original syntactic components
+/// can be extracted using getLoopVariable and getRangeInit.
+class CXXForTupleStmt : public Stmt {
+  enum { 
+    RANGE, // `auto&& __range`
+    LOOP,  // range-variable x = get<__N>(auto)
+    BODY,  // Body of the loop.
+    END 
+  };
+  Stmt *SubExprs[END];
+  SourceLocation ForLoc;
+  SourceLocation ColonLoc;
+  SourceLocation RParenLoc;
+
+  friend class ASTStmtReader;
+public:
+  CXXForTupleStmt(DeclStmt *Range, DeclStmt *LoopVar, Stmt *Body,
+               SourceLocation FL, SourceLocation CL, SourceLocation RPL);
+  CXXForTupleStmt(EmptyShell Empty) : Stmt(CXXForTupleStmtClass, Empty) { }
+
+  /// \brief Returns the statement containing the range declaration.
+  DeclStmt *getRangeStmt() { return cast<DeclStmt>(SubExprs[RANGE]); }
+  
+  /// \brief Returns the dependent loop variable declaration.
+  DeclStmt *getLoopVarStmt() { return cast<DeclStmt>(SubExprs[LOOP]); }
+
+  Expr *getRangeInit();
+  const Expr *getRangeInit() const;
+
+  VarDecl *getLoopVariable();
+  const VarDecl *getLoopVariable() const;
+
+  /// \brief Returns the parsed body of the loop.
+  const Stmt *getBody() const { return SubExprs[BODY]; }
+  Stmt *getBody() { return SubExprs[BODY]; }
+  
+  /// \Brief Set the body of the loop.
+  void setBody(Stmt *S) { SubExprs[BODY] = S; }
+
+  SourceLocation getForLoc() const { return ForLoc; }
+  SourceLocation getColonLoc() const { return ColonLoc; }
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getLocStart() const LLVM_READONLY { 
+    return ForLoc; 
+  }
+  SourceLocation getLocEnd() const LLVM_READONLY { 
+    return SubExprs[BODY]->getLocEnd(); 
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXForTupleStmtClass;
+  }
+
+  // Iterators
+  child_range children() {
+    return child_range(&SubExprs[0], &SubExprs[END]);
+  }
+};
+
+
 /// \brief Representation of a Microsoft __if_exists or __if_not_exists
 /// statement with a dependent name.
 ///

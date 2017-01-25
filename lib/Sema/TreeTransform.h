@@ -2009,6 +2009,42 @@ public:
                                           Sema::BFRK_Rebuild);
   }
 
+  /// \brief Build a new C++ tuple-based for statement.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  ///
+  /// FIXME: Actually implement this function.
+  StmtResult RebuildCXXForTupleStmt(SourceLocation ForLoc,
+                                    SourceLocation ColonLoc,
+                                    Stmt *Range, 
+                                    Stmt *LoopVar,
+                                    Stmt *Body,
+                                    SourceLocation RParenLoc) {
+    llvm_unreachable("not implemented");
+    // // If we've just learned that the range is actually an Objective-C
+    // // collection, treat this as an Objective-C fast enumeration loop.
+    // if (DeclStmt *RangeStmt = dyn_cast<DeclStmt>(Range)) {
+    //   if (RangeStmt->isSingleDecl()) {
+    //     if (VarDecl *RangeVar = dyn_cast<VarDecl>(RangeStmt->getSingleDecl())) {
+    //       if (RangeVar->isInvalidDecl())
+    //         return StmtError();
+
+    //       Expr *RangeExpr = RangeVar->getInit();
+    //       if (!RangeExpr->isTypeDependent() &&
+    //           RangeExpr->getType()->isObjCObjectPointerType())
+    //         return getSema().ActOnObjCForCollectionStmt(ForLoc, LoopVar, RangeExpr,
+    //                                                     RParenLoc);
+    //     }
+    //   }
+    // }
+
+    // return getSema().BuildCXXForRangeStmt(ForLoc, CoawaitLoc, ColonLoc,
+    //                                       Range, Begin, End,
+    //                                       Cond, Inc, LoopVar, RParenLoc,
+    //                                       Sema::BFRK_Rebuild);
+  }
+
   /// \brief Build a new C++0x range-based for statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
