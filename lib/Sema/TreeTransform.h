@@ -2022,27 +2022,30 @@ public:
                                     Stmt *Body,
                                     SourceLocation RParenLoc) {
     llvm_unreachable("not implemented");
-    // // If we've just learned that the range is actually an Objective-C
-    // // collection, treat this as an Objective-C fast enumeration loop.
-    // if (DeclStmt *RangeStmt = dyn_cast<DeclStmt>(Range)) {
-    //   if (RangeStmt->isSingleDecl()) {
-    //     if (VarDecl *RangeVar = dyn_cast<VarDecl>(RangeStmt->getSingleDecl())) {
-    //       if (RangeVar->isInvalidDecl())
-    //         return StmtError();
 
-    //       Expr *RangeExpr = RangeVar->getInit();
-    //       if (!RangeExpr->isTypeDependent() &&
-    //           RangeExpr->getType()->isObjCObjectPointerType())
-    //         return getSema().ActOnObjCForCollectionStmt(ForLoc, LoopVar, RangeExpr,
-    //                                                     RParenLoc);
-    //     }
-    //   }
-    // }
+#if 0
+    // If we've just learned that the range is actually an Objective-C
+    // collection, treat this as an Objective-C fast enumeration loop.
+    if (DeclStmt *RangeStmt = dyn_cast<DeclStmt>(Range)) {
+      if (RangeStmt->isSingleDecl()) {
+        if (VarDecl *RangeVar = dyn_cast<VarDecl>(RangeStmt->getSingleDecl())) {
+          if (RangeVar->isInvalidDecl())
+            return StmtError();
 
-    // return getSema().BuildCXXForRangeStmt(ForLoc, CoawaitLoc, ColonLoc,
-    //                                       Range, Begin, End,
-    //                                       Cond, Inc, LoopVar, RParenLoc,
-    //                                       Sema::BFRK_Rebuild);
+          Expr *RangeExpr = RangeVar->getInit();
+          if (!RangeExpr->isTypeDependent() &&
+              RangeExpr->getType()->isObjCObjectPointerType())
+            return getSema().ActOnObjCForCollectionStmt(ForLoc, LoopVar, RangeExpr,
+                                                        RParenLoc);
+        }
+      }
+    }
+
+    return getSema().BuildCXXForRangeStmt(ForLoc, CoawaitLoc, ColonLoc,
+                                          Range, Begin, End,
+                                          Cond, Inc, LoopVar, RParenLoc,
+                                          Sema::BFRK_Rebuild);
+#endif
   }
 
   /// \brief Build a new C++0x range-based for statement.
@@ -7301,6 +7304,86 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
     return S;
 
   return FinishCXXForRangeStmt(NewStmt.get(), Body.get());
+}
+
+template<typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformCXXForTupleStmt(CXXForTupleStmt *S) {
+  llvm_unreachable("not implemented");
+#if 0
+  StmtResult Range = getDerived().TransformStmt(S->getRangeStmt());
+  if (Range.isInvalid())
+    return StmtError();
+
+  StmtResult Begin = getDerived().TransformStmt(S->getBeginStmt());
+  if (Begin.isInvalid())
+    return StmtError();
+  StmtResult End = getDerived().TransformStmt(S->getEndStmt());
+  if (End.isInvalid())
+    return StmtError();
+
+  ExprResult Cond = getDerived().TransformExpr(S->getCond());
+  if (Cond.isInvalid())
+    return StmtError();
+  if (Cond.get())
+    Cond = SemaRef.CheckBooleanCondition(S->getColonLoc(), Cond.get());
+  if (Cond.isInvalid())
+    return StmtError();
+  if (Cond.get())
+    Cond = SemaRef.MaybeCreateExprWithCleanups(Cond.get());
+
+  ExprResult Inc = getDerived().TransformExpr(S->getInc());
+  if (Inc.isInvalid())
+    return StmtError();
+  if (Inc.get())
+    Inc = SemaRef.MaybeCreateExprWithCleanups(Inc.get());
+
+  StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
+  if (LoopVar.isInvalid())
+    return StmtError();
+
+  StmtResult NewStmt = S;
+  if (getDerived().AlwaysRebuild() ||
+      Range.get() != S->getRangeStmt() ||
+      Begin.get() != S->getBeginStmt() ||
+      End.get() != S->getEndStmt() ||
+      Cond.get() != S->getCond() ||
+      Inc.get() != S->getInc() ||
+      LoopVar.get() != S->getLoopVarStmt()) {
+    NewStmt = getDerived().RebuildCXXForRangeStmt(S->getForLoc(),
+                                                  S->getCoawaitLoc(),
+                                                  S->getColonLoc(), Range.get(),
+                                                  Begin.get(), End.get(),
+                                                  Cond.get(),
+                                                  Inc.get(), LoopVar.get(),
+                                                  S->getRParenLoc());
+    if (NewStmt.isInvalid())
+      return StmtError();
+  }
+
+  StmtResult Body = getDerived().TransformStmt(S->getBody());
+  if (Body.isInvalid())
+    return StmtError();
+
+  // Body has changed but we didn't rebuild the for-range statement. Rebuild
+  // it now so we have a new statement to attach the body to.
+  if (Body.get() != S->getBody() && NewStmt.get() == S) {
+    NewStmt = getDerived().RebuildCXXForRangeStmt(S->getForLoc(),
+                                                  S->getCoawaitLoc(),
+                                                  S->getColonLoc(), Range.get(),
+                                                  Begin.get(), End.get(),
+                                                  Cond.get(),
+                                                  Inc.get(), LoopVar.get(),
+                                                  S->getRParenLoc());
+    if (NewStmt.isInvalid())
+      return StmtError();
+  }
+
+  if (NewStmt.get() == S)
+    return S;
+
+  return FinishCXXForRangeStmt(NewStmt.get(), Body.get());
+  #endif
 }
 
 template<typename Derived>
