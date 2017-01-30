@@ -12,8 +12,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/AST/StmtCXX.h"
-
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/DeclTemplate.h"
 
 using namespace clang;
 
@@ -88,13 +88,19 @@ const VarDecl *CXXForRangeStmt::getLoopVariable() const {
 }
 
 
-CXXForTupleStmt::CXXForTupleStmt(DeclStmt *Range, DeclStmt *LoopVar, Stmt *Body,
-                                 SourceLocation FL, SourceLocation CL, 
-                                 SourceLocation RPL)
-    : Stmt(CXXForTupleStmtClass), ForLoc(FL), ColonLoc(CL), RParenLoc(RPL) {
+CXXForTupleStmt::CXXForTupleStmt(TemplateParameterList *P, DeclStmt *Range, 
+                                 DeclStmt *LoopVar, Stmt *Body, 
+                                 std::size_t N, SourceLocation FL, 
+                                 SourceLocation CL, SourceLocation RPL)
+    : Stmt(CXXForTupleStmtClass), Parms(P), Size(N), ForLoc(FL), ColonLoc(CL), 
+      RParenLoc(RPL) {
   SubExprs[RANGE] = Range;
   SubExprs[LOOP] = LoopVar;
   SubExprs[BODY] = Body;
+}
+
+NonTypeTemplateParmDecl *CXXForTupleStmt::getPlaceholderParameter() {
+  return cast<NonTypeTemplateParmDecl>(Parms->getParam(0));
 }
 
 VarDecl *CXXForTupleStmt::getLoopVariable() {

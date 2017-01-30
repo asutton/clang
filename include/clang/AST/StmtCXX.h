@@ -23,6 +23,7 @@
 namespace clang {
 
 class VarDecl;
+class TemplateParameterList;
 
 /// CXXCatchStmt - This represents a C++ catch block.
 ///
@@ -210,12 +211,25 @@ public:
   }
 };
 
-/// CXXForRangeStmt - This represents C++0x [stmt.ranged]'s ranged for
-/// statement, represented as 'for (range-declarator : range-expression)'.
+/// CXXForTupleStmt - This represents a ranged for statement that expands for
+/// each element of a tuple. That is, it allows this:
 ///
-/// This is stored in a partially-desugared form to allow full semantic
-/// analysis of the constituent components. The original syntactic components
-/// can be extracted using getLoopVariable and getRangeInit.
+///   for (auto x : make_tuple(a, b, c)) statement
+///
+/// Internally, the statement is represented in a partially desugared form like 
+/// this:
+///
+///   {
+///     auto&& __range = range-init;
+///     for<int I> {
+///       for-range-declaration = get<I>(__range);
+///       statement
+///   }
+///
+/// The `for<int I>` is obviously not valid C++. In the partially desugared 
+/// form, the tuple-for statement is parameterized by the Ith element of the
+/// the tuple. After initially parsed, the loop body is instantiated for each
+/// value of I in [0, tuple_size<decltype(__range)>::value).
 class CXXForTupleStmt : public Stmt {
   enum { 
     RANGE, // `auto&& __range`
@@ -223,16 +237,28 @@ class CXXForTupleStmt : public Stmt {
     BODY,  // Body of the loop.
     END 
   };
+  TemplateParameterList *Parms;
   Stmt *SubExprs[END];
+  std::size_t Size;
   SourceLocation ForLoc;
   SourceLocation ColonLoc;
   SourceLocation RParenLoc;
 
   friend class ASTStmtReader;
 public:
-  CXXForTupleStmt(DeclStmt *Range, DeclStmt *LoopVar, Stmt *Body,
-               SourceLocation FL, SourceLocation CL, SourceLocation RPL);
+  CXXForTupleStmt(TemplateParameterList *P, DeclStmt *Range, DeclStmt *LoopVar, 
+                  Stmt *Body, std::size_t N, SourceLocation FL, 
+                  SourceLocation CL, SourceLocation RPL);
   CXXForTupleStmt(EmptyShell Empty) : Stmt(CXXForTupleStmtClass, Empty) { }
+
+  /// \brief Returns the template parameter list of the declaration.
+  TemplateParameterList *getTemplateParameters() { return Parms; }
+
+  /// \brief Returns the placeholder value I in get<I>(__range).
+  NonTypeTemplateParmDecl *getPlaceholderParameter();
+
+  /// \brief Returns the size of the tuple.
+  std::size_t getTupleSize() const { return Size; }
 
   /// \brief Returns the statement containing the range declaration.
   DeclStmt *getRangeStmt() { return cast<DeclStmt>(SubExprs[RANGE]); }

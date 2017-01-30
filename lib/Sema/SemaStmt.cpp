@@ -17,6 +17,7 @@
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/CXXInheritance.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/EvaluatedExprVisitor.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
@@ -31,6 +32,7 @@
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ScopeInfo.h"
+#include "clang/Sema/Template.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -1960,6 +1962,10 @@ static bool
 GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType, 
              llvm::APSInt& Size)
 {
+  // FIXME: If RangeType is dependent, then we couldn't guarantee that this
+  // is a tuple or not. We can only verify that the RangeType is in fact a
+  // tuple when it is non-dependent.
+
   NamespaceDecl *Std = SemaRef.getStdNamespace();
   IdentifierInfo *SizeName = &SemaRef.PP.getIdentifierTable().get("tuple_size");
   LookupResult SizeLookup(SemaRef, SizeName, Loc, Sema::LookupAnyName);
@@ -2042,10 +2048,50 @@ CheckForTupleMembers(Sema &SemaRef,
  return true;
 }
 
+/// Synthesize a mostly qualified nested name specifier for a declaration. 
+/// this assumes the the declaration is both non-dependent and has no
+/// dependent components of its scope. Note that the source locations refer 
+/// to the point of synthesis, not physical source code locations.
+static NestedNameSpecifierLoc
+GetQualifierToDecl(ASTContext& Cxt, Decl *D, SourceLocation Loc) {
+  // Get the path to the the TU.
+  llvm::SmallVector<DeclContext*, 4> Path;
+  for (DeclContext *DC = D->getDeclContext(); !isa<TranslationUnitDecl>(DC);
+       DC = DC->getParent()) {
+    if (NamespaceDecl *NS = dyn_cast<NamespaceDecl>(DC)) {
+      // Don't include inline namespaces.
+      if (NS->isInline())
+        continue;
+    }
+
+    Path.push_back(DC);
+  }
+  std::reverse(Path.begin(), Path.end());
+
+  // Build the NNS.
+  NestedNameSpecifierLocBuilder Builder;
+  for (DeclContext *DC : Path) {
+    if (NamespaceDecl *NS = dyn_cast<NamespaceDecl>(DC)) {
+      // Builds NS::
+      Builder.Extend(Cxt, NS, Loc, Loc);
+    } else if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(DC)) {
+      QualType T = Cxt.getTagDeclType(Class);
+      TypeSourceInfo *TSI = Cxt.getTrivialTypeSourceInfo(T);
+      // Builds Class::. There is no template keyword.
+      Builder.Extend(Cxt, SourceLocation(), TSI->getTypeLoc(), Loc);
+    } else {
+      llvm_unreachable("Unhandled nested name specifier kind");
+    }
+  }
+  return Builder.getWithLocInContext(Cxt);
+}
+
+int DebugMe = false;
+
 // Build a for-tuple statement.
 //
 // Given a range variable, and a loop variable (First is a DeclStmt containing 
-// the loop var), build a new CXXTupleForStmt containing that information. Note
+// the loop var), build a new CXXForTupleStmt containing that information. Note
 // that the body will be parsed and instantiated later.
 static StmtResult
 BuildCXXForTupleStmt(Sema &SemaRef, 
@@ -2055,122 +2101,105 @@ BuildCXXForTupleStmt(Sema &SemaRef,
                      Stmt* LoopDecl,
                      TupleForInfo TupleInfo)
 {
+  ASTContext &Cxt = SemaRef.Context;
   Scope *S = SemaRef.getCurScope();
 
   DeclStmt *RangeDS = cast<DeclStmt>(RangeDecl);
   VarDecl *RangeVar = cast<VarDecl>(RangeDS->getSingleDecl());
   QualType RangeVarType = RangeVar->getType();
-  QualType RangeExprType = RangeVarType.getNonReferenceType();
+  QualType RangeClassType = RangeVarType.getNonReferenceType();
 
   DeclStmt *LoopVarDS = cast<DeclStmt>(LoopDecl);
   VarDecl *LoopVar = cast<VarDecl>(LoopVarDS->getSingleDecl());
 
-  if (RangeVarType->isDependentType()) {
-    // The range is implicitly used as a placeholder when it is dependent.
-    RangeVar->markUsed(SemaRef.Context);
+  // If the range type is not dependent, then it cannot be a for-tuple.
+  assert(!RangeVarType->isDependentType());
 
-    // Deduce any 'auto's in the loop variable as 'DependentTy'. We'll fill
-    // them in properly when we instantiate the loop.
-    if (!LoopVar->isInvalidDecl()/* && Kind != BFRK_Check*/)
-      LoopVar->setType(SemaRef.SubstAutoType(LoopVar->getType(), 
-                                             SemaRef.Context.DependentTy));
-  } else {
-    // Build the dependent expression `get<__N>(__range)`.
+  // The range must have class type (otherwise, we would have different
+  // processing rules.
+  assert(RangeClassType->isClassType());
 
-    // Declare a new template parameter that we can refer to.
-    //
-    // FIXME: Do we need to compute the depth and position? Not really.
-    IdentifierInfo *ParmName = &SemaRef.PP.getIdentifierTable().get("__N");
-    const QualType ParmTy = SemaRef.Context.getSizeType();
-    TypeSourceInfo *ParmTI 
-      = SemaRef.Context.getTrivialTypeSourceInfo(ParmTy, ColonLoc);
-    NonTypeTemplateParmDecl *Parm
-      = NonTypeTemplateParmDecl::Create(SemaRef.Context, 
-                                        SemaRef.Context.getTranslationUnitDecl(),
-                                        ColonLoc, ColonLoc,
-                                        /*Depth=*/0, /*Position=*/0, 
-                                        ParmName, ParmTy, false, ParmTI);
+  // Declare a new template parameter __N for which we will be substituting
+  // concrete values later.
+  //
+  // FIXME: Compute the template parameter depth.
+  IdentifierInfo *ParmName = &SemaRef.PP.getIdentifierTable().get("__N");
+  const QualType ParmTy = Cxt.getSizeType();
+  TypeSourceInfo *ParmTI 
+    = Cxt.getTrivialTypeSourceInfo(ParmTy, ColonLoc);
+  NonTypeTemplateParmDecl *Parm
+    = NonTypeTemplateParmDecl::Create(Cxt, 
+                                      Cxt.getTranslationUnitDecl(),
+                                      ColonLoc, ColonLoc,
+                                      /*Depth=*/0, /*Position=*/0, 
+                                      ParmName, ParmTy, false, ParmTI);
+  NamedDecl *Parms[] {Parm};
+  TemplateParameterList *ParmList
+    = TemplateParameterList::Create(SemaRef.Context, ColonLoc, ColonLoc, 
+                                    Parms, ColonLoc, nullptr);
 
-    // Dependent template argument N.
-    ExprResult ParmRef = 
-      SemaRef.BuildDeclRefExpr(Parm, ParmTy, VK_RValue, ColonLoc);
-    if (ParmRef.isInvalid())
-      return StmtError(); 
+  // Build the dependent expression `NNS::get<__N>(__range)` where NS is the
+  // nested name specifier denoting the scope in which the __range type is 
+  // defined.
+  // Dependent template argument N.
+  ExprResult ParmRef = 
+    SemaRef.BuildDeclRefExpr(Parm, ParmTy, VK_RValue, ColonLoc);
+  if (ParmRef.isInvalid())
+    return StmtError(); 
 
-    TemplateArgument Arg(ParmRef.get());
-    TemplateArgumentLocInfo ArgLocInfo(ParmRef.get());
-    TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
-    TemplateArgumentListInfo TempArgs(ColonLoc, ColonLoc);
-    TempArgs.addArgument(ArgLoc);
+  TemplateArgument Arg(ParmRef.get());
+  TemplateArgumentLocInfo ArgLocInfo(ParmRef.get());
+  TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
+  TemplateArgumentListInfo TempArgs(ColonLoc, ColonLoc);
+  TempArgs.addArgument(ArgLoc);
 
-    // Get the 'get' name for use in overload resolution.
-    IdentifierInfo *GetName = &SemaRef.PP.getIdentifierTable().get("get");
-    DeclarationNameInfo GetNameInfo(GetName, ColonLoc);
+  // Get the name information for  NNS::get
+  CXXRecordDecl *RangeClass = RangeClassType->getAsCXXRecordDecl();  
+  NestedNameSpecifierLoc NNS = GetQualifierToDecl(Cxt, RangeClass, ColonLoc);
+  IdentifierInfo *Name = &SemaRef.PP.getIdentifierTable().get("get");
+  DeclarationNameInfo DNI(Name, ColonLoc);
 
-    // Build the lookup expression get<I>.
-    UnresolvedSet<0> FoundNames;
-    UnresolvedLookupExpr *Fn =
-      UnresolvedLookupExpr::Create(SemaRef.Context, 
-                                   /*NamingClass=*/nullptr,
-                                   NestedNameSpecifierLoc(), 
-                                   /*TemplateKWLoc=*/SourceLocation(),
-                                   GetNameInfo,
-                                   /*NeedsADL=*/true, 
-                                   &TempArgs,
-                                   FoundNames.begin(), FoundNames.end());
-
-    // The __range expression.
-    ExprResult RangeRef = 
-      SemaRef.BuildDeclRefExpr(RangeVar, RangeExprType, VK_LValue, ColonLoc);
-    if (RangeRef.isInvalid())
-      return StmtError();  
-
-    // Build the actual call expression.
-    Expr* Args[] { RangeRef.get() };
-    ExprResult Call = SemaRef.ActOnCallExpr(S, Fn, ColonLoc, Args, ColonLoc);
-    // Call.get()->dump();
-    // Call.get()->dumpPretty(SemaRef.Context);
-
-    SemaRef.AddInitializerToDecl(LoopVar, Call.get(), false);
-    if (LoopVar->isInvalidDecl()) {
-      // FIXME: Actually handle this error!
-      llvm::outs() << "Can't initialize loop var?\n";
-      return StmtError();
-    }
+  // Do an initial lookup for X::get where X is the declaration context
+  // of the range type.
+  LookupResult R(SemaRef, DNI.getName(), ColonLoc, Sema::LookupOrdinaryName);
+  if (!SemaRef.LookupQualifiedName(R, RangeClass->getDeclContext())) {
+    // FIXME: This is a diagnosable error. If no X::get names can be 
+    // found, then the loop cannot be constructed.
+    SemaRef.Diag(ColonLoc, diag::err_not_implemented);
+    return StmtError();
   }
-  return StmtResult();
+  const UnresolvedSetImpl& FoundNames = R.asUnresolvedSet();
+  
+  // Build the lookup expression X::get<I>.
+  UnresolvedLookupExpr *Fn =
+    UnresolvedLookupExpr::Create(Cxt, 
+                                 /*NamingClass=*/nullptr,
+                                 NNS, 
+                                 /*TemplateKWLoc=*/SourceLocation(),
+                                 DNI,
+                                 /*NeedsADL=*/false, 
+                                 &TempArgs,
+                                 FoundNames.begin(), FoundNames.end());
 
-  #if 0
-  // Build an overload set for get<I>(__range)
-  OverloadCandidateSet CandidateSet(ColonLoc, OverloadCandidateSet::CSK_Normal);
-  ExprResult CallExpr;
+  // The __range expression.
+  ExprResult RangeRef = 
+    SemaRef.BuildDeclRefExpr(RangeVar, RangeClassType, VK_LValue, ColonLoc);
+  if (RangeRef.isInvalid())
+    return StmtError();
+
+  // Build the actual call expression X::get<I>(__range)
   Expr* Args[] { RangeRef.get() };
-  bool Err = SemaRef.buildOverloadedCallSet(S, Fn, Fn, Args, 
-                                            ColonLoc, &CandidateSet, &CallExpr);
-  // if (!Err) {
-  //   // FIXME: Is this a hard error?
-  //   llvm::outs() << "Can't build overload set\n";
-  //   return StmtError();
-  // }
-  OverloadCandidateSet::iterator Best;
-  OverloadingResult OverloadResult = 
-    CandidateSet.BestViableFunction(SemaRef, Fn->getLocStart(), Best);
-  if (OverloadResult == OR_No_Viable_Function) {
-    // FIXME: Is this a hard error?
-    llvm::outs() << "No viable function\n";
+  ExprResult Call = SemaRef.ActOnCallExpr(S, Fn, ColonLoc, Args, ColonLoc);
+
+  // And make that the initializer of the tuple argument.
+  SemaRef.AddInitializerToDecl(LoopVar, Call.get(), false);
+  if (LoopVar->isInvalidDecl())
     return StmtError();
-  }
-  CallExpr = FinishOverloadedCallExpr(SemaRef, S, Fn, Fn, 
-                                      ColonLoc, Args, ColonLoc, nullptr, 
-                                      &CandidateSet, &Best, OverloadResult,
-                                      /*AllowTypoCorrection=*/false);
-  if (CallExpr.isInvalid() || OverloadResult != OR_Success) {
-    // FIXME: Is this a hard error?
-    llvm::outs() << "Can't produce call expression\n";
-    return StmtError();
-  }
-  CallExpr.get()->dump();
-  #endif
+
+  // FIXME: We want the RParenLoc for the statement.
+  std::size_t N = TupleInfo.Size.getExtValue();
+  return new (Cxt) CXXForTupleStmt(ParmList, RangeDS, LoopVarDS, nullptr, N, 
+                                   ForLoc, ColonLoc, ColonLoc);
 }
 
 
@@ -2198,11 +2227,17 @@ BuildCXXForTupleStmt(Sema &SemaRef,
 /// If range-for lookup fails, try to synthesize a range over a tuple. In
 /// particular, we will try to construct the following:
 ///
-///   constexpr size_t N = size(range-init);
-///   <foreach I in 0..N-1> {
-///     for-range-declaration = get<I>(range-init);
-///     statement
+///   {
+///     auto&& __range = range-init;
+///     for<int I> {
+///       for-range-declaration = get<I>(__range);
+///       statement
 ///   }
+///
+/// The `for<int I>` is obviously not valid C++. Internally, this syntax 
+/// parameterizes the range body by an unspecified integer value. When the
+/// statement is finished, we instantiate the body for each value of I from
+/// 0 to the tuple size of the range-init.
 ///
 /// Note that if size() == 0, then then the body could simply be skipped.
 ///
@@ -2852,6 +2887,49 @@ static void DiagnoseForRangeVariableCopies(Sema &SemaRef,
   }
 }
 
+/// Attach the body of a for loop to the for tuple-statement, and if possible,
+/// instantiate all branches.
+static StmtResult FinishCXXForTupleStmt(Sema &SemaRef, CXXForTupleStmt *S, 
+                                        Stmt *B)
+{
+  SourceLocation Loc = S->getColonLoc();
+  ASTContext& Cxt = SemaRef.Context;
+
+  // Create a using-declaration for std::get.
+
+
+  // Rebuild the body to include the range variable.
+  Stmt *Stmts[] {
+    S->getLoopVarStmt(), // range-variable-declaration = get<I>(__range);
+    B                    // statement
+  };
+  Stmt *Body = new (Cxt) CompoundStmt(Cxt, Stmts, Loc, Loc);
+  S->setBody(Body);
+
+  // Instantiate the loop body for each element of the tuple.
+  for (std::size_t I = 0; I < S->getTupleSize(); ++I) {
+    // Build the template argument list for instantiation.
+    IntegerLiteral *E = IntegerLiteral::Create(Cxt, 
+                                               llvm::APSInt::getUnsigned(I), 
+                                               Cxt.getSizeType(),
+                                               Loc);
+    TemplateArgument Args[] {
+      TemplateArgument(Cxt, llvm::APSInt(E->getValue(), true), E->getType())
+    };
+    TemplateArgumentList TempArgs(TemplateArgumentList::OnStack, Args);
+    MultiLevelTemplateArgumentList MultiArgs(TempArgs);
+
+
+    // Instantiate the body for I.
+    LocalInstantiationScope Locals(SemaRef);
+    Sema::InstantiatingTemplate Inst(SemaRef, B->getLocStart(), S, Args, B->getSourceRange());
+    StmtResult Result = SemaRef.SubstStmt(Body, MultiArgs);
+    Result.get()->dump();
+  }
+
+  return StmtError();
+}
+
 /// FinishCXXForRangeStmt - Attach the body to a C++0x for-range statement.
 /// This is a separate step from ActOnCXXForRangeStmt because analysis of the
 /// body cannot be performed until after the type of the range variable is
@@ -2862,6 +2940,10 @@ StmtResult Sema::FinishCXXForRangeStmt(Stmt *S, Stmt *B) {
 
   if (isa<ObjCForCollectionStmt>(S))
     return FinishObjCForCollectionStmt(S, B);
+
+  // If this was actually a for-tuple statement, then process that differently.
+  if (CXXForTupleStmt *FTS = dyn_cast<CXXForTupleStmt>(S))
+    return FinishCXXForTupleStmt(*this, FTS, B);
 
   CXXForRangeStmt *ForStmt = cast<CXXForRangeStmt>(S);
   ForStmt->setBody(B);

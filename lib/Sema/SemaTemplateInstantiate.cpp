@@ -193,6 +193,7 @@ bool Sema::ActiveTemplateInstantiation::isInstantiationRecord() const {
   case ExplicitTemplateArgumentSubstitution:
   case DeducedTemplateArgumentSubstitution:
   case PriorTemplateArgumentSubstitution:
+  case ForLoopInstantiation:
     return true;
 
   case DefaultTemplateArgumentChecking:
@@ -229,6 +230,7 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
     Inst.DeductionInfo = DeductionInfo;
     Inst.InstantiationRange = InstantiationRange;
     AlreadyInstantiating =
+        Inst.Entity && // There is no entity when instantiating a for loop.
         !SemaRef.InstantiatingSpecializations
              .insert(std::make_pair(Inst.Entity->getCanonicalDecl(), Inst.Kind))
              .second;
@@ -347,6 +349,21 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
           SemaRef, ActiveTemplateInstantiation::DefaultTemplateArgumentChecking,
           PointOfInstantiation, InstantiationRange, Param, Template,
           TemplateArgs) {}
+
+// For tuple-for instantiation.
+Sema::InstantiatingTemplate::InstantiatingTemplate(
+    Sema &SemaRef, SourceLocation PointOfInstantiation, Stmt *S,
+    ArrayRef<TemplateArgument> TemplateArgs, SourceRange InstantiationRange)
+    : InstantiatingTemplate(
+          SemaRef, 
+          ActiveTemplateInstantiation::ForLoopInstantiation,
+          PointOfInstantiation, InstantiationRange, nullptr, nullptr,
+          TemplateArgs) {
+  // Set the loop on the active instantiation.
+  ActiveTemplateInstantiation& Inst = 
+    SemaRef.ActiveTemplateInstantiations.back();
+  Inst.Loop = S;      
+}
 
 void Sema::InstantiatingTemplate::Clear() {
   if (!Invalid) {
@@ -597,6 +614,11 @@ void Sema::PrintInstantiationStack() {
         << cast<FunctionDecl>(Active->Entity)
         << Active->InstantiationRange;
       break;
+
+    case ActiveTemplateInstantiation::ForLoopInstantiation:
+      // FIXME: Add a new diagnostic and then actually diagnose the error.
+      Diags.Report(Active->PointOfInstantiation,
+                   diag::note_default_function_arg_instantiation_here);
     }
   }
 }
@@ -620,6 +642,7 @@ Optional<TemplateDeductionInfo *> Sema::isSFINAEContext() const {
       // Fall through.
     case ActiveTemplateInstantiation::DefaultFunctionArgumentInstantiation:
     case ActiveTemplateInstantiation::ExceptionSpecInstantiation:
+    case ActiveTemplateInstantiation::ForLoopInstantiation:
       // This is a template instantiation, so there is no SFINAE.
       return None;
 
