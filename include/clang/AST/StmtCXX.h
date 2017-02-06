@@ -244,6 +244,9 @@ class CXXForTupleStmt : public Stmt {
   SourceLocation ColonLoc;
   SourceLocation RParenLoc;
 
+  /// The statements instantiated from the loop body.
+  Stmt **InstantiatedStmts;
+
   friend class ASTStmtReader;
 public:
   CXXForTupleStmt(TemplateParameterList *P, DeclStmt *Range, DeclStmt *LoopVar, 
@@ -261,10 +264,10 @@ public:
   std::size_t getTupleSize() const { return Size; }
 
   /// \brief Returns the statement containing the range declaration.
-  DeclStmt *getRangeStmt() { return cast<DeclStmt>(SubExprs[RANGE]); }
+  DeclStmt *getRangeStmt() const { return cast<DeclStmt>(SubExprs[RANGE]); }
   
   /// \brief Returns the dependent loop variable declaration.
-  DeclStmt *getLoopVarStmt() { return cast<DeclStmt>(SubExprs[LOOP]); }
+  DeclStmt *getLoopVarStmt() const { return cast<DeclStmt>(SubExprs[LOOP]); }
 
   Expr *getRangeInit();
   const Expr *getRangeInit() const;
@@ -276,8 +279,28 @@ public:
   const Stmt *getBody() const { return SubExprs[BODY]; }
   Stmt *getBody() { return SubExprs[BODY]; }
   
-  /// \Brief Set the body of the loop.
+  /// \brief Set the body of the loop.
   void setBody(Stmt *S) { SubExprs[BODY] = S; }
+
+  /// \brief Set the sequence of instantiated statements.
+  void setInstantiatedStatements(Stmt **S) {
+    assert(!InstantiatedStmts && "instantiated statements already defined");
+    InstantiatedStmts = S;
+  }
+
+  /// \brief Returns the sequence of instantiated statements.
+  ArrayRef<Stmt*> getInstantiatedStatements() const { 
+    return llvm::makeArrayRef(InstantiatedStmts, Size); 
+  }
+
+  /// \brief Returns a pointer to the first instantiated statement.
+  Stmt** begin_instantiated_statements() const {
+    return InstantiatedStmts;
+  }
+  /// \brief Returns a pointer past then 
+  Stmt** end_instantiated_statements() const {
+    return InstantiatedStmts + Size;
+  }
 
   SourceLocation getForLoc() const { return ForLoc; }
   SourceLocation getColonLoc() const { return ColonLoc; }

@@ -2894,23 +2894,17 @@ static StmtResult FinishCXXForTupleStmt(Sema &SemaRef, CXXForTupleStmt *S,
 {
   SourceLocation Loc = S->getColonLoc();
   ASTContext& Cxt = SemaRef.Context;
+  Stmt *V = S->getLoopVarStmt();
 
-  // Create a using-declaration for std::get.
-
-
-  // Rebuild the body to include the range variable.
-  Stmt *Stmts[] {
-    S->getLoopVarStmt(), // range-variable-declaration = get<I>(__range);
-    B                    // statement
-  };
-  Stmt *Body = new (Cxt) CompoundStmt(Cxt, Stmts, Loc, Loc);
-  S->setBody(Body);
-
+  llvm::SmallVector<Stmt*, 8> Stmts;
+  Stmts.push_back(S->getRangeStmt());
+  
   // Instantiate the loop body for each element of the tuple.
+  //
+  // TODO: If the tuple size is 0, should we even keep the range statement?
   for (std::size_t I = 0; I < S->getTupleSize(); ++I) {
-    // Build the template argument list for instantiation.
     IntegerLiteral *E = IntegerLiteral::Create(Cxt, 
-                                               llvm::APSInt::getUnsigned(I), 
+                                               llvm::APSInt::getUnsigned(I),
                                                Cxt.getSizeType(),
                                                Loc);
     TemplateArgument Args[] {
@@ -2919,15 +2913,18 @@ static StmtResult FinishCXXForTupleStmt(Sema &SemaRef, CXXForTupleStmt *S,
     TemplateArgumentList TempArgs(TemplateArgumentList::OnStack, Args);
     MultiLevelTemplateArgumentList MultiArgs(TempArgs);
 
-
-    // Instantiate the body for I.
+    // We need a local instantaition scope for this.
     LocalInstantiationScope Locals(SemaRef);
-    Sema::InstantiatingTemplate Inst(SemaRef, B->getLocStart(), S, Args, B->getSourceRange());
-    StmtResult Result = SemaRef.SubstStmt(Body, MultiArgs);
-    Result.get()->dump();
+    Sema::InstantiatingTemplate Inst(SemaRef, B->getLocStart(), S, Args, 
+                                     B->getSourceRange());
+    StmtResult Body = SemaRef.SubstForTupleBody(V, B, MultiArgs);
+    Stmts.push_back(Body.get());
   }
 
-  return StmtError();
+  // Make a new compound statement that includes the range statement followed
+  // by the instantiated loop bodies.
+  S->setBody(new (Cxt) CompoundStmt(Cxt, Stmts, Loc, Loc));
+  return S;
 }
 
 /// FinishCXXForRangeStmt - Attach the body to a C++0x for-range statement.

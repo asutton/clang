@@ -2702,6 +2702,35 @@ Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
   return Instantiator.TransformStmt(S);
 }
 
+StmtResult
+Sema::SubstForTupleBody(Stmt *LoopVarStmt, Stmt *LoopBodyStmt,
+                        const MultiLevelTemplateArgumentList &TemplateArgs) {
+  TemplateInstantiator Instantiator(*this, TemplateArgs, SourceLocation(),
+                                    DeclarationName());
+
+  // Instantiate the loop variable first, and then replace the original
+  // declaration with its transformed variant; this is not dissimilar from
+  // instantiating a parameter of generic lambda.
+  StmtResult LVS = Instantiator.TransformStmt(LoopVarStmt);
+  if (LVS.isInvalid())
+    return StmtError();
+  Decl *NewLoopVar = cast<DeclStmt>(LVS.get())->getSingleDecl();
+  Decl *OldLoopVar = cast<DeclStmt>(LoopVarStmt)->getSingleDecl();
+  Instantiator.transformedLocalDecl(OldLoopVar, NewLoopVar);
+
+  // Now, substitute through the rest of the loop body.
+  StmtResult LBS = Instantiator.TransformStmt(LoopBodyStmt);
+  if (LBS.isInvalid())
+    return StmtError();
+
+  // Build a compound statement combining the instantied loop var and body.
+  //
+  // FIXME: Do a better job with brace locations?
+  SourceLocation Loc;
+  Stmt *Stmts[] {LVS.get(), LBS.get()};
+  return new (Context) CompoundStmt(Context, Stmts, Loc, Loc);
+}
+
 ExprResult
 Sema::SubstExpr(Expr *E, const MultiLevelTemplateArgumentList &TemplateArgs) {
   if (!E)

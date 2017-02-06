@@ -93,7 +93,7 @@ CXXForTupleStmt::CXXForTupleStmt(TemplateParameterList *P, DeclStmt *Range,
                                  std::size_t N, SourceLocation FL, 
                                  SourceLocation CL, SourceLocation RPL)
     : Stmt(CXXForTupleStmtClass), Parms(P), Size(N), ForLoc(FL), ColonLoc(CL), 
-      RParenLoc(RPL) {
+      RParenLoc(RPL), InstantiatedStmts(nullptr) {
   SubExprs[RANGE] = Range;
   SubExprs[LOOP] = LoopVar;
   SubExprs[BODY] = Body;

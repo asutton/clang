@@ -180,6 +180,9 @@ void CodeGenFunction::EmitStmt(const Stmt *S) {
   case Stmt::CXXForRangeStmtClass:
     EmitCXXForRangeStmt(cast<CXXForRangeStmt>(*S));
     break;
+  case Stmt::CXXForTupleStmtClass:
+    EmitCXXForTupleStmt(cast<CXXForTupleStmt>(*S));
+    break;
   case Stmt::SEHTryStmtClass:
     EmitSEHTryStmt(cast<SEHTryStmt>(*S));
     break;
@@ -1006,6 +1009,13 @@ CodeGenFunction::EmitCXXForRangeStmt(const CXXForRangeStmt &S,
 
   // Emit the fall-through block.
   EmitBlock(LoopExit.getBlock(), true);
+}
+
+void
+CodeGenFunction::EmitCXXForTupleStmt(const CXXForTupleStmt &S,
+                                     ArrayRef<const Attr *> ForAttrs) {
+  // We've packaged the entire statement into a single compound statement.
+  EmitStmt(S.getBody());
 }
 
 void CodeGenFunction::EmitReturnOfRValue(RValue RV, QualType Ty) {

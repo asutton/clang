@@ -1181,14 +1181,14 @@ DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
 /// name refers to some other declaration, then return an invalid result.
 DeclResult Sema::CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
                                     IdentifierInfo *II) {
-  LookupResult R(*this, II, IdLoc, LookupTagName);
-  if (SS)
-    LookupQualifiedName(R, CurContext, *SS);
-  else
-    LookupName(R, CurScope);
+  // LookupResult R(*this, II, IdLoc, LookupTagName);
+  // if (SS)
+  //   LookupQualifiedName(R, CurContext, *SS);
+  // else
+  //   LookupName(R, CurScope);
 
-  if (MetaclassDecl *D = R.getAsSingle<MetaclassDecl>())
-    return D;
+  // if (MetaclassDecl *D = R.getAsSingle<MetaclassDecl>())
+  //   return D;
 
   return DeclResult();
 }

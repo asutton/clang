@@ -2222,6 +2222,9 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
 
     // No other cases for now.
     } else {
+      llvm::errs() << "FUCK\n";
+      E->dump();
+      llvm::errs() << "------------\n";
       llvm_unreachable("DeclRefExpr for Decl not entered in LocalDeclMap?");
     }
 

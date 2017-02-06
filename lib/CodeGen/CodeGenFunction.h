@@ -2521,6 +2521,8 @@ public:
 
   void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                            ArrayRef<const Attr *> Attrs = None);
+  void EmitCXXForTupleStmt(const CXXForTupleStmt &S,
+                           ArrayRef<const Attr *> Attrs = None);
 
   /// Returns calculated size of the specified type.
   llvm::Value *getTypeSize(QualType Ty);
