@@ -688,6 +688,10 @@ namespace {
     SourceLocation Loc;
     DeclarationName Entity;
 
+    /// \brief When instantiating a loop body, this refers to the original
+    /// loop variable.
+    VarDecl *OldLoopVar, *NewLoopVar;
+
   public:
     typedef TreeTransform<TemplateInstantiator> inherited;
 
@@ -697,6 +701,18 @@ namespace {
                          DeclarationName Entity)
       : inherited(SemaRef), TemplateArgs(TemplateArgs), Loc(Loc),
         Entity(Entity) { }
+
+    TemplateInstantiator(Sema &SemaRef,
+                         const MultiLevelTemplateArgumentList &TemplateArgs,
+                         SourceLocation Loc,
+                         VarDecl *Old, VarDecl *New)
+      : inherited(SemaRef), TemplateArgs(TemplateArgs), Loc(Loc), Entity(),  
+        OldLoopVar(Old), NewLoopVar(New) {
+      assert(Old && New);
+    }
+
+    /// \brief Returns true when instantiating a tuple-for loop body.
+    bool InstantiatingLoopBody() { return OldLoopVar && NewLoopVar; }
 
     /// \brief Determine whether the given type \p T has already been
     /// transformed.
@@ -1339,6 +1355,15 @@ TemplateInstantiator::TransformFunctionParmPackRefExpr(DeclRefExpr *E,
 ExprResult
 TemplateInstantiator::TransformDeclRefExpr(DeclRefExpr *E) {
   NamedDecl *D = E->getDecl();
+
+  // When instantiating a loop body, replace references to the dependent
+  // loop variable with references to the instantiated loop variable.
+  if (InstantiatingLoopBody() && D == OldLoopVar) {
+    NestedNameSpecifierLoc QualifierLoc = E->getQualifierLoc();
+    DeclarationNameInfo NameInfo(NewLoopVar->getDeclName(), 
+                                 NewLoopVar->getLocation());
+    return RebuildDeclRefExpr(QualifierLoc, NewLoopVar, NameInfo, nullptr);
+  }
 
   // Handle references to non-type template parameters and non-type template
   // parameter packs.
@@ -2691,13 +2716,17 @@ Sema::InstantiateClassTemplateSpecializationMembers(
                           TSK);
 }
 
+/// Returns the variable declaration in a statement.
+static inline VarDecl *GetLoopVar(Stmt* S) {
+  return cast<VarDecl>(cast<DeclStmt>(S)->getSingleDecl());
+}
+
 StmtResult
 Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
   if (!S)
     return S;
 
-  TemplateInstantiator Instantiator(*this, TemplateArgs,
-                                    SourceLocation(),
+  TemplateInstantiator Instantiator(*this, TemplateArgs, SourceLocation(),
                                     DeclarationName());
   return Instantiator.TransformStmt(S);
 }
@@ -2705,29 +2734,32 @@ Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
 StmtResult
 Sema::SubstForTupleBody(Stmt *LoopVarStmt, Stmt *LoopBodyStmt,
                         const MultiLevelTemplateArgumentList &TemplateArgs) {
-  TemplateInstantiator Instantiator(*this, TemplateArgs, SourceLocation(),
-                                    DeclarationName());
-
-  // Instantiate the loop variable first, and then replace the original
-  // declaration with its transformed variant; this is not dissimilar from
-  // instantiating a parameter of generic lambda.
-  StmtResult LVS = Instantiator.TransformStmt(LoopVarStmt);
-  if (LVS.isInvalid())
+  // Instantiate the loop variable statement first.
+  TemplateInstantiator Inst1(*this, TemplateArgs, SourceLocation(), 
+                            DeclarationName());
+  StmtResult LoopVarResult = Inst1.TransformStmt(LoopVarStmt);
+  if (LoopVarResult.isInvalid()) {
+    llvm::errs() << "FAIL loop\n";
     return StmtError();
-  Decl *NewLoopVar = cast<DeclStmt>(LVS.get())->getSingleDecl();
-  Decl *OldLoopVar = cast<DeclStmt>(LoopVarStmt)->getSingleDecl();
-  Instantiator.transformedLocalDecl(OldLoopVar, NewLoopVar);
+  }
 
-  // Now, substitute through the rest of the loop body.
-  StmtResult LBS = Instantiator.TransformStmt(LoopBodyStmt);
-  if (LBS.isInvalid())
+  // Instantiate the body separately, replacing uses of the old loop variable
+  // with the new loop variable.
+  VarDecl *OldVar = GetLoopVar(LoopVarStmt);
+  VarDecl *NewVar = GetLoopVar(LoopVarResult.get());
+  TemplateInstantiator Inst2(*this, TemplateArgs, SourceLocation(),
+                             OldVar, NewVar);
+  StmtResult LoopBodyResult = Inst2.TransformStmt(LoopBodyStmt);
+  if (LoopBodyResult.isInvalid()) {
+    llvm::errs() << "FAIL body\n";
     return StmtError();
+  }
 
   // Build a compound statement combining the instantied loop var and body.
   //
   // FIXME: Do a better job with brace locations?
   SourceLocation Loc;
-  Stmt *Stmts[] {LVS.get(), LBS.get()};
+  Stmt *Stmts[] {LoopVarResult.get(), LoopBodyResult.get()};
   return new (Context) CompoundStmt(Context, Stmts, Loc, Loc);
 }
 

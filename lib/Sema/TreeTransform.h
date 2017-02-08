@@ -8734,7 +8734,6 @@ TreeTransform<Derived>::TransformDeclRefExpr(DeclRefExpr *E) {
     // Mark it referenced in the new context regardless.
     // FIXME: this is a bit instantiation-specific.
     SemaRef.MarkDeclRefReferenced(E);
-
     return E;
   }
 

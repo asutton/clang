@@ -2913,11 +2913,13 @@ static StmtResult FinishCXXForTupleStmt(Sema &SemaRef, CXXForTupleStmt *S,
     TemplateArgumentList TempArgs(TemplateArgumentList::OnStack, Args);
     MultiLevelTemplateArgumentList MultiArgs(TempArgs);
 
-    // We need a local instantaition scope for this.
+    // We need a local instantiation scope for this.
     LocalInstantiationScope Locals(SemaRef);
     Sema::InstantiatingTemplate Inst(SemaRef, B->getLocStart(), S, Args, 
                                      B->getSourceRange());
     StmtResult Body = SemaRef.SubstForTupleBody(V, B, MultiArgs);
+    if (Body.isInvalid())
+      return StmtError();
     Stmts.push_back(Body.get());
   }
 
