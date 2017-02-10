@@ -2894,14 +2894,23 @@ static StmtResult FinishCXXForTupleStmt(Sema &SemaRef, CXXForTupleStmt *S,
 {
   SourceLocation Loc = S->getColonLoc();
   ASTContext& Cxt = SemaRef.Context;
-  Stmt *V = S->getLoopVarStmt();
 
-  llvm::SmallVector<Stmt*, 8> Stmts;
-  Stmts.push_back(S->getRangeStmt());
-  
+  // Return an empty statement (not an error) if the size is 0.
+  if (S->getTupleSize() == 0)
+    return StmtResult();
+
+  // Create a new compound statement that binds the loop variable with the
+  // parsed body. This is what we're going to instantiate.
+  Stmt *VarAndBody[] {S->getLoopVarStmt(), B};
+  Stmt *Body = new (Cxt) CompoundStmt(Cxt, VarAndBody, 
+                                          SourceLocation(),
+                                          SourceLocation());
+
   // Instantiate the loop body for each element of the tuple.
   //
   // TODO: If the tuple size is 0, should we even keep the range statement?
+  llvm::SmallVector<Stmt*, 8> Stmts;
+  Stmts.push_back(S->getRangeStmt());
   for (std::size_t I = 0; I < S->getTupleSize(); ++I) {
     IntegerLiteral *E = IntegerLiteral::Create(Cxt, 
                                                llvm::APSInt::getUnsigned(I),
@@ -2917,10 +2926,10 @@ static StmtResult FinishCXXForTupleStmt(Sema &SemaRef, CXXForTupleStmt *S,
     LocalInstantiationScope Locals(SemaRef);
     Sema::InstantiatingTemplate Inst(SemaRef, B->getLocStart(), S, Args, 
                                      B->getSourceRange());
-    StmtResult Body = SemaRef.SubstForTupleBody(V, B, MultiArgs);
-    if (Body.isInvalid())
+    StmtResult Instantiation = SemaRef.SubstForTupleBody(Body, MultiArgs);
+    if (Instantiation.isInvalid())
       return StmtError();
-    Stmts.push_back(Body.get());
+    Stmts.push_back(Instantiation.get());
   }
 
   // Make a new compound statement that includes the range statement followed

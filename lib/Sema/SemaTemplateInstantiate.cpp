@@ -617,8 +617,8 @@ void Sema::PrintInstantiationStack() {
 
     case ActiveTemplateInstantiation::ForLoopInstantiation:
       // FIXME: Add a new diagnostic and then actually diagnose the error.
-      Diags.Report(Active->PointOfInstantiation,
-                   diag::note_default_function_arg_instantiation_here);
+      // It should be something like: "for loop instantiation here".
+      Diags.Report(Active->PointOfInstantiation, diag::err_not_implemented);
     }
   }
 }
@@ -688,10 +688,6 @@ namespace {
     SourceLocation Loc;
     DeclarationName Entity;
 
-    /// \brief When instantiating a loop body, this refers to the original
-    /// loop variable.
-    VarDecl *OldLoopVar, *NewLoopVar;
-
   public:
     typedef TreeTransform<TemplateInstantiator> inherited;
 
@@ -701,18 +697,6 @@ namespace {
                          DeclarationName Entity)
       : inherited(SemaRef), TemplateArgs(TemplateArgs), Loc(Loc),
         Entity(Entity) { }
-
-    TemplateInstantiator(Sema &SemaRef,
-                         const MultiLevelTemplateArgumentList &TemplateArgs,
-                         SourceLocation Loc,
-                         VarDecl *Old, VarDecl *New)
-      : inherited(SemaRef), TemplateArgs(TemplateArgs), Loc(Loc), Entity(),  
-        OldLoopVar(Old), NewLoopVar(New) {
-      assert(Old && New);
-    }
-
-    /// \brief Returns true when instantiating a tuple-for loop body.
-    bool InstantiatingLoopBody() { return OldLoopVar && NewLoopVar; }
 
     /// \brief Determine whether the given type \p T has already been
     /// transformed.
@@ -1355,15 +1339,6 @@ TemplateInstantiator::TransformFunctionParmPackRefExpr(DeclRefExpr *E,
 ExprResult
 TemplateInstantiator::TransformDeclRefExpr(DeclRefExpr *E) {
   NamedDecl *D = E->getDecl();
-
-  // When instantiating a loop body, replace references to the dependent
-  // loop variable with references to the instantiated loop variable.
-  if (InstantiatingLoopBody() && D == OldLoopVar) {
-    NestedNameSpecifierLoc QualifierLoc = E->getQualifierLoc();
-    DeclarationNameInfo NameInfo(NewLoopVar->getDeclName(), 
-                                 NewLoopVar->getLocation());
-    return RebuildDeclRefExpr(QualifierLoc, NewLoopVar, NameInfo, nullptr);
-  }
 
   // Handle references to non-type template parameters and non-type template
   // parameter packs.
@@ -2716,11 +2691,6 @@ Sema::InstantiateClassTemplateSpecializationMembers(
                           TSK);
 }
 
-/// Returns the variable declaration in a statement.
-static inline VarDecl *GetLoopVar(Stmt* S) {
-  return cast<VarDecl>(cast<DeclStmt>(S)->getSingleDecl());
-}
-
 StmtResult
 Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
   if (!S)
@@ -2731,36 +2701,54 @@ Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
   return Instantiator.TransformStmt(S);
 }
 
+namespace {
+  /// The loop body instantiator is like the template instantatior in
+  /// that it produces new trees by substituting template arguments. Unlike
+  /// the TemplateInstantiator, this does not from declarations in a dependent
+  /// context to an instantiated context. It simply rebuilds the tree, 
+  /// performing local substitutions and lookups as needed.
+  class LoopBodyInstantiator : public TreeTransform<LoopBodyInstantiator> {
+    const MultiLevelTemplateArgumentList &TemplateArgs;
+    SourceLocation Loc;
+
+  public:
+    typedef TreeTransform<LoopBodyInstantiator> inherited;
+
+    LoopBodyInstantiator(Sema &SemaRef,
+                         const MultiLevelTemplateArgumentList &TemplateArgs,
+                         SourceLocation Loc)
+      : inherited(SemaRef), TemplateArgs(TemplateArgs), Loc(Loc) { }
+
+    // The loop body instantiator always rebuilds trees.
+    bool AlwaysRebuild() { return true; }
+
+    /// \brief Transform the definition of the given declaration by
+    /// instantiating it.
+    Decl *TransformDefinition(SourceLocation Loc, Decl *D) {
+      Decl *Inst = getSema().SubstDecl(D, getSema().CurContext, TemplateArgs);
+      if (!Inst)
+        return nullptr;
+
+      // FIXME: Do we actually need to add this to the current instantiation?
+      // It probably doesn't hurt to be on the safe side.
+      getSema().CurrentInstantiationScope->InstantiatedLocal(D, Inst);
+
+      // Save the local declaration for subsequent lookup.
+      transformedLocalDecl(D, Inst);
+      return Inst;
+    }
+  };
+} // namespace
+
+/// Substitution into a loop body is different than substitution in other
+/// contexts. In particular, we are not actually instantiating a template.
+/// We're just rebuilding a tree and rewiring expressions that refer to
+/// newly instantiated declarations.
 StmtResult
-Sema::SubstForTupleBody(Stmt *LoopVarStmt, Stmt *LoopBodyStmt,
+Sema::SubstForTupleBody(Stmt *S,
                         const MultiLevelTemplateArgumentList &TemplateArgs) {
-  // Instantiate the loop variable statement first.
-  TemplateInstantiator Inst1(*this, TemplateArgs, SourceLocation(), 
-                            DeclarationName());
-  StmtResult LoopVarResult = Inst1.TransformStmt(LoopVarStmt);
-  if (LoopVarResult.isInvalid()) {
-    llvm::errs() << "FAIL loop\n";
-    return StmtError();
-  }
-
-  // Instantiate the body separately, replacing uses of the old loop variable
-  // with the new loop variable.
-  VarDecl *OldVar = GetLoopVar(LoopVarStmt);
-  VarDecl *NewVar = GetLoopVar(LoopVarResult.get());
-  TemplateInstantiator Inst2(*this, TemplateArgs, SourceLocation(),
-                             OldVar, NewVar);
-  StmtResult LoopBodyResult = Inst2.TransformStmt(LoopBodyStmt);
-  if (LoopBodyResult.isInvalid()) {
-    llvm::errs() << "FAIL body\n";
-    return StmtError();
-  }
-
-  // Build a compound statement combining the instantied loop var and body.
-  //
-  // FIXME: Do a better job with brace locations?
-  SourceLocation Loc;
-  Stmt *Stmts[] {LoopVarResult.get(), LoopBodyResult.get()};
-  return new (Context) CompoundStmt(Context, Stmts, Loc, Loc);
+  LoopBodyInstantiator Instantiator(*this, TemplateArgs, SourceLocation());
+  return Instantiator.TransformStmt(S);
 }
 
 ExprResult
