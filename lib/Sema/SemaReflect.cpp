@@ -1163,7 +1163,7 @@ DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
       if (Decl *D = R.getAsSingle<Decl>())
         Diag(D->getLocation(), diag::note_previous_definition);
     }
-    return DeclResult();
+    return true;
   }
 
   MetaclassDecl *D =
@@ -1179,13 +1179,10 @@ DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
 DeclResult Sema::CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
                                     IdentifierInfo *II) {
   LookupResult R(*this, II, IdLoc, LookupTagName);
-  if (SS)
-    LookupQualifiedName(R, CurContext, *SS);
-  else
-    LookupName(R, CurScope);
+  LookupParsedName(R, CurScope, SS);
 
   if (MetaclassDecl *D = R.getAsSingle<MetaclassDecl>())
     return D;
 
-  return DeclResult();
+  return true;
 }

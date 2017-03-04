@@ -153,7 +153,7 @@ ExprResult Parser::ParseReflectionTrait() {
 bool Parser::TryAnnotateMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
                                       IdentifierInfo *II) {
   DeclResult MC = Actions.CheckMetaclassName(SS, IdLoc, II);
-  if (MC.isUnset())
+  if (MC.isInvalid())
     return false;
 
   // If the scope specifier was given, then consume it now, so we can
@@ -162,7 +162,7 @@ bool Parser::TryAnnotateMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
   // Also, build the source range for the annotation. If SS was given, then
   // the token spans the SS through the identifier.
   SourceRange Range;
-  if (SS) {
+  if (SS && SS->isNotEmpty()) {
     Range = SourceRange(SS->getRange());
     ConsumeToken();
   } else
