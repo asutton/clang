@@ -148,34 +148,28 @@ static std::pair<ReflectionKind, void *> ExplodeOpaqueValue(std::uintptr_t N) {
 // TODO: Do we want a more precise set of types for these things?
 static char const *GetReflectionClass(Decl *D) {
   switch (D->getKind()) {
-  case Decl::Var:
-    return "variable";
-  case Decl::Field:
-    return "member_variable";
-
-  case Decl::ParmVar:
-    return "parameter";
-
-  case Decl::Function:
-    return "function";
-  case Decl::CXXMethod:
-    return "member_function";
   case Decl::CXXConstructor:
     return "constructor";
-  case Decl::CXXDestructor:
-    return "destructor";
   case Decl::CXXConversion:
     return "conversion";
-
+  case Decl::CXXDestructor:
+    return "destructor";
+  case Decl::CXXMethod:
+    return "member_function";
   case Decl::EnumConstant:
     return "enumerator";
-
-  case Decl::TranslationUnit:
-    return "tu";
-
+  case Decl::Field:
+    return "member_variable";
+  case Decl::Function:
+    return "function";
   case Decl::Namespace:
     return "ns";
-
+  case Decl::ParmVar:
+    return "parameter";
+  case Decl::TranslationUnit:
+    return "tu";
+  case Decl::Var:
+    return "variable";
   default:
     break;
   }
@@ -464,30 +458,22 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
     return ReflectName(D);
   case URT_ReflectQualifiedName:
     return ReflectQualifiedName(D);
-
   case URT_ReflectDeclarationContext:
     return ReflectDeclarationContext(D);
-
   case URT_ReflectLexicalContext:
     return ReflectLexicalContext(D);
-
   case URT_ReflectTraits:
     return ReflectTraits(D);
-
   case URT_ReflectPointer:
     return ReflectPointer(D);
-
   case URT_ReflectValue:
     return ReflectValue(D);
-
   case URT_ReflectType:
     return ReflectType(D);
-
   case URT_ReflectNumParameters:
     return ReflectNumParameters(D);
   case BRT_ReflectParameter:
     return ReflectParameter(D, Vals[1]);
-
   case URT_ReflectNumMembers:
     return ReflectNumMembers(D);
   case BRT_ReflectMember:
@@ -506,21 +492,16 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
     return ReflectName(T);
   case URT_ReflectQualifiedName:
     return ReflectQualifiedName(T);
-
   case URT_ReflectDeclarationContext:
     return ReflectDeclarationContext(T);
-
   case URT_ReflectLexicalContext:
     return ReflectLexicalContext(T);
-
   case URT_ReflectTraits:
     return ReflectTraits(T);
-
   case URT_ReflectNumMembers:
     return ReflectNumMembers(T->getAsTagDecl());
   case BRT_ReflectMember:
     return ReflectMember(T->getAsTagDecl(), Vals[1]);
-
   default:
     break;
   }
@@ -731,8 +712,7 @@ struct FunctionTraits {
 static bool getNothrow(ASTContext &C, FunctionDecl *D) {
   if (const FunctionProtoType *Ty = D->getType()->getAs<FunctionProtoType>())
     return Ty->isNothrow(C);
-  else
-    return false;
+  return false;
 }
 
 static FunctionTraits getFunctionTraits(ASTContext &C, FunctionDecl *D) {

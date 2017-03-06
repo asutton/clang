@@ -1859,7 +1859,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     stripTypeAttributesOffDeclSpec(attrs, DS, TUK);
 
     // Declaration or definition of a class type
-    TagOrTempResult = Actions.ActOnTag(getCurScope(), TagType, 
+    TagOrTempResult = Actions.ActOnTag(getCurScope(), TagType,
                                        DS.getMetaclass(), TUK, StartLoc,
                                        SS, Name, NameLoc, attrs.getList(), AS,
                                        DS.getModulePrivateSpecLoc(),
@@ -4223,41 +4223,4 @@ void Parser::ParseMicrosoftIfExistsClassDeclaration(DeclSpec::TST TagType,
   }
   
   Braces.consumeClose();
-}
-
-/// Parse a metaclass definition.
-///
-/// \verbatim
-///   metaclass-definition:
-///     '$class' identifier metaclass-body
-///
-///   metaclass-body:
-///     compound-statement
-/// \endverbatim
-/// 
-// FIXME: [PIM] Actually define the grammar for this thing. Note that
-// returning nullptr will allow parsing to continue after the tokens
-// have been consumed.
-Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
-  // We should have matched the `$class` identifier in
-  // ParseExternalDeclaration.
-  assert(Tok.is(tok::dollar));
-  SourceLocation DLoc = ConsumeToken();
-  assert(Tok.is(tok::kw_class));
-  ConsumeToken();
-  assert(Tok.is(tok::identifier));
-
-  // Save the identifier and source location.
-  IdentifierInfo *II = Tok.getIdentifierInfo();
-  SourceLocation IdLoc = ConsumeToken();
-
-  // Parse the body of the metaclass.
-  if (Tok.isNot(tok::l_brace)) {
-    Diag(Tok, diag::err_expected) << tok::l_brace;
-    return nullptr;
-  }
-  StmtResult Body = ParseCompoundStatement(/*isStmtExpr*/ false);
-  DeclResult Def =
-      Actions.ActOnMetaclassDefinition(DLoc, IdLoc, II, Body.get());
-  return Actions.ConvertDeclToDeclGroup(Def.get());
 }

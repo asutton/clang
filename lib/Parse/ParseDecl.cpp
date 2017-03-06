@@ -2882,7 +2882,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 
       // This will introduce a class-specifier. If the identifier is a scope 
       // specifier, the scope token will be consumed.
-      if (TryAnnotateMetaclassName(&SS, Next.getLocation(), 
+      if (TryAnnotateMetaclassName(&SS, Next.getLocation(),
                                    Next.getIdentifierInfo()))
         continue;
 
@@ -3032,7 +3032,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 
       // If the identifier refers to a metaclass, then this will introduce
       // a class-specifier.
-      if (TryAnnotateMetaclassName(nullptr, Tok.getLocation(), 
+      if (TryAnnotateMetaclassName(nullptr, Tok.getLocation(),
                                    Tok.getIdentifierInfo()))
         continue;
 

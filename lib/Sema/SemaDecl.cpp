@@ -13779,22 +13779,18 @@ void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
          "Broken injected-class-name");
 }
 
-
-// Instantiate and evaluate the metaclass.
-//
-// The class C is the innermost template parameter for the 
-//
+/// \brief Instantiate and evaluate the metaclass.
+///
+/// The class \p C is the innermost template parameter for the metaclass
+/// template \p MC.
+///
 // FIXME: MC should be a metaclass template.
-//
-// FIXME: Move this into SemaReflect.cpp or into a new file, SemaMetaclass?
+// FIXME: Move this into SemaReflect.cpp or into a new file, SemaMetaclass.cpp?
 // This will also need to be a member of Sema.
-static CXXRecordDecl*
-EvaluateMetaclass(MetaclassDecl *MC, CXXRecordDecl *C)
-{
+static CXXRecordDecl *EvaluateMetaclass(MetaclassDecl *MC, CXXRecordDecl *C) {
   // C->dump();
   return C;
 }
-
 
 void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
                                     SourceRange BraceRange) {
