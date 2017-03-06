@@ -1132,16 +1132,18 @@ DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
   // the elaborated-type-specifier grammar.
   //
   // This is probably fine for now.
-  LookupResult R(*this, II, IdLoc, LookupAnyName, ForRedeclaration);
-  LookupName(R, CurScope);
-  if (!R.empty()) {
-    if (MetaclassDecl *D = R.getAsSingle<MetaclassDecl>()) {
+  LookupResult Previous(*this, II, IdLoc, LookupOrdinaryName, ForRedeclaration);
+  LookupName(Previous, CurScope);
+
+  if (!Previous.empty()) {
+    NamedDecl *PrevDecl = Previous.getRepresentativeDecl();
+    MetaclassDecl *PrevMD = dyn_cast<MetaclassDecl>(PrevDecl);
+    if (PrevMD) {
       Diag(IdLoc, diag::err_redefinition) << II;
-      Diag(D->getLocation(), diag::note_previous_definition);
+      Diag(PrevMD->getLocation(), diag::note_previous_definition);
     } else {
       Diag(IdLoc, diag::err_redefinition_different_kind) << II;
-      if (Decl *D = R.getAsSingle<Decl>())
-        Diag(D->getLocation(), diag::note_previous_definition);
+      Diag(PrevDecl->getLocation(), diag::note_previous_definition);
     }
     return true;
   }
