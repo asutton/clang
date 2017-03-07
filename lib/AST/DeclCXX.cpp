@@ -2435,13 +2435,13 @@ void MetaclassDecl::anchor() {}
 
 MetaclassDecl *MetaclassDecl::Create(ASTContext &C, DeclContext *DC,
                                      SourceLocation DLoc, SourceLocation IdLoc,
-                                     IdentifierInfo *II, Stmt *B) {
-  return new (C, DC) MetaclassDecl(DC, DLoc, IdLoc, II, B);
+                                     IdentifierInfo *II) {
+  return new (C, DC) MetaclassDecl(DC, DLoc, IdLoc, II);
 }
 
 MetaclassDecl *MetaclassDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) MetaclassDecl(nullptr, SourceLocation(), SourceLocation(),
-                                   nullptr, nullptr);
+                                   nullptr);
 }
 
 SourceRange MetaclassDecl::getSourceRange() const {

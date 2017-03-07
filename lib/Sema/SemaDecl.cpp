@@ -5901,7 +5901,7 @@ static bool shouldConsiderLinkage(const VarDecl *VD) {
     return VD->hasExternalStorage();
   if (DC->isFileContext())
     return true;
-  if (DC->isRecord())
+  if (DC->isRecord() || isa<MetaclassDecl>(DC))
     return false;
   llvm_unreachable("Unexpected context");
 }
@@ -5911,7 +5911,7 @@ static bool shouldConsiderLinkage(const FunctionDecl *FD) {
   if (DC->isFileContext() || DC->isFunctionOrMethod() ||
       isa<OMPDeclareReductionDecl>(DC))
     return true;
-  if (DC->isRecord())
+  if (DC->isRecord() || isa<MetaclassDecl>(DC))
     return false;
   llvm_unreachable("Unexpected context");
 }

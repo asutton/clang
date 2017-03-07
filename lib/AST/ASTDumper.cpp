@@ -1069,7 +1069,7 @@ void ASTDumper::dumpDecl(const Decl *D) {
 
     // Decls within functions are visited by the body.
     if (!isa<FunctionDecl>(*D) && !isa<ObjCMethodDecl>(*D) &&
-        hasNodes(dyn_cast<DeclContext>(D)))
+        !isa<MetaclassDecl>(*D) && hasNodes(dyn_cast<DeclContext>(D)))
       dumpDeclContext(cast<DeclContext>(D));
   });
 }

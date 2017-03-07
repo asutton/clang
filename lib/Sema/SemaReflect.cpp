@@ -1113,11 +1113,11 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   return ExprError();
 }
 
-DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
-                                          SourceLocation IdLoc,
-                                          IdentifierInfo *II, Stmt *Body) {
-  assert(isa<CompoundStmt>(Body));
+Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
+                           IdentifierInfo *II) {
   assert(II);
+
+  bool IsInvalid = false;
 
   // Make sure that this definition doesn't conflict with existing tag
   // definitions.
@@ -1133,7 +1133,7 @@ DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
   //
   // This is probably fine for now.
   LookupResult Previous(*this, II, IdLoc, LookupOrdinaryName, ForRedeclaration);
-  LookupName(Previous, CurScope);
+  LookupName(Previous, S);
 
   if (!Previous.empty()) {
     NamedDecl *PrevDecl = Previous.getRepresentativeDecl();
@@ -1145,14 +1145,40 @@ DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
       Diag(IdLoc, diag::err_redefinition_different_kind) << II;
       Diag(PrevDecl->getLocation(), diag::note_previous_definition);
     }
-    return true;
+    IsInvalid = true;
   }
 
-  MetaclassDecl *D =
-      MetaclassDecl::Create(Context, CurContext, DLoc, IdLoc, II, Body);
-  CurContext->addDecl(D);
+  MetaclassDecl *Metaclass =
+      MetaclassDecl::Create(Context, CurContext, DLoc, IdLoc, II);
 
-  return D;
+  if (IsInvalid)
+    Metaclass->setInvalidDecl();
+
+  PushOnScopeChains(Metaclass, S);
+  return Metaclass;
+}
+
+void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD) {
+  MetaclassDecl *Metaclass = cast<MetaclassDecl>(MD);
+
+  PushDeclContext(S, Metaclass);
+  ActOnDocumentableDecl(Metaclass);
+}
+
+void Sema::ActOnMetaclassFinishDefinition(Scope *S, Decl *MD, Stmt *Body) {
+  assert(isa<CompoundStmt>(Body));
+
+  MetaclassDecl *Metaclass = cast<MetaclassDecl>(MD);
+  Metaclass->setBody(Body);
+
+  PopDeclContext();
+}
+
+void Sema::ActOnMetaclassDefinitionError(Scope *S, Decl *MD) {
+  MetaclassDecl *Metaclass = cast<MetaclassDecl>(MD);
+  Metaclass->setInvalidDecl();
+
+  PopDeclContext();
 }
 
 /// If \p II refers to a metaclass in the given scope, prefixed by an optional

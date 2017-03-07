@@ -3666,7 +3666,7 @@ public:
 /// \code
 /// $class Ifoo { ... }
 /// \endcode
-class MetaclassDecl : public NamedDecl {
+class MetaclassDecl : public NamedDecl, public DeclContext {
   void anchor() override;
 
   /// \brief The location of the \c $ operator.
@@ -3676,8 +3676,9 @@ class MetaclassDecl : public NamedDecl {
   Stmt *Body;
 
   MetaclassDecl(DeclContext *DC, SourceLocation DLoc, SourceLocation IdLoc,
-                IdentifierInfo *II, Stmt *B)
-      : NamedDecl(Metaclass, DC, IdLoc, II), DollarLoc(DLoc), Body(B) {}
+                IdentifierInfo *II)
+      : NamedDecl(Metaclass, DC, IdLoc, II), DeclContext(Metaclass),
+        DollarLoc(DLoc), Body(nullptr) {}
 
 public:
   /// \brief Returns the location of the \c $ keyword.
@@ -3685,6 +3686,9 @@ public:
 
   /// \brief Returns the body of the metaclass definition.
   Stmt *getBody() const override { return Body; }
+
+  /// \brief Sets the body of the metaclass definition.
+  void setBody(Stmt *B) { Body = B; }
 
   MetaclassDecl *getCanonicalDecl() override {
     return cast<MetaclassDecl>(NamedDecl::getCanonicalDecl());
@@ -3715,8 +3719,8 @@ public:
   /// \brief Create a metaclass node.
   static MetaclassDecl *Create(ASTContext &C, DeclContext *DC,
                                SourceLocation DLoc, SourceLocation IdLoc,
-                               IdentifierInfo *II, Stmt *B);
-  
+                               IdentifierInfo *II);
+
   /// \brief Create an empty metaclass node.
   static MetaclassDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
@@ -3724,9 +3728,16 @@ public:
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == Metaclass; }
+  static DeclContext *castToDeclContext(const MetaclassDecl *D) {
+    return static_cast<DeclContext *>(const_cast<MetaclassDecl*>(D));
+  }
+  static MetaclassDecl *castFromDeclContext(const DeclContext *DC) {
+    return static_cast<MetaclassDecl *>(const_cast<DeclContext*>(DC));
+  }
 
   friend class DeclContext; // Friend for getUsingDirectiveName.
   friend class ASTDeclReader;
+  friend class ASTDeclWriter;
 };
 
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier

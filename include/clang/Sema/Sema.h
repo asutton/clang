@@ -8202,8 +8202,11 @@ public:
   ExprResult ActOnReflectionTrait(SourceLocation KWLoc, ReflectionTrait Trait,
                                   ArrayRef<Expr *> Args,
                                   SourceLocation RParenLoc);
-  DeclResult ActOnMetaclassDefinition(SourceLocation DLoc, SourceLocation IdLoc,
-                                      IdentifierInfo *II, Stmt *Body);
+  Decl *ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
+                       IdentifierInfo *II);
+  void ActOnMetaclassStartDefinition(Scope *S, Decl *MD);
+  void ActOnMetaclassFinishDefinition(Scope *S, Decl *MD, Stmt *Body);
+  void ActOnMetaclassDefinitionError(Scope *S, Decl *MD);
   DeclResult CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
                                 IdentifierInfo *II);
 

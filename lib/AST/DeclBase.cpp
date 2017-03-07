@@ -1043,6 +1043,7 @@ DeclContext *DeclContext::getPrimaryContext() {
   switch (DeclKind) {
   case Decl::TranslationUnit:
   case Decl::ExternCContext:
+  case Decl::Metaclass:
   case Decl::LinkageSpec:
   case Decl::Export:
   case Decl::Block:

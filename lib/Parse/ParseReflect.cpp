@@ -172,15 +172,31 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
   IdentifierInfo *II = Tok.getIdentifierInfo();
   SourceLocation IdLoc = ConsumeToken();
 
-  // Parse the body of the metaclass.
   if (Tok.isNot(tok::l_brace)) {
     Diag(Tok, diag::err_expected) << tok::l_brace;
     return nullptr;
   }
-  StmtResult Body = ParseCompoundStatement(/*isStmtExpr*/ false);
-  DeclResult Def =
-      Actions.ActOnMetaclassDefinition(DLoc, IdLoc, II, Body.get());
-  return Actions.ConvertDeclToDeclGroup(Def.get());
+
+  Decl *Metaclass = Actions.ActOnMetaclass(getCurScope(), DLoc, IdLoc, II);
+
+  // Enter a scope for the metaclass.
+  ParseScope MetaclassScope(this, Scope::DeclScope);
+
+  Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass);
+
+  // Parse the body of the metaclass.
+  StmtResult Body(ParseCompoundStatementBody());
+
+  // Leave the metaclass scope.
+  MetaclassScope.Exit();
+
+  if (Body.isInvalid()) {
+    Actions.ActOnMetaclassDefinitionError(getCurScope(), Metaclass);
+    return nullptr;
+  }
+
+  Actions.ActOnMetaclassFinishDefinition(getCurScope(), Metaclass, Body.get());
+  return Actions.ConvertDeclToDeclGroup(Metaclass);
 }
 
 /// If the identifier refers to a metaclass name, then annotate the current
