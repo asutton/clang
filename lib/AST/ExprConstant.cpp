@@ -4020,6 +4020,29 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     return ESR_Succeeded;
   }
 
+  case Stmt::CXXTupleExpansionStmtClass: {
+    const CXXTupleExpansionStmt *TES = cast<CXXTupleExpansionStmt>(S);
+    
+    // Evaluate the range variable.
+    EvalStmtResult ESR = EvaluateStmt(Result, Info, TES->getRangeVarStmt());
+    if (ESR != ESR_Succeeded)
+      return ESR;
+
+    // Evaluate each statement in turn.
+    llvm::ArrayRef<Stmt *> Stmts = TES->getInstantiatedStatements();
+    for (std::size_t I = 0; I < TES->getSize(); ++I) {
+      ESR = EvaluateLoopBody(Result, Info, Stmts[I]);
+      if (ESR != ESR_Continue)
+        return ESR;
+    }
+
+    return ESR_Succeeded;
+  }
+
+  case Stmt::CXXPackExpansionStmtClass: {
+    llvm_unreachable("Pack expansion not implemented");
+  }
+
   case Stmt::SwitchStmtClass:
     return EvaluateSwitch(Result, Info, cast<SwitchStmt>(S));
 

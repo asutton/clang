@@ -1855,6 +1855,8 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
   case Stmt::DoStmtClass:
   case Stmt::ForStmtClass:
   case Stmt::CXXForRangeStmtClass:
+  case Stmt::CXXTupleExpansionStmtClass:
+  case Stmt::CXXPackExpansionStmtClass:
   case Stmt::ContinueStmtClass:
     // C++1y allows all of these. We don't allow them as extensions in C++11,
     // because they don't make sense without variable mutation.
