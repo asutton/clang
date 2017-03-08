@@ -2728,12 +2728,7 @@ namespace {
       Decl *Inst = getSema().SubstDecl(D, getSema().CurContext, TemplateArgs);
       if (!Inst)
         return nullptr;
-
-      // FIXME: Do we actually need to add this to the current instantiation?
-      // It probably doesn't hurt to be on the safe side.
       getSema().CurrentInstantiationScope->InstantiatedLocal(D, Inst);
-
-      // Save the local declaration for subsequent lookup.
       transformedLocalDecl(D, Inst);
       return Inst;
     }

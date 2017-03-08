@@ -1512,9 +1512,21 @@ bool Parser::isForRangeIdentifier() {
 /// [C++0x] for-range-initializer:
 /// [C++0x]   expression
 /// [C++0x]   braced-init-list            [TODO]
+///
+/// [Meta]  'for' '...' 
+///              '(' for-range-declaration ':' 'for-range-initializer ')'
+///              statement
 StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   assert(Tok.is(tok::kw_for) && "Not a for stmt!");
   SourceLocation ForLoc = ConsumeToken();  // eat the 'for'.
+
+  // [Meta]: Check 'for ...' or 'for constexpr.'
+  //
+  // TODO: What does 'for... co_await' mean?
+  SourceLocation EllipsisLoc;
+  if (getLangOpts().CPlusPlus1z 
+      && (Tok.is(tok::ellipsis) || Tok.is(tok::kw_constexpr)))
+    EllipsisLoc = ConsumeToken();
 
   SourceLocation CoawaitLoc;
   if (Tok.is(tok::kw_co_await))
@@ -1732,7 +1744,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   }
 
   // We need to perform most of the semantic analysis for a C++0x for-range
-  // statememt before parsing the body, in order to be able to deduce the type
+  // statement before parsing the body, in order to be able to deduce the type
   // of an auto-typed loop variable.
   StmtResult ForRangeStmt;
   StmtResult ForEachStmt;
@@ -1740,10 +1752,17 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   if (ForRange) {
     ExprResult CorrectedRange =
         Actions.CorrectDelayedTyposInExpr(ForRangeInit.RangeExpr.get());
-    ForRangeStmt = Actions.ActOnCXXForRangeStmt(
-        getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
-        ForRangeInit.ColonLoc, CorrectedRange.get(),
-        T.getCloseLocation(), Sema::BFRK_Build);
+
+    if (EllipsisLoc.isInvalid())
+      ForRangeStmt = Actions.ActOnCXXForRangeStmt(
+          getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
+          ForRangeInit.ColonLoc, CorrectedRange.get(),
+          T.getCloseLocation(), Sema::BFRK_Build);
+    else
+      ForRangeStmt = Actions.ActOnCXXExpansionStmt(
+          getCurScope(), ForLoc, EllipsisLoc, FirstPart.get(),
+          ForRangeInit.ColonLoc, CorrectedRange.get(),
+          T.getCloseLocation(), Sema::BFRK_Build);
 
   // Similarly, we need to do the semantic analysis for a for-range
   // statement immediately in order to close over temporaries correctly.
@@ -1797,8 +1816,12 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
    return Actions.FinishObjCForCollectionStmt(ForEachStmt.get(),
                                               Body.get());
 
-  if (ForRange)
-    return Actions.FinishCXXForRangeStmt(ForRangeStmt.get(), Body.get());
+  if (ForRange) {
+    if (EllipsisLoc.isInvalid())
+      return Actions.FinishCXXForRangeStmt(ForRangeStmt.get(), Body.get());
+    else
+      return Actions.FinishCXXExpansionStmt(ForRangeStmt.get(), Body.get());
+  }
 
   return Actions.ActOnForStmt(ForLoc, T.getOpenLocation(), FirstPart.get(),
                               SecondPart, ThirdPart, T.getCloseLocation(),

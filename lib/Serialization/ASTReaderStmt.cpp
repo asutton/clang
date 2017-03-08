@@ -1215,7 +1215,12 @@ void ASTStmtReader::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   S->setBody(Record.readSubStmt());
 }
 
-void ASTStmtReader::VisitCXXForTupleStmt(CXXForTupleStmt *S) {
+void ASTStmtReader::VisitCXXTupleExpansionStmt(CXXTupleExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+}
+
+void ASTStmtReader::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
   VisitStmt(S);
   // FIXME: Implement me.
 }
@@ -3378,9 +3383,11 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
     case STMT_CXX_FOR_RANGE:
       S = new (Context) CXXForRangeStmt(Empty);
       break;
-
-    case STMT_CXX_FOR_TUPLE:
-      S = new (Context) CXXForTupleStmt(Empty);
+    case STMT_CXX_TUPLE_EXPANSION:
+      S = new (Context) CXXTupleExpansionStmt(Empty);
+      break;
+    case STMT_CXX_PACK_EXPANSION:
+      S = new (Context) CXXPackExpansionStmt(Empty);
       break;
 
     case STMT_MS_DEPENDENT_EXISTS:

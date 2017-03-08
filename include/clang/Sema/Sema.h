@@ -3575,6 +3575,32 @@ public:
                                   BuildForRangeKind Kind);
   StmtResult FinishCXXForRangeStmt(Stmt *ForRange, Stmt *Body);
 
+  StmtResult ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
+                                   SourceLocation EllipsisLoc,
+                                   Stmt *LoopVar,
+                                   SourceLocation ColonLoc, Expr *Collection,
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind);
+  StmtResult BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
+                                        SourceLocation EllipsisLoc,
+                                        SourceLocation ColonLoc,
+                                        Stmt *RangeVarDecl,
+                                        Stmt *LoopVarDecl,
+                                        SourceLocation RParenLoc,
+                                        BuildForRangeKind Kind);
+  StmtResult BuildCXXPackExpansionStmt(SourceLocation ForLoc,
+                                       SourceLocation EllipsisLoc,
+                                       SourceLocation ColonLoc,
+                                       Expr *PackExpr,
+                                       Stmt *LoopVarDecl,
+                                       SourceLocation RParenLoc,
+                                       BuildForRangeKind Kind);
+  StmtResult FinishCXXExpansionStmt(Stmt *Expansion, Stmt *Body);
+  StmtResult FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *Expansion, 
+                                         Stmt *Body);
+  StmtResult FinishCXXPackExpansionStmt(CXXPackExpansionStmt *Expansion, 
+                                        Stmt *Body);
+
   StmtResult ActOnGotoStmt(SourceLocation GotoLoc,
                            SourceLocation LabelLoc,
                            LabelDecl *TheDecl);

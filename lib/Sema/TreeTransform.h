@@ -2009,43 +2009,28 @@ public:
                                           Sema::BFRK_Rebuild);
   }
 
-  /// \brief Build a new C++ tuple-based for statement.
+  /// \brief Build a new C++ tuple-based for expansion statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
   ///
   /// FIXME: Actually implement this function.
-  StmtResult RebuildCXXForTupleStmt(SourceLocation ForLoc,
-                                    SourceLocation ColonLoc,
-                                    Stmt *Range, 
-                                    Stmt *LoopVar,
-                                    Stmt *Body,
-                                    SourceLocation RParenLoc) {
+  StmtResult RebuildCXXTupleExpansionStmt(Stmt *Range, 
+                                          Stmt *LoopVar,
+                                          Stmt *Body) {
     llvm_unreachable("not implemented");
+  }
 
-#if 0
-    // If we've just learned that the range is actually an Objective-C
-    // collection, treat this as an Objective-C fast enumeration loop.
-    if (DeclStmt *RangeStmt = dyn_cast<DeclStmt>(Range)) {
-      if (RangeStmt->isSingleDecl()) {
-        if (VarDecl *RangeVar = dyn_cast<VarDecl>(RangeStmt->getSingleDecl())) {
-          if (RangeVar->isInvalidDecl())
-            return StmtError();
-
-          Expr *RangeExpr = RangeVar->getInit();
-          if (!RangeExpr->isTypeDependent() &&
-              RangeExpr->getType()->isObjCObjectPointerType())
-            return getSema().ActOnObjCForCollectionStmt(ForLoc, LoopVar, RangeExpr,
-                                                        RParenLoc);
-        }
-      }
-    }
-
-    return getSema().BuildCXXForRangeStmt(ForLoc, CoawaitLoc, ColonLoc,
-                                          Range, Begin, End,
-                                          Cond, Inc, LoopVar, RParenLoc,
-                                          Sema::BFRK_Rebuild);
-#endif
+  /// \brief Build a new C++ tuple-based pack expansion statement.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  ///
+  /// FIXME: Actually implement this function.
+  StmtResult RebuildCXXPackExpansionStmt(Stmt *Range, 
+                                         Stmt *LoopVar,
+                                         Stmt *Body) {
+    llvm_unreachable("not implemented");
   }
 
   /// \brief Build a new C++0x range-based for statement.
@@ -7309,7 +7294,8 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
 
 template<typename Derived>
 StmtResult
-TreeTransform<Derived>::TransformCXXForTupleStmt(CXXForTupleStmt *S) {
+TreeTransform<Derived>::TransformCXXTupleExpansionStmt(
+                                                     CXXTupleExpansionStmt *S) {
   llvm_unreachable("not implemented");
 #if 0
   StmtResult Range = getDerived().TransformStmt(S->getRangeStmt());
@@ -7385,6 +7371,12 @@ TreeTransform<Derived>::TransformCXXForTupleStmt(CXXForTupleStmt *S) {
 
   return FinishCXXForRangeStmt(NewStmt.get(), Body.get());
   #endif
+}
+
+template<typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
+  llvm_unreachable("not implemented");
 }
 
 template<typename Derived>

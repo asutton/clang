@@ -180,8 +180,11 @@ void CodeGenFunction::EmitStmt(const Stmt *S) {
   case Stmt::CXXForRangeStmtClass:
     EmitCXXForRangeStmt(cast<CXXForRangeStmt>(*S));
     break;
-  case Stmt::CXXForTupleStmtClass:
-    EmitCXXForTupleStmt(cast<CXXForTupleStmt>(*S));
+  case Stmt::CXXTupleExpansionStmtClass:
+    EmitCXXTupleExpansionStmt(cast<CXXTupleExpansionStmt>(*S));
+    break;
+  case Stmt::CXXPackExpansionStmtClass:
+    EmitCXXPackExpansionStmt(cast<CXXPackExpansionStmt>(*S));
     break;
   case Stmt::SEHTryStmtClass:
     EmitSEHTryStmt(cast<SEHTryStmt>(*S));
@@ -1012,8 +1015,15 @@ CodeGenFunction::EmitCXXForRangeStmt(const CXXForRangeStmt &S,
 }
 
 void
-CodeGenFunction::EmitCXXForTupleStmt(const CXXForTupleStmt &S,
-                                     ArrayRef<const Attr *> ForAttrs) {
+CodeGenFunction::EmitCXXTupleExpansionStmt(const CXXTupleExpansionStmt &S,
+                                           ArrayRef<const Attr *> ForAttrs) {
+  // We've packaged the entire statement into a single compound statement.
+  EmitStmt(S.getBody());
+}
+
+void
+CodeGenFunction::EmitCXXPackExpansionStmt(const CXXPackExpansionStmt &S,
+                                          ArrayRef<const Attr *> ForAttrs) {
   // We've packaged the entire statement into a single compound statement.
   EmitStmt(S.getBody());
 }

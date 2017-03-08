@@ -47,7 +47,9 @@ def ObjCAutoreleasePoolStmt : Stmt;
 def CXXCatchStmt : Stmt;
 def CXXTryStmt : Stmt;
 def CXXForRangeStmt : Stmt;
-def CXXForTupleStmt : Stmt;
+def CXXExpansionStmt : Stmt<1>;
+def CXXTupleExpansionStmt : DStmt<CXXExpansionStmt>;
+def CXXPackExpansionStmt : DStmt<CXXExpansionStmt>;
 
 // C++ Coroutines TS statements
 def CoroutineBodyStmt : Stmt;
