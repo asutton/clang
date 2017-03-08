@@ -1017,8 +1017,30 @@ CodeGenFunction::EmitCXXForRangeStmt(const CXXForRangeStmt &S,
 void
 CodeGenFunction::EmitCXXTupleExpansionStmt(const CXXTupleExpansionStmt &S,
                                            ArrayRef<const Attr *> ForAttrs) {
-  // We've packaged the entire statement into a single compound statement.
-  EmitStmt(S.getBody());
+  JumpDest LoopExit = getJumpDestInCurrentScope("expand.end");
+
+  // Create a basic block for each instantiation.
+  llvm::SmallVector<llvm::BasicBlock *, 16> Blocks;
+  for (std::size_t I = 0; I < S.getSize(); ++I)
+    Blocks.push_back(createBasicBlock("expand.body"));
+  Blocks.push_back(LoopExit.getBlock());
+
+  LexicalScope ForScope(*this, S.getSourceRange());
+
+  // Evaluate the first pieces before the loop.
+  EmitStmt(S.getRangeVarStmt());
+
+  ArrayRef<Stmt *> Stmts = S.getInstantiatedStatements();
+  for (std::size_t I = 0; I < S.getSize(); ++I) {
+    LexicalScope BodyScope(*this, S.getSourceRange());
+    BreakContinue BC(LoopExit, getJumpDestInCurrentScope(Blocks[I + 1]));
+    BreakContinueStack.push_back(BC);
+    EmitBlock(Blocks[I]);
+    EmitStmt(Stmts[I]);
+    BreakContinueStack.pop_back();
+  }
+
+  EmitBlock(LoopExit.getBlock(), true);
 }
 
 void

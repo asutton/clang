@@ -2662,8 +2662,10 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
            "Expansion over arrays not implemented");
 
     // Get the tuple size for the number of expansions.
-    if (!GetTupleSize(*this, ColonLoc, RangeClassType, Size))
+    if (!GetTupleSize(*this, ColonLoc, RangeClassType, Size)) {
+      Diag(ColonLoc, diag::err_not_implemented);
       return StmtError();
+    }
 
     // Declare a new template parameter __N for which we will be substituting
     // concrete values later.
@@ -2729,8 +2731,9 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
     // The __tuple argument.
     ExprResult RangeRef = 
       BuildDeclRefExpr(RangeVar, RangeClassType, VK_LValue, ColonLoc);
-    if (RangeRef.isInvalid())
+    if (RangeRef.isInvalid()) {
       return StmtError();
+    }
 
     // Build the actual call expression NNS::get<I>(__tuple)
     Expr* Args[] { RangeRef.get() };
@@ -2738,8 +2741,9 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
 
     // And make that the initializer of the tuple argument.
     AddInitializerToDecl(LoopVar, Call.get(), false);
-    if (LoopVar->isInvalidDecl())
+    if (LoopVar->isInvalidDecl()) {
       return StmtError();
+    }
   }
 
   // Note that the body isn't parsed yet.
@@ -2970,14 +2974,8 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
                                           SourceLocation(),
                                           SourceLocation());
 
-  // Body->dumpPretty(Context);
-  // Body->dump();
-
   // Instantiate the loop body for each element of the tuple.
-  //
-  // TODO: If the tuple size is 0, should we even keep the range statement?
   llvm::SmallVector<Stmt*, 8> Stmts;
-  Stmts.push_back(S->getRangeVarStmt());
   for (std::size_t I = 0; I < S->getSize(); ++I) {
     IntegerLiteral *E = IntegerLiteral::Create(Context, 
                                                llvm::APSInt::getUnsigned(I),
@@ -2996,9 +2994,12 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
     StmtResult Instantiation = SubstForTupleBody(Body, MultiArgs);
     if (Instantiation.isInvalid())
       return StmtError();
-    Instantiation.get()->dumpPretty(Context);
     Stmts.push_back(Instantiation.get());
   }
+
+  Stmt **Results = new (Context) Stmt *[Stmts.size()];
+  std::copy(Stmts.begin(), Stmts.end(), Results);
+  S->setInstantiatedStatements(Results);
 
   return S;
 }
