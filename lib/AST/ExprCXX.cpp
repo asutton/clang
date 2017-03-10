@@ -1415,6 +1415,14 @@ TypeTraitExpr *TypeTraitExpr::CreateDeserialized(const ASTContext &C,
 
 void ArrayTypeTraitExpr::anchor() { }
 
+SourceLocation ReflectionExpr::getLocEnd() const
+{
+  if (!RParenLoc.isInvalid())
+    return RParenLoc;
+  else
+    return OpLoc;
+}
+
 //===----------------------------------------------------------------------===//
 //  Reflection Traits
 //===----------------------------------------------------------------------===//

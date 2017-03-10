@@ -17,20 +17,8 @@
 
 using namespace clang;
 
-/// \brief Parse a reflect expression.
-///
-/// \verbatim
-///   primary-expression:
-///     '$' id-expression
-///     '$' type-id
-///     '$' nested-name-specifier[opt] namespace-name
-/// \endverbatim
-///
-// TODO: Consider adding specifiers? $static? $private?
-ExprResult Parser::ParseReflectExpression() {
-  assert(Tok.is(tok::dollar));
-  SourceLocation OpLoc = ConsumeToken();
-
+ExprResult Parser::ParseReflectOperand(SourceLocation OpLoc)
+{
   // TODO: Actually look at the token following the '$'. We should be able
   // to easily predict the parse.
 
@@ -64,7 +52,41 @@ ExprResult Parser::ParseReflectExpression() {
   ExprResult Id = tryParseCXXIdExpression(SS, true, Replacement);
   if (!Id.isInvalid())
     return Actions.ActOnCXXReflectExpr(OpLoc, Id.get());
+  
   return ExprError();
+}
+
+/// \brief Parse a reflect expression.
+///
+/// \verbatim
+///   primary-expression:
+///     '$' id-expression
+///     '$' type-id
+///     '$' nested-name-specifier[opt] namespace-name
+/// \endverbatim
+///
+// TODO: Consider adding specifiers? $static? $private?
+ExprResult Parser::ParseReflectExpression() {
+  assert(Tok.is(tok::dollar));
+  SourceLocation OpLoc = ConsumeToken();
+  return ParseReflectOperand(OpLoc);
+}
+
+/// Parse a reflexpr expression.
+ExprResult Parser::ParseReflexprExpression() {
+  assert(Tok.is(tok::kw_reflexpr));
+  SourceLocation KeyLoc = ConsumeToken();
+  
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "reflexpr"))
+    return ExprError();
+  ExprResult Result = ParseReflectOperand(KeyLoc);
+  T.consumeClose();
+  if (!Result.isInvalid())
+    Result = Actions.ActOnCXXReflexprExpr(Result.get(), 
+                                          T.getOpenLocation(), 
+                                          T.getCloseLocation());
+  return Result;
 }
 
 static ReflectionTrait ReflectionTraitKind(tok::TokenKind kind) {

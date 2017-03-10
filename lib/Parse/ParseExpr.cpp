@@ -690,10 +690,17 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 ///                   '__is_lvalue_expr'
 ///                   '__is_rvalue_expr'
 ///
-/// [PIM]   '$' id-expression
+/// [Meta]
+///     Primary expressions
+///         '$' id-expression
 ///         '$' type-id
 ///         '$' nested-name-specifier[opt] namespace-name
 ///         reflection-trait
+///
+///     Unary expressions
+///         'reflexpr' '(' expression ')'
+///         'reflexpr' '(' type-id ')'
+///         'reflexpr' '(' nested-name-specifier[opt] namespace-name ')'
 ///
 ///       reflection-trait:
 ///         '__reflect_name'
@@ -1337,7 +1344,11 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return Result;
   }
 
-  case tok::dollar:  // [PIM] '$' [id-expression | type-name | namespace-name]
+  case tok::kw_reflexpr: // [Meta]: 'reflexpr' '(' ... ')'
+    Res = ParseReflexprExpression();
+    break;
+
+  case tok::dollar:  // [Meta] '$' [id-expression | type-name | namespace-name]
     Res = ParseReflectExpression();
     break;
 

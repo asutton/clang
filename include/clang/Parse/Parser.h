@@ -2547,9 +2547,11 @@ private:
                                   UnqualifiedId &Result);
 
   //===--------------------------------------------------------------------===//
-  // C++ Reflection [PIM]
+  // C++ Reflection [Meta]
 
+  ExprResult ParseReflectOperand(SourceLocation OpLoc);
   ExprResult ParseReflectExpression();
+  ExprResult ParseReflexprExpression();
   ExprResult ParseReflectionTrait();
   DeclGroupPtrTy ParseMetaclassDefinition();
   bool TryAnnotateMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,

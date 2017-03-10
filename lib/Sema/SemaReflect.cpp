@@ -115,13 +115,23 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec &SS,
   return BuildDeclReflection(OpLoc, D);
 }
 
+/// Update the reflection expression with by indicating that it is in fact
+/// a reflexpr expression.
+ExprResult Sema::ActOnCXXReflexprExpr(Expr *E, 
+                                      SourceLocation LParenLoc, 
+                                      SourceLocation RParenLoc)
+{
+  assert(isa<ReflectionExpr>(E));
+  ReflectionExpr *RE = cast<ReflectionExpr>(E);
+  RE->setParenLocs(LParenLoc, RParenLoc);
+  return E;
+}
+
 /// Used to encode the kind of entity reflected.
 ///
 /// This value is packed into the low-order bits of each reflected pointer.
 /// Because we stuff pointer values, all must be aligned at 2 bytes (which is
 /// generally guaranteed).
-///
-// TODO: Could we safely use high-order bits?
 enum ReflectionKind { RK_Decl = 1, RK_Type = 2, RK_Expr = 3 };
 
 using ReflectionValue =

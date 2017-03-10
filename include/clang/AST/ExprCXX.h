@@ -4247,6 +4247,8 @@ class ReflectionExpr : public Expr {
 protected:
   llvm::PointerUnion<Expr *, TypeSourceInfo *> Operand;
   SourceLocation OpLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
 
 public:
   ReflectionExpr(SourceLocation OpLoc, Expr *E, QualType T)
@@ -4255,19 +4257,21 @@ public:
              false,  // Value dependent
              false,  // Instantiation dependent
              false), // Unexpanded packs
-        Operand(E),
-        OpLoc(OpLoc) {}
+        Operand(E), OpLoc(OpLoc), LParenLoc(), RParenLoc() {}
 
-  ReflectionExpr(SourceLocation OpLoc, TypeSourceInfo *E, QualType T)
+  ReflectionExpr(SourceLocation OpLoc, TypeSourceInfo *TSI, QualType T)
       : Expr(ReflectionExprClass, T, VK_RValue, OK_Ordinary,
              true,   // Type dependent
              false,  // Value dependent
              false,  // Instantiation dependent
              false), // Unexpanded packs
-        Operand(E),
-        OpLoc(OpLoc) {}
+        Operand(TSI), OpLoc(OpLoc), LParenLoc(), RParenLoc() {}
 
   ReflectionExpr(StmtClass SC, EmptyShell Empty) : Expr(SC, Empty) {}
+
+  /// \brief Returns true if the expression is spelled 'reflexpr'. 
+  /// This is the case when the paren locations are valid.
+  bool isReflexpr() const { return !LParenLoc.isInvalid(); }
 
   /// Returns \c true if the operand is a type.
   bool hasTypeOperand() const { return Operand.is<TypeSourceInfo *>(); }
@@ -4287,12 +4291,19 @@ public:
     return Operand.get<Expr *>();
   }
 
-  /// Returns the source code location of the trait keyword.
+  /// \brief Set the source locations of the left and right parens of a
+  /// 'reflexpr' expression.
+  void setParenLocs(SourceLocation L, SourceLocation R) {
+    LParenLoc = L;
+    RParenLoc = R;
+  }
+
+  /// Returns the source code location of the '$' or 'reflexpr' operator 
+  /// keyword.
   SourceLocation getOperatorLoc() const { return OpLoc; }
 
-  // FIXME: The end location depends on the operand.
   SourceLocation getLocStart() const { return OpLoc; }
-  SourceLocation getLocEnd() const { return OpLoc; }
+  SourceLocation getLocEnd() const;
 
   child_range children() {
     if (hasExpressionOperand()) {
