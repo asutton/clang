@@ -8832,7 +8832,7 @@ def err_coroutine_promise_return_ill_formed : Error<
   "%0 declares both 'return_value' and 'return_void'">;
 }
 
-// [PIM] Reflection
+// [Meta] Reflection
 let CategoryName = "Reflection Issue" in {
 def err_not_implemented : Error<
   "feature not implemented">;
@@ -8856,6 +8856,8 @@ def err_reflection_not_function : Error<
   "reflected entity is not a function">;
 def err_parameter_out_of_bounds : Error<
   "reflected parameter is out of bounds">;
+def err_expression_not_a_type_reflection : Error<
+  "expression does not compute a type reflection">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

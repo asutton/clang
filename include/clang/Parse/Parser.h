@@ -2552,6 +2552,8 @@ private:
   ExprResult ParseReflectOperand(SourceLocation OpLoc);
   ExprResult ParseReflectExpression();
   ExprResult ParseReflexprExpression();
+  TypeResult ParseTypeReflectionSpecifier(SourceLocation TypenameLoc,
+                                          SourceLocation& EndLoc);
   ExprResult ParseReflectionTrait();
   DeclGroupPtrTy ParseMetaclassDefinition();
   bool TryAnnotateMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,

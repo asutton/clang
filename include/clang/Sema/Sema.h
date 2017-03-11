@@ -6879,10 +6879,7 @@ public:
 
       /// We are instantiating the exception specification for a function
       /// template which was deferred until it was needed.
-      ExceptionSpecInstantiation,
-
-      /// We are instantiating the body of a range-based loop over a tuple.
-      ForLoopInstantiation
+      ExceptionSpecInstantiation
     } Kind;
 
     /// \brief The point of instantiation within the source code.
@@ -6954,9 +6951,6 @@ public:
       case DeducedTemplateArgumentSubstitution:
       case DefaultFunctionArgumentInstantiation:
         return X.TemplateArgs == Y.TemplateArgs;
-
-      case ForLoopInstantiation:
-        return X.Loop == Y.Loop;
       }
 
       llvm_unreachable("Invalid InstantiationKind!");
@@ -8215,6 +8209,8 @@ public:
                                   SourceLocation RParenLoc);
   ExprResult BuildDeclReflection(SourceLocation Loc, Decl *D);
   ExprResult BuildTypeReflection(SourceLocation Loc, QualType T);
+
+  TypeResult ActOnTypeReflection(SourceLocation TypenameLoc, Expr *E);
 
   NamespaceDecl *RequireCpp3kNamespace(SourceLocation Loc);
   NamespaceDecl *RequireCpp3kMetaNamespace(SourceLocation Loc);

@@ -58,12 +58,10 @@ ExprResult Parser::ParseReflectOperand(SourceLocation OpLoc)
 
 /// \brief Parse a reflect expression.
 ///
-/// \verbatim
 ///   primary-expression:
 ///     '$' id-expression
 ///     '$' type-id
 ///     '$' nested-name-specifier[opt] namespace-name
-/// \endverbatim
 ///
 // TODO: Consider adding specifiers? $static? $private?
 ExprResult Parser::ParseReflectExpression() {
@@ -72,7 +70,12 @@ ExprResult Parser::ParseReflectExpression() {
   return ParseReflectOperand(OpLoc);
 }
 
-/// Parse a reflexpr expression.
+/// \brief Parse a reflexpr expression.
+///
+///   primary-expression:
+///      'reflexpr' '(' id-expression ')'
+///      'reflexpr' '(' type-id ')'
+///      'reflexpr' '(' nested-name-specifier[opt] namespace-name ')'
 ExprResult Parser::ParseReflexprExpression() {
   assert(Tok.is(tok::kw_reflexpr));
   SourceLocation KeyLoc = ConsumeToken();
@@ -87,6 +90,26 @@ ExprResult Parser::ParseReflexprExpression() {
                                           T.getOpenLocation(), 
                                           T.getCloseLocation());
   return Result;
+}
+
+/// Parse a reflection type specifier.
+///
+///   reflection-type-specifier
+///     'typename' '(' constant-expression ')'
+///
+/// The constant-expression must be a reflection of a type.
+TypeResult Parser::ParseTypeReflectionSpecifier(SourceLocation TypenameLoc,
+                                                SourceLocation& EndLoc) {
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "reflexpr"))
+    return TypeResult(true);
+  ExprResult Result = ParseConstantExpression();
+  if (!T.consumeClose()) {
+    EndLoc = T.getCloseLocation();
+    if (!Result.isInvalid())
+      return Actions.ActOnTypeReflection(TypenameLoc, Result.get());
+  }
+  return TypeResult(true);
 }
 
 static ReflectionTrait ReflectionTraitKind(tok::TokenKind kind) {

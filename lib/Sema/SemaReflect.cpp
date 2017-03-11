@@ -455,7 +455,7 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
   if (Info.first == RK_Type)
     return R.Reflect(Kind, (Type *)Info.second);
 
-  llvm_unreachable("Unhandled reflection");
+  llvm_unreachable("Invalid reflection");
 }
 
 /// Returns a string literal that has the given name.
@@ -1141,6 +1141,60 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   }
   S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_supported);
   return ExprError();
+}
+
+/// Diagnose a type reflection error and return a type error.
+static TypeResult TypeReflectionError(Sema& SemaRef, Expr *E)
+{
+  SemaRef.Diag(E->getLocStart(), diag::err_expression_not_a_type_reflection)
+    << E->getSourceRange();
+  return TypeResult(true);
+}
+
+/// Evaluates the given expression and yields the computed type.
+///
+/// FIXME: We probably want to return something like decltype(E). We should
+/// factor those two nodes into a common base (call it ComputedType), and
+/// then construct and return that.
+TypeResult Sema::ActOnTypeReflection(SourceLocation TypenameLoc, Expr *E)
+{
+  if (E->isTypeDependent())
+    llvm_unreachable("Dependent reflection types not implemented");
+  
+  // Get the type of the reflection.
+  QualType T = E->getType();
+  if (AutoType *D = T->getContainedAutoType()) {
+    T = D->getDeducedType();
+    if (!T.getTypePtr())
+      llvm_unreachable("Undeduced type reflection");
+  }
+  
+  // Unpack information from the expression.
+  CXXRecordDecl *Class = T->getAsCXXRecordDecl();
+  if (!Class && !isa<ClassTemplateSpecializationDecl>(Class))
+    return TypeReflectionError(*this, E);
+  ClassTemplateSpecializationDecl *Spec = 
+    cast<ClassTemplateSpecializationDecl>(Class);
+  // FIXME: We should verify that this Class actually a meta class
+  // object so that we aren't arbitrarily converting integers into
+  // addresses (no bueno).
+  const TemplateArgumentList& Args = Spec->getTemplateArgs();
+  if (Args.size() == 0)
+    return TypeReflectionError(*this, E);
+  const TemplateArgument &Arg = Args.get(0);
+  if (Arg.getKind() != TemplateArgument::Integral)
+    return TypeReflectionError(*this, E);
+  
+  // Decode the specialization argument as a type.
+  llvm::APSInt Data = Arg.getAsIntegral();
+  std::pair<ReflectionKind, void *> Info =
+      ExplodeOpaqueValue(Data.getExtValue());
+  if (Info.first != RK_Type)
+    return TypeReflectionError(*this, E);
+  
+  QualType RT((Type *)Info.second, 0);
+  TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(RT);
+  return CreateParsedType(RT, TSI);
 }
 
 DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
