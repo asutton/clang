@@ -154,7 +154,7 @@ ExprResult Sema::ActOnCXXReflexprExpr(Expr *E,
 /// Diagnose a type reflection error and return a type error.
 static ExprResult ValueReflectionError(Sema& SemaRef, Expr *E)
 {
-  SemaRef.Diag(E->getLocStart(), diag::err_expression_not_a_value_reflection)
+  SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_value)
     << E->getSourceRange();
   return ExprResult(true);
 }
@@ -1218,7 +1218,7 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
 /// Diagnose a type reflection error and return a type error.
 static TypeResult TypeReflectionError(Sema& SemaRef, Expr *E)
 {
-  SemaRef.Diag(E->getLocStart(), diag::err_expression_not_a_type_reflection)
+  SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_type)
     << E->getSourceRange();
   return TypeResult(true);
 }
@@ -1263,13 +1263,34 @@ TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc,
   std::pair<ReflectionKind, void *> Info =
       ExplodeOpaqueValue(Data.getExtValue());
   
-  // FIXME: If the reflection refers to a typed declaration, return the type.
-  if (Info.first != RK_Type)
-    return TypeReflectionError(*this, E);
-  
-  QualType RT((Type *)Info.second, 0);
-  TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(RT);
-  return CreateParsedType(RT, TSI);
+  if (Info.first == RK_Type) {
+    // Returns the referenced type. For example:
+    //
+    //    typename($int) x; // int x
+    QualType RT((Type *)Info.second, 0);
+    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(RT);
+    return CreateParsedType(RT, TSI);
+  } else if (Info.first == RK_Decl) {
+    // Returns the type of the referenced declaration. For example:
+    //
+    //    char x;
+    //    typename($x) y; // char y
+    //
+    // Note that the referenced declaration is not used when referring
+    // to its type.
+    Decl *D = (Decl *)Info.second;
+    if (!isa<ValueDecl>(D)) {
+      Diag(E->getLocStart(), diag::err_reflection_not_a_typed_decl)
+        << E->getSourceRange();
+      return TypeResult(true);
+    }
+    ValueDecl *VD = cast<ValueDecl>(D);
+    QualType RT = VD->getType();
+    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(RT);
+    return CreateParsedType(RT, TSI);
+  }
+
+  return TypeReflectionError(*this, E);  
 }
 
 DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
