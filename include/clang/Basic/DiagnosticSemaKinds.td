@@ -8857,7 +8857,9 @@ def err_reflection_not_function : Error<
 def err_parameter_out_of_bounds : Error<
   "reflected parameter is out of bounds">;
 def err_expression_not_a_type_reflection : Error<
-  "expression does not compute a type reflection">;
+  "expression does not reflect a type">;
+def err_expression_not_a_value_reflection : Error<
+  "expression does not reflect a variable or function">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

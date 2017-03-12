@@ -8209,8 +8209,10 @@ public:
                                   SourceLocation RParenLoc);
   ExprResult BuildDeclReflection(SourceLocation Loc, Decl *D);
   ExprResult BuildTypeReflection(SourceLocation Loc, QualType T);
-
-  TypeResult ActOnTypeReflection(SourceLocation TypenameLoc, Expr *E);
+  TypeResult ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc, Expr *E);
+  ExprResult ActOnDeclnameExpression(Expr *E, SourceLocation KWLoc,
+                                     SourceLocation LParenLoc,
+                                     SourceLocation RParenLoc);
 
   NamespaceDecl *RequireCpp3kNamespace(SourceLocation Loc);
   NamespaceDecl *RequireCpp3kMetaNamespace(SourceLocation Loc);

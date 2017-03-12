@@ -701,6 +701,7 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 ///         'reflexpr' '(' expression ')'
 ///         'reflexpr' '(' type-id ')'
 ///         'reflexpr' '(' nested-name-specifier[opt] namespace-name ')'
+///         'declname' '(' constant-expression ')'
 ///
 ///       reflection-trait:
 ///         '__reflect_name'
@@ -1346,6 +1347,10 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
 
   case tok::kw_reflexpr: // [Meta]: 'reflexpr' '(' ... ')'
     Res = ParseReflexprExpression();
+    break;
+
+  case tok::kw_declname: // [Meta]: 'declname' '(' constant-expression ')'
+    Res = ParseDeclnameExpression();
     break;
 
   case tok::dollar:  // [Meta] '$' [id-expression | type-name | namespace-name]

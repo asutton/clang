@@ -92,6 +92,28 @@ ExprResult Parser::ParseReflexprExpression() {
   return Result;
 }
 
+/// \brief Parse a declname expression.
+///
+///   unary-expression:
+///      'declname' '(' constant-expression ')'
+ExprResult Parser::ParseDeclnameExpression() {
+  assert(Tok.is(tok::kw_declname));
+  SourceLocation KeyLoc = ConsumeToken();
+  
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "declname"))
+    return ExprError();
+  ExprResult Result = ParseConstantExpression();
+  T.consumeClose();
+  if (!Result.isInvalid())
+    Result = Actions.ActOnDeclnameExpression(Result.get(), 
+                                             KeyLoc,
+                                             T.getOpenLocation(), 
+                                             T.getCloseLocation());
+  return Result;
+}
+
+
 /// Parse a reflection type specifier.
 ///
 ///   reflection-type-specifier
@@ -107,7 +129,7 @@ TypeResult Parser::ParseTypeReflectionSpecifier(SourceLocation TypenameLoc,
   if (!T.consumeClose()) {
     EndLoc = T.getCloseLocation();
     if (!Result.isInvalid())
-      return Actions.ActOnTypeReflection(TypenameLoc, Result.get());
+      return Actions.ActOnTypeReflectionSpecifier(TypenameLoc, Result.get());
   }
   return TypeResult(true);
 }
