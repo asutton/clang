@@ -4381,6 +4381,8 @@ bool Parser::isKnownToBeTypeSpecifier(const Token &Tok) const {
   case tok::kw_struct:
   case tok::kw___interface:
   case tok::kw_union:
+  case tok::annot_metaclass:
+
     // enum-specifier
   case tok::kw_enum:
 
@@ -4456,6 +4458,8 @@ bool Parser::isTypeSpecifierQualifier() {
   case tok::kw_struct:
   case tok::kw___interface:
   case tok::kw_union:
+  case tok::annot_metaclass:
+
     // enum-specifier
   case tok::kw_enum:
 
@@ -4610,6 +4614,8 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   case tok::kw_struct:
   case tok::kw_union:
   case tok::kw___interface:
+  case tok::annot_metaclass:
+
     // enum-specifier
   case tok::kw_enum:
 

@@ -1332,11 +1332,8 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     TagType = DeclSpec::TST_interface;
   else if (TagTokKind == tok::kw_class)
     TagType = DeclSpec::TST_class;
-  else if (TagTokKind == tok::annot_metaclass) {
-    // FIXME: This is just a placeholder until we can work through
-    // the semantics of what a metaclass declared type actually is.
-    TagType = DeclSpec::TST_struct;
-  }
+  else if (TagTokKind == tok::annot_metaclass)
+    TagType = DeclSpec::TST_metaclass;
   else {
     assert(TagTokKind == tok::kw_union && "Not a class specifier");
     TagType = DeclSpec::TST_union;
@@ -3070,7 +3067,8 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   assert((TagType == DeclSpec::TST_struct ||
          TagType == DeclSpec::TST_interface ||
          TagType == DeclSpec::TST_union  ||
-         TagType == DeclSpec::TST_class) && "Invalid TagType!");
+         TagType == DeclSpec::TST_class ||
+         TagType == DeclSpec::TST_metaclass) && "Invalid TagType!");
 
   PrettyDeclStackTraceEntry CrashInfo(Actions, TagDecl, RecordLoc,
                                       "parsing struct/union/class body");
