@@ -618,7 +618,7 @@ class CXXRecordDecl : public RecordDecl {
   llvm::PointerUnion<ClassTemplateDecl*, MemberSpecializationInfo*>
     TemplateOrInstantiation;
 
-  MetaclassDecl *Meta;
+  MetaclassDecl *Metaclass;
 
   friend class DeclContext;
   friend class LambdaExpr;
@@ -1739,10 +1739,10 @@ public:
   ///
   /// When the class definition is completed, the metaclass is instantiated
   /// and evaluated, ultimately replacing this class with the generated one.
-  void setMetaclass(MetaclassDecl *MC) { Meta = MC; }
+  void setMetaclass(MetaclassDecl *MC) { Metaclass = MC; }
 
   /// \brief Returns the metaclass the class was declared with. May be null.
-  MetaclassDecl *getMetaclass() const { return Meta; }
+  MetaclassDecl *getMetaclass() const { return Metaclass; }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) {
