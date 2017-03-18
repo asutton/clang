@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/Initialization.h"
@@ -1185,4 +1186,65 @@ DeclResult Sema::CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
     return D;
 
   return true;
+}
+
+/// Process and possibly execute the declaration.
+DeclResult Sema::ActOnConstexprDeclaration(SourceLocation ConstexprLoc,
+                                           Stmt *Body)
+{
+  // FIXME: If I'm in a template, I can't evaluate this... I'll have to
+  // create a declaration to hold the body for later.
+
+  IdentifierInfo *II = &PP.getIdentifierTable().get("__constexpr_decl");
+  DeclarationName Name(II);
+  DeclarationNameInfo DNI(Name, ConstexprLoc);
+  QualType Ty = Context.getFunctionType(Context.VoidTy, ArrayRef<QualType>(),
+                                        FunctionProtoType::ExtProtoInfo());
+  TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Ty, ConstexprLoc);
+  FunctionDecl *Fn = FunctionDecl::Create(Context, CurContext, ConstexprLoc,
+                                          DNI, Ty, TSI, SC_None, false, false);
+  Fn->setImplicit();
+  Fn->setConstexpr(true);
+  Fn->setBody(Body);
+
+  // Set up a call to this function.
+  DeclRefExpr *Ref = new (Context) DeclRefExpr(Fn, false, Ty, VK_LValue,
+                                               SourceLocation());
+  QualType PtrTy = Context.getPointerType(Ty);
+  ImplicitCastExpr *Cast = ImplicitCastExpr::Create(Context, PtrTy,
+                                                    CK_FunctionToPointerDecay,
+                                                    Ref, nullptr, VK_RValue);
+  CallExpr* Call = new (Context) CallExpr(Context, Cast, ArrayRef<Expr*>(), 
+                                          Context.VoidTy, VK_RValue, 
+                                          SourceLocation());
+
+  // Evaluate the call.
+  //
+  // FIXME: We probably want to trap declarative effects so that we can
+  // apply them as declarations after execution. That would require a 
+  // modification to EvalResult (e.g., an injection set?).
+  SmallVector<PartialDiagnosticAt, 8> Notes;
+  Expr::EvalResult Eval;
+  Eval.Diag = &Notes;
+  bool Result = Call->EvaluateAsRValue(Eval, Context);
+  if (!Result) {
+    // If the only error is that we didn't initialize a (void) value, that's 
+    // actually okay. APValue doesn't know how to do this anyway.
+    //
+    // FIXME: We should probably have a top-level EvaluateAsVoid function that
+    // handles this case.
+    if (!Notes.empty() && 
+        Notes[0].second.getDiagID() != diag::note_constexpr_uninitialized) {
+      Diag(Body->getLocStart(), diag::err_expr_not_ice) 
+        << Body->getSourceRange() << LangOpts.CPlusPlus;
+      for (const PartialDiagnosticAt &Note : Notes)
+        Diag(Note.first, Note.second);
+      return DeclResult(true);    
+    }
+  }
+  
+  // FIXME: Create a declaration node that stores the body and results of
+  // declaration. 
+
+  return DeclResult();
 }

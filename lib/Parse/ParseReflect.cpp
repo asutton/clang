@@ -179,3 +179,15 @@ bool Parser::TryAnnotateMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
 
   return true;
 }
+
+/// Parse a constexpr declaration.
+///
+///   constexpr-declaration:
+///     'constexpr' compound-statement
+Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
+  assert(Tok.is(tok::kw_constexpr));
+  SourceLocation ConstexprLoc = ConsumeToken();
+  StmtResult Body = ParseCompoundStatement();
+  DeclResult CD = Actions.ActOnConstexprDeclaration(ConstexprLoc, Body.get());
+  return DeclGroupPtrTy();
+}

@@ -8184,7 +8184,7 @@ public:
   void CheckCompletedCoroutineBody(FunctionDecl *FD, Stmt *&Body);
 
   //===--------------------------------------------------------------------===//
-  // C++ Reflection [Cpp3K]
+  // C++ Reflection [Meta]
   //
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Expr *E);
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, TypeSourceInfo *TSI);
@@ -8206,6 +8206,8 @@ public:
                                       IdentifierInfo *II, Stmt *Body);
   DeclResult CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
                                 IdentifierInfo *II);
+
+  DeclResult ActOnConstexprDeclaration(SourceLocation ConstexprLoc, Stmt *Body);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

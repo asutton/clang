@@ -370,6 +370,9 @@ StmtResult Sema::ActOnCompoundStmt(SourceLocation L, SourceLocation R,
   }
 
   return new (Context) CompoundStmt(Context, Elts, L, R);
+  // Stmt *S = new (Context) CompoundStmt(Context, Elts, L, R);
+  // S->dump();
+  // return S;
 }
 
 StmtResult

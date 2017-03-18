@@ -31,6 +31,7 @@ using namespace clang;
 ///           using-declaration
 ///           using-directive
 /// [C++0x]   static_assert-declaration
+/// [Meta]    constexpr-declaration
 ///
 ///         asm-definition:
 ///           'asm' '(' string-literal ')' ';'
@@ -60,6 +61,12 @@ bool Parser::isCXXDeclarationStatement() {
   case tok::kw_static_assert:
   case tok::kw__Static_assert:
     return true;
+    // constexpr-declaration
+  case tok::kw_constexpr:
+    if (NextToken().is(tok::l_brace))
+      return true;
+    // Fall through.
+
     // simple-declaration
   default:
     return isCXXSimpleDeclaration(/*AllowForRangeDecl=*/false);

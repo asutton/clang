@@ -2358,6 +2358,7 @@ void Parser::MaybeParseAndDiagnoseDeclSpecAfterCXX11VirtSpecifierSeq(
 /// [C++0x] static_assert-declaration
 ///         template-declaration
 /// [GNU]   '__extension__' member-declaration
+/// [Meta]  constexpr-declaration
 ///
 ///       member-declarator-list:
 ///         member-declarator
@@ -2512,6 +2513,10 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     return ParseUsingDeclaration(Declarator::MemberContext, TemplateInfo,
                                  UsingLoc, DeclEnd, AS);
   }
+
+  // constexpr-decl
+  if (Tok.is(tok::kw_constexpr) && NextToken().is(tok::l_brace))
+    return ParseConstexprDeclaration();
 
   // Hold late-parsed attributes so we can attach a Decl to them later.
   LateParsedAttrList CommonLateParsedAttrs;

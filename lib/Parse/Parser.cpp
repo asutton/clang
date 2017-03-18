@@ -649,7 +649,7 @@ bool Parser::ParseTopLevelDecl(DeclGroupPtrTy &Result) {
 ///
 /// [C++11] empty-declaration:
 ///           ';'
-/// [PIM]   metaclass-definition
+/// [Meta]  metaclass-definition
 ///
 /// [C++0x/GNU] 'extern' 'template' declaration
 Parser::DeclGroupPtrTy
@@ -843,6 +843,11 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
     if (NextToken().is(tok::kw_class) && 
         GetLookAheadToken(2).is(tok::identifier))
       return ParseMetaclassDefinition();
+    goto dont_know;
+
+  case tok::kw_constexpr: // [Meta] constexpr-declaration
+    if (NextToken().is(tok::l_brace))
+      return ParseConstexprDeclaration();
     goto dont_know;
 
   case tok::kw___if_exists:

@@ -2547,13 +2547,15 @@ private:
                                   UnqualifiedId &Result);
 
   //===--------------------------------------------------------------------===//
-  // C++ Reflection [PIM]
+  // C++ Reflection
 
   ExprResult ParseReflectExpression();
   ExprResult ParseReflectionTrait();
   DeclGroupPtrTy ParseMetaclassDefinition();
   bool TryAnnotateMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
                                 IdentifierInfo *II);
+
+  DeclGroupPtrTy ParseConstexprDeclaration();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
