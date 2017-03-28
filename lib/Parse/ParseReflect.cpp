@@ -14,6 +14,7 @@
 #include "RAIIObjectsForParser.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
+#include "clang/Sema/PrettyDeclStackTrace.h"
 
 using namespace clang;
 
@@ -150,25 +151,27 @@ ExprResult Parser::ParseReflectionTrait() {
 ///
 /// \verbatim
 ///   metaclass-definition:
-///     '$class' identifier metaclass-body
-///
-///   metaclass-body:
-///     compound-statement
+///     '$class' identifier '{' member-specification[opt] '}'
 /// \endverbatim
 /// 
 // FIXME: [PIM] Actually define the grammar for this thing. Note that
 // returning nullptr will allow parsing to continue after the tokens
 // have been consumed.
 Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
-  // We should have matched the `$class` identifier in
-  // ParseExternalDeclaration.
   assert(Tok.is(tok::dollar));
   SourceLocation DLoc = ConsumeToken();
-  assert(Tok.is(tok::kw_class));
+  // For now, pretend we are defining a class that was declared with the
+  // 'struct' class-key.
+  DeclSpec::TST TagType = DeclSpec::TST_struct;
+  assert(Tok.is(tok::kw_class)); // TODO: Support for '$struct' and '$union'?
   ConsumeToken();
-  assert(Tok.is(tok::identifier));
 
-  // Save the identifier and source location.
+  // TODO: Parse attributes?
+  ParsedAttributesWithRange attrs(AttrFactory);
+  SourceLocation AttrFixItLoc = Tok.getLocation();
+
+  // Parse the metaclass name.
+  assert(Tok.is(tok::identifier));
   IdentifierInfo *II = Tok.getIdentifierInfo();
   SourceLocation IdLoc = ConsumeToken();
 
@@ -178,24 +181,25 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
   }
 
   Decl *Metaclass = Actions.ActOnMetaclass(getCurScope(), DLoc, IdLoc, II);
+  CXXRecordDecl *MetaclassDef = nullptr;
 
-  // Enter a scope for the metaclass.
-  ParseScope MetaclassScope(this, Scope::DeclScope);
+  Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass,
+                                        MetaclassDef);
 
-  Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass);
+  PrettyDeclStackTraceEntry CrashInfo(Actions, Metaclass, DLoc,
+                                      "parsing metaclass body");
 
   // Parse the body of the metaclass.
-  StmtResult Body(ParseCompoundStatementBody());
+  ParseCXXMemberSpecification(DLoc, AttrFixItLoc, attrs, TagType, MetaclassDef);
 
-  // Leave the metaclass scope.
-  MetaclassScope.Exit();
-
-  if (Body.isInvalid()) {
+  if (MetaclassDef->isInvalidDecl()) {
     Actions.ActOnMetaclassDefinitionError(getCurScope(), Metaclass);
     return nullptr;
   }
 
-  Actions.ActOnMetaclassFinishDefinition(getCurScope(), Metaclass, Body.get());
+  Actions.ActOnMetaclassFinishDefinition(getCurScope(), Metaclass,
+                                         MetaclassDef->getBraceRange());
+
   return Actions.ConvertDeclToDeclGroup(Metaclass);
 }
 

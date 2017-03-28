@@ -1473,6 +1473,12 @@ bool CXXRecordDecl::mayBeAbstract() const {
   return false;
 }
 
+bool CXXRecordDecl::isMetaclassDefinition() const {
+  return isImplicit() && getDeclName() &&
+         isa<MetaclassDecl>(getDeclContext()) &&
+         cast<MetaclassDecl>(getDeclContext())->getDeclName() == getDeclName();
+}
+
 void CXXDeductionGuideDecl::anchor() { }
 
 CXXDeductionGuideDecl *CXXDeductionGuideDecl::Create(
@@ -2445,9 +2451,8 @@ MetaclassDecl *MetaclassDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
 }
 
 SourceRange MetaclassDecl::getSourceRange() const {
-  SourceLocation RangeEnd = getLocation();
-  if (Stmt *Body = getBody())
-    RangeEnd = Body->getLocEnd();
+  SourceLocation RBraceLoc = BraceRange.getEnd();
+  SourceLocation RangeEnd = RBraceLoc.isValid() ? RBraceLoc : getLocation();
   return SourceRange(getDollarLoc(), RangeEnd);
 }
 

@@ -8204,8 +8204,10 @@ public:
                                   SourceLocation RParenLoc);
   Decl *ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
                        IdentifierInfo *II);
-  void ActOnMetaclassStartDefinition(Scope *S, Decl *MD);
-  void ActOnMetaclassFinishDefinition(Scope *S, Decl *MD, Stmt *Body);
+  void ActOnMetaclassStartDefinition(Scope *S, Decl *MD,
+                                     CXXRecordDecl *&Definition);
+  void ActOnMetaclassFinishDefinition(Scope *S, Decl *MD,
+                                      SourceRange BraceRange);
   void ActOnMetaclassDefinitionError(Scope *S, Decl *MD);
   DeclResult CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
                                 IdentifierInfo *II);

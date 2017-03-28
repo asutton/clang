@@ -1158,18 +1158,31 @@ Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
   return Metaclass;
 }
 
-void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD) {
+void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD,
+                                         CXXRecordDecl *&Definition) {
   MetaclassDecl *Metaclass = cast<MetaclassDecl>(MD);
 
   PushDeclContext(S, Metaclass);
   ActOnDocumentableDecl(Metaclass);
+
+  TagTypeKind Kind = TypeWithKeyword::getTagTypeKindForTypeSpec(TST_metaclass);
+
+  // Create a nested class to store the metaclass member declarations.
+  Definition = CXXRecordDecl::Create(
+      Context, Kind, CurContext, Metaclass->getLocStart(),
+      Metaclass->getLocation(), Metaclass->getIdentifier());
+  Definition->setImplicit();
+  CurContext->addHiddenDecl(Definition);
+  Definition->startDefinition();
+  assert(Definition->isMetaclassDefinition() && "Broken metaclass definition");
+
+  Metaclass->setDefinition(Definition);
 }
 
-void Sema::ActOnMetaclassFinishDefinition(Scope *S, Decl *MD, Stmt *Body) {
-  assert(isa<CompoundStmt>(Body));
-
+void Sema::ActOnMetaclassFinishDefinition(Scope *S, Decl *MD,
+                                          SourceRange BraceRange) {
   MetaclassDecl *Metaclass = cast<MetaclassDecl>(MD);
-  Metaclass->setBody(Body);
+  Metaclass->setBraceRange(BraceRange);
 
   PopDeclContext();
 }

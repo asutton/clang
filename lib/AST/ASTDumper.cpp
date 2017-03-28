@@ -1069,7 +1069,7 @@ void ASTDumper::dumpDecl(const Decl *D) {
 
     // Decls within functions are visited by the body.
     if (!isa<FunctionDecl>(*D) && !isa<ObjCMethodDecl>(*D) &&
-        !isa<MetaclassDecl>(*D) && hasNodes(dyn_cast<DeclContext>(D)))
+        hasNodes(dyn_cast<DeclContext>(D)))
       dumpDeclContext(cast<DeclContext>(D));
   });
 }
@@ -1354,7 +1354,6 @@ void ASTDumper::VisitMetaclassDecl(const MetaclassDecl *D) {
   if (D->isModulePrivate())
     OS << " __module_private__";
   OS << " definition";
-  dumpStmt(D->getBody());
 }
 
 void ASTDumper::VisitStaticAssertDecl(const StaticAssertDecl *D) {

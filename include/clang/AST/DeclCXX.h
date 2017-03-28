@@ -1735,6 +1735,10 @@ public:
     return getLambdaData().MethodTyInfo;
   }
 
+  /// \brief Returns \c true if this declaration contains the definition of a
+  /// C++ metaclass.
+  bool isMetaclassDefinition() const;
+
   /// \brief Associates a metaclass definition with this class.
   ///
   /// When the class definition is completed, the metaclass is instantiated
@@ -3672,23 +3676,29 @@ class MetaclassDecl : public NamedDecl, public DeclContext {
   /// \brief The location of the \c $ operator.
   SourceLocation DollarLoc;
 
-  /// \brief The body of the metaclass definition.
-  Stmt *Body;
+  /// \brief The range of the opening and closing braces enclosing the metaclass
+  /// body.
+  SourceRange BraceRange;
+
+  /// \brief Contains the members that were declared within the metaclass body
+  /// and are to be merged with the class prototype.
+  CXXRecordDecl *Definition;
 
   MetaclassDecl(DeclContext *DC, SourceLocation DLoc, SourceLocation IdLoc,
                 IdentifierInfo *II)
       : NamedDecl(Metaclass, DC, IdLoc, II), DeclContext(Metaclass),
-        DollarLoc(DLoc), Body(nullptr) {}
+        DollarLoc(DLoc), BraceRange(), Definition(nullptr) {}
 
 public:
   /// \brief Returns the location of the \c $ keyword.
   SourceLocation getDollarLoc() const { return DollarLoc; }
 
-  /// \brief Returns the body of the metaclass definition.
-  Stmt *getBody() const override { return Body; }
+  SourceRange getBraceRange() const { return BraceRange; }
+  void setBraceRange(SourceRange R) { BraceRange = R; }
 
-  /// \brief Sets the body of the metaclass definition.
-  void setBody(Stmt *B) { Body = B; }
+  CXXRecordDecl *getDefinition() const { return Definition; }
+
+  void setDefinition(CXXRecordDecl *RD) { Definition = RD; }
 
   MetaclassDecl *getCanonicalDecl() override {
     return cast<MetaclassDecl>(NamedDecl::getCanonicalDecl());

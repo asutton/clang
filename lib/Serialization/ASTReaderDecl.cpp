@@ -1461,7 +1461,8 @@ void ASTDeclReader::VisitConstructorUsingShadowDecl(
 void ASTDeclReader::VisitMetaclassDecl(MetaclassDecl *D) {
   VisitNamedDecl(D);
   D->DollarLoc = ReadSourceLocation();
-  D->Body = cast_or_null<CompoundStmt>(Record.readStmt());
+  D->BraceRange = ReadSourceRange();
+  D->Definition = ReadDeclAs<CXXRecordDecl>();
 }
 
 void ASTDeclReader::VisitUsingDirectiveDecl(UsingDirectiveDecl *D) {
