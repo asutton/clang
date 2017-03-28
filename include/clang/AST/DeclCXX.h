@@ -3686,31 +3686,48 @@ public:
 /// }
 /// \endcode
 ///
-/// This class simply stores the body of the statement. Evaluation of the body
-/// is performed during semantic analysis.
+/// When the constexpr-declaration appears in namespace or class scope, this
+/// class contains a constexpr void function that contains the parsed body
+/// of the declaration. Within a 
 class ConstexprDecl : public Decl {
   virtual void anchor();
 
-  /// \brief The compound statement of the declaration.
-  Stmt *Body;
+  /// \brief function that wraps
+  llvm::PointerUnion<Decl *, Expr *> Def;
 
-  ConstexprDecl(DeclContext *DC, SourceLocation CL, Stmt *B)
-    : Decl(Constexpr, DC, CL), Body(B) { }
+  ConstexprDecl()
+    : Decl(Constexpr, nullptr, SourceLocation()), Def() { }
+
+  ConstexprDecl(DeclContext *DC, SourceLocation CL, Decl *D)
+    : Decl(Constexpr, DC, CL), Def(D) { }
+
+  ConstexprDecl(DeclContext *DC, SourceLocation CL, Expr *E)
+    : Decl(Constexpr, DC, CL), Def(E) { }
 
 public:
   static ConstexprDecl *Create(ASTContext& CXT, DeclContext *DC, 
-                               SourceLocation CL, Stmt *B);
+                               SourceLocation CL, Decl *D);
+  static ConstexprDecl *Create(ASTContext& CXT, DeclContext *DC, 
+                               SourceLocation CL, Expr *L);
   static ConstexprDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
-  /// \brief Returns the body of the compound statement.
-  CompoundStmt *getBody() const override;  
-
-  SourceLocation getLBraceLoc() const;
-  SourceLocation getRBraceLoc() const;
-
-  SourceRange getSourceRange() const override LLVM_READONLY {
-    return SourceRange(getLocation(), getRBraceLoc());
+  /// \brief Returns true if this is represented as a function.
+  bool hasFunctionRepresentation() const { 
+    return Def.is<Decl *>(); 
   }
+
+  /// \brief Returns true if this is represented as a lambda expression.
+  bool hasLambdaRepresentation() const { 
+    return !hasFunctionRepresentation(); 
+  }
+
+  /// \brief Returns the function representation of the declaration. 
+  FunctionDecl *getAsFunction() const;
+
+  /// \brief Returns the lambda expression representation of the declaration.
+  LambdaExpr *getAsLambda() const;
+
+  SourceRange getSourceRange() const override;
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == Constexpr; }

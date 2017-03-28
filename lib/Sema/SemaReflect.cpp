@@ -1188,46 +1188,69 @@ DeclResult Sema::CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
   return true;
 }
 
-/// Process and possibly execute the declaration.
-DeclResult Sema::ActOnConstexprDeclaration(SourceLocation ConstexprLoc,
-                                           Stmt *Body)
+/// Returns true if a constexpr-declaration in context C would be represented
+/// using a function.
+static inline bool
+NeedsFunctionRep(const DeclContext *C)
 {
-  return BuildConstexprDeclaration(ConstexprLoc, Body);
+  return C->isTranslationUnit() || C->isNamespace() || C->isRecord();
 }
 
-/// Build the constexpr-declaration node.
-///
-/// FIXME: Delay instantiation if we parsed 'template constexpr {...}'
-DeclResult Sema::BuildConstexprDeclaration(SourceLocation ConstexprLoc, 
-                                           Stmt *Body) {
-  ConstexprDecl *D = ConstexprDecl::Create(Context, CurContext, ConstexprLoc, 
-                                           Body);
-  CurContext->addDecl(D);
-  return FinishConstexprDeclaration(D);
+/// Create a constexpr declaration that will hold the body of the constexpr
+/// declaration. 
+DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc)
+{
+  if (NeedsFunctionRep(CurContext)) {
+    // Build a new function to house the parsed body.
+    IdentifierInfo *II = &PP.getIdentifierTable().get("__constexpr_decl");
+    DeclarationName Name(II);
+    DeclarationNameInfo DNI(Name, Loc);
+    QualType Ty = Context.getFunctionType(Context.VoidTy, ArrayRef<QualType>(),
+                                          FunctionProtoType::ExtProtoInfo());
+    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Ty, Loc);
+    FunctionDecl *Fn = FunctionDecl::Create(Context, CurContext, Loc, DNI, Ty, 
+                                            TSI, SC_None, false, false);
+    Fn->setImplicit();
+    Fn->setConstexpr(true);
+
+    // Build the constexpr declaration around the function.
+    Decl *CD = ConstexprDecl::Create(Context, CurContext, Loc, Fn);
+    CurContext = Fn;
+    return CD;
+  }
+  else if (CurContext->isFunctionOrMethod()) {
+    // FIXME: Generate a lambda expression to hold the resulting definition.
+    assert(false && "Local constexpr blocks not implemented");
+  }
+  assert(false && "Constexpr declaration in unsupported context");
+}
+
+/// Attach the parsed statements to the body.
+DeclResult Sema::ActOnFinishConstexprDeclaration(Decl *D, Stmt *S)
+{
+  ConstexprDecl *CD = cast<ConstexprDecl>(D);
+
+  // Attach the body to the declaration.
+  if (CD->hasFunctionRepresentation()) {
+    FunctionDecl *F = CD->getAsFunction();
+    F->setBody(S);
+    CurContext = F->getParent();
+    if (!EvaluateConstexprDeclaration(F))
+      return DeclResult(true);
+  }
+  else {
+    assert(false && "Unhandled representation");
+  }
+
+  return CD;
 }
 
 /// Process a constexpr-declaration. This builds an unnamed constexpr void 
 /// function whose body is that of the constexpr-delaration, and evaluates
 /// a call to that function. 
-DeclResult Sema::FinishConstexprDeclaration(Decl* D) {
-  ConstexprDecl* CD = cast<ConstexprDecl>(D);
-  CompoundStmt* Body = CD->getBody();
-  SourceLocation Loc = CD->getLocation();
-
-  IdentifierInfo *II = &PP.getIdentifierTable().get("__constexpr_decl");
-  DeclarationName Name(II);
-  DeclarationNameInfo DNI(Name, Loc);
-  QualType Ty = Context.getFunctionType(Context.VoidTy, ArrayRef<QualType>(),
-                                        FunctionProtoType::ExtProtoInfo());
-  TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Ty, Loc);
-  FunctionDecl *Fn = FunctionDecl::Create(Context, CurContext, Loc, DNI, Ty, 
-                                          TSI, SC_None, false, false);
-  Fn->setImplicit();
-  Fn->setConstexpr(true);
-  Fn->setBody(Body);
-
-  // Set up a call to this function.
-  DeclRefExpr *Ref = new (Context) DeclRefExpr(Fn, false, Ty, VK_LValue,
+bool Sema::EvaluateConstexprDeclaration(FunctionDecl* D) {
+  QualType Ty = D->getType();
+  DeclRefExpr *Ref = new (Context) DeclRefExpr(D, false, Ty, VK_LValue,
                                                SourceLocation());
   QualType PtrTy = Context.getPointerType(Ty);
   ImplicitCastExpr *Cast = ImplicitCastExpr::Create(Context, PtrTy,
@@ -1237,7 +1260,8 @@ DeclResult Sema::FinishConstexprDeclaration(Decl* D) {
                                           Context.VoidTy, VK_RValue, 
                                           SourceLocation());
 
-  #if 0
+  Call->dump();
+
   // Evaluate the call.
   //
   // FIXME: We probably want to trap declarative effects so that we can
@@ -1255,14 +1279,13 @@ DeclResult Sema::FinishConstexprDeclaration(Decl* D) {
     // handles this case.
     if (!Notes.empty() && 
         Notes[0].second.getDiagID() != diag::note_constexpr_uninitialized) {
-      Diag(Body->getLocStart(), diag::err_expr_not_ice) 
-        << Body->getSourceRange() << LangOpts.CPlusPlus;
+      Diag(D->getBody()->getLocStart(), diag::err_expr_not_ice) 
+        << D->getBody()->getSourceRange() << LangOpts.CPlusPlus;
       for (const PartialDiagnosticAt &Note : Notes)
         Diag(Note.first, Note.second);
-      return DeclResult(true);    
+      return false;
     }
   }
-  #endif
   
-  return CD;
+  return true;
 }

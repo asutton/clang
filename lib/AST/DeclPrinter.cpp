@@ -959,8 +959,8 @@ void DeclPrinter::VisitMetaclassDecl(MetaclassDecl *D) {
 void DeclPrinter::VisitConstexprDecl(ConstexprDecl *D) {
   if (!Policy.SuppressSpecifiers && D->isModulePrivate())
     Out << "__module_private__ ";
-  Out << "constexpr ";
-  D->getBody()->printPretty(Out, nullptr, Policy, Indentation);
+  Out << "constexpr { ... }";
+  // FIXME: Implement me.
 }
 
 void DeclPrinter::VisitLinkageSpecDecl(LinkageSpecDecl *D) {

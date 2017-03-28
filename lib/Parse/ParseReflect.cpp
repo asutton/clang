@@ -187,7 +187,16 @@ bool Parser::TryAnnotateMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
 Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
   assert(Tok.is(tok::kw_constexpr));
   SourceLocation ConstexprLoc = ConsumeToken();
+  DeclResult D = Actions.ActOnStartConstexprDeclaration(ConstexprLoc);
+
+  // Enter function scope as if we're parsing a function body.
+  // FIXME: Handle parse errors gracefully.
+  ParseScope BodyScope(this, Scope::FnScope|Scope::DeclScope);
   StmtResult Body = ParseCompoundStatement();
-  DeclResult D = Actions.ActOnConstexprDeclaration(ConstexprLoc, Body.get());
+  BodyScope.Exit();
+  if (Body.isInvalid())
+    return DeclGroupPtrTy();
+  
+  D = Actions.ActOnFinishConstexprDeclaration(D.get(), Body.get());
   return Actions.ConvertDeclToDeclGroup(D.get());
 }

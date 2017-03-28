@@ -2454,25 +2454,36 @@ SourceRange MetaclassDecl::getSourceRange() const {
 void ConstexprDecl::anchor() {}
 
 ConstexprDecl *ConstexprDecl::Create(ASTContext& Cxt, DeclContext *DC, 
-                                     SourceLocation CL, Stmt *B) {
-  return new (Cxt, DC) ConstexprDecl(DC, CL, B);
+                                     SourceLocation CL, Decl *D) {
+  assert(isa<FunctionDecl>(D) && "Expected function declaration");
+  return new (Cxt, DC) ConstexprDecl(DC, CL, D);
+}
+
+ConstexprDecl *ConstexprDecl::Create(ASTContext& Cxt, DeclContext *DC, 
+                                     SourceLocation CL, Expr *E) {
+  assert(isa<LambdaExpr>(E) && "Expected lambda expression");
+  return new (Cxt, DC) ConstexprDecl(DC, CL, E);
 }
 
 ConstexprDecl *ConstexprDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) ConstexprDecl(nullptr, SourceLocation(), nullptr);
+  return new (C, ID) ConstexprDecl();
 }
 
-CompoundStmt *ConstexprDecl::getBody() const {
-  return cast<CompoundStmt>(Body);
+FunctionDecl *ConstexprDecl::getAsFunction() const {
+  Decl *D = Def.get<Decl *>();
+  return cast<FunctionDecl>(D);
 }
 
-SourceLocation ConstexprDecl::getLBraceLoc() const {
-  return getBody()->getLBracLoc();
+LambdaExpr *ConstexprDecl::getAsLambda() const {
+  Expr *E = Def.get<Expr *>();
+  return cast<LambdaExpr>(E);
 }
 
-SourceLocation ConstexprDecl::getRBraceLoc() const {
-  return getBody()->getRBracLoc();
+SourceRange ConstexprDecl::getSourceRange() const {
+  // FIXME: This is wrong.
+  return Decl::getSourceRange();
 }
+
 
 static const char *getAccessName(AccessSpecifier AS) {
   switch (AS) {
