@@ -285,6 +285,7 @@ bool serialization::isRedeclarableDeclKind(unsigned Kind) {
   case Decl::Using:
   case Decl::UsingPack:
   case Decl::Metaclass:
+  case Decl::Constexpr:
   case Decl::ObjCMethod:
   case Decl::ObjCCategory:
   case Decl::ObjCCategoryImpl:

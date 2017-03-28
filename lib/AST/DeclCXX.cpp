@@ -2451,6 +2451,29 @@ SourceRange MetaclassDecl::getSourceRange() const {
   return SourceRange(getDollarLoc(), RangeEnd);
 }
 
+void ConstexprDecl::anchor() {}
+
+ConstexprDecl *ConstexprDecl::Create(ASTContext& Cxt, DeclContext *DC, 
+                                     SourceLocation CL, Stmt *B) {
+  return new (Cxt, DC) ConstexprDecl(DC, CL, B);
+}
+
+ConstexprDecl *ConstexprDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  return new (C, ID) ConstexprDecl(nullptr, SourceLocation(), nullptr);
+}
+
+CompoundStmt *ConstexprDecl::getBody() const {
+  return cast<CompoundStmt>(Body);
+}
+
+SourceLocation ConstexprDecl::getLBraceLoc() const {
+  return getBody()->getLBracLoc();
+}
+
+SourceLocation ConstexprDecl::getRBraceLoc() const {
+  return getBody()->getRBracLoc();
+}
+
 static const char *getAccessName(AccessSpecifier AS) {
   switch (AS) {
     case AS_none:

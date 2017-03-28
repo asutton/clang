@@ -1192,17 +1192,36 @@ DeclResult Sema::CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
 DeclResult Sema::ActOnConstexprDeclaration(SourceLocation ConstexprLoc,
                                            Stmt *Body)
 {
-  // FIXME: If I'm in a template, I can't evaluate this... I'll have to
-  // create a declaration to hold the body for later.
+  return BuildConstexprDeclaration(ConstexprLoc, Body);
+}
+
+/// Build the constexpr-declaration node.
+///
+/// FIXME: Delay instantiation if we parsed 'template constexpr {...}'
+DeclResult Sema::BuildConstexprDeclaration(SourceLocation ConstexprLoc, 
+                                           Stmt *Body) {
+  ConstexprDecl *D = ConstexprDecl::Create(Context, CurContext, ConstexprLoc, 
+                                           Body);
+  CurContext->addDecl(D);
+  return FinishConstexprDeclaration(D);
+}
+
+/// Process a constexpr-declaration. This builds an unnamed constexpr void 
+/// function whose body is that of the constexpr-delaration, and evaluates
+/// a call to that function. 
+DeclResult Sema::FinishConstexprDeclaration(Decl* D) {
+  ConstexprDecl* CD = cast<ConstexprDecl>(D);
+  CompoundStmt* Body = CD->getBody();
+  SourceLocation Loc = CD->getLocation();
 
   IdentifierInfo *II = &PP.getIdentifierTable().get("__constexpr_decl");
   DeclarationName Name(II);
-  DeclarationNameInfo DNI(Name, ConstexprLoc);
+  DeclarationNameInfo DNI(Name, Loc);
   QualType Ty = Context.getFunctionType(Context.VoidTy, ArrayRef<QualType>(),
                                         FunctionProtoType::ExtProtoInfo());
-  TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Ty, ConstexprLoc);
-  FunctionDecl *Fn = FunctionDecl::Create(Context, CurContext, ConstexprLoc,
-                                          DNI, Ty, TSI, SC_None, false, false);
+  TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Ty, Loc);
+  FunctionDecl *Fn = FunctionDecl::Create(Context, CurContext, Loc, DNI, Ty, 
+                                          TSI, SC_None, false, false);
   Fn->setImplicit();
   Fn->setConstexpr(true);
   Fn->setBody(Body);
@@ -1218,6 +1237,7 @@ DeclResult Sema::ActOnConstexprDeclaration(SourceLocation ConstexprLoc,
                                           Context.VoidTy, VK_RValue, 
                                           SourceLocation());
 
+  #if 0
   // Evaluate the call.
   //
   // FIXME: We probably want to trap declarative effects so that we can
@@ -1242,9 +1262,7 @@ DeclResult Sema::ActOnConstexprDeclaration(SourceLocation ConstexprLoc,
       return DeclResult(true);    
     }
   }
+  #endif
   
-  // FIXME: Create a declaration node that stores the body and results of
-  // declaration. 
-
-  return DeclResult();
+  return CD;
 }

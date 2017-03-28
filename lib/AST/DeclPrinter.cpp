@@ -75,6 +75,7 @@ namespace {
     void VisitNamespaceAliasDecl(NamespaceAliasDecl *D);
     void VisitCXXRecordDecl(CXXRecordDecl *D);
     void VisitMetaclassDecl(MetaclassDecl *D);
+    void VisitConstexprDecl(ConstexprDecl *D);
     void VisitLinkageSpecDecl(LinkageSpecDecl *D);
     void VisitTemplateDecl(const TemplateDecl *D);
     void VisitFunctionTemplateDecl(FunctionTemplateDecl *D);
@@ -364,6 +365,7 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
         Terminator = ";";
     } else if (isa<NamespaceDecl>(*D) ||
                isa<MetaclassDecl>(*D) ||
+               isa<ConstexprDecl>(*D) ||
                isa<LinkageSpecDecl>(*D) ||
                isa<ObjCImplementationDecl>(*D) ||
                isa<ObjCInterfaceDecl>(*D) ||
@@ -952,6 +954,13 @@ void DeclPrinter::VisitMetaclassDecl(MetaclassDecl *D) {
     if (D->getBody())
       D->getBody()->printPretty(Out, nullptr, Policy, Indentation);
   }
+}
+
+void DeclPrinter::VisitConstexprDecl(ConstexprDecl *D) {
+  if (!Policy.SuppressSpecifiers && D->isModulePrivate())
+    Out << "__module_private__ ";
+  Out << "constexpr ";
+  D->getBody()->printPretty(Out, nullptr, Policy, Indentation);
 }
 
 void DeclPrinter::VisitLinkageSpecDecl(LinkageSpecDecl *D) {

@@ -100,7 +100,6 @@ void clang::ParseAST(Preprocessor &PP, ASTConsumer *Consumer,
                      TranslationUnitKind TUKind,
                      CodeCompleteConsumer *CompletionConsumer,
                      bool SkipFunctionBodies) {
-
   std::unique_ptr<Sema> S(
       new Sema(PP, Ctx, *Consumer, TUKind, CompletionConsumer));
 

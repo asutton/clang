@@ -188,6 +188,6 @@ Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
   assert(Tok.is(tok::kw_constexpr));
   SourceLocation ConstexprLoc = ConsumeToken();
   StmtResult Body = ParseCompoundStatement();
-  DeclResult CD = Actions.ActOnConstexprDeclaration(ConstexprLoc, Body.get());
-  return DeclGroupPtrTy();
+  DeclResult D = Actions.ActOnConstexprDeclaration(ConstexprLoc, Body.get());
+  return Actions.ConvertDeclToDeclGroup(D.get());
 }

@@ -104,6 +104,7 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
   case Decl::OMPCapturedExpr:
   case Decl::Empty:
   case Decl::Metaclass: // $class X { ... }
+  case Decl::Constexpr: // constexpr { ... }
     // None of these decls require codegen support.
     return;
 

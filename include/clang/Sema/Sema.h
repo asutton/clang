@@ -8208,6 +8208,8 @@ public:
                                 IdentifierInfo *II);
 
   DeclResult ActOnConstexprDeclaration(SourceLocation ConstexprLoc, Stmt *Body);
+  DeclResult BuildConstexprDeclaration(SourceLocation ConstexprLoc, Stmt *Body);
+  DeclResult FinishConstexprDeclaration(Decl* D);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
