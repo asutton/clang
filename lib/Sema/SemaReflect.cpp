@@ -1215,6 +1215,7 @@ DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc)
 
     // Build the constexpr declaration around the function.
     Decl *CD = ConstexprDecl::Create(Context, CurContext, Loc, Fn);
+    CurContext->addDecl(CD);
     CurContext = Fn;
     return CD;
   }
@@ -1259,8 +1260,6 @@ bool Sema::EvaluateConstexprDeclaration(FunctionDecl* D) {
   CallExpr* Call = new (Context) CallExpr(Context, Cast, ArrayRef<Expr*>(), 
                                           Context.VoidTy, VK_RValue, 
                                           SourceLocation());
-
-  Call->dump();
 
   // Evaluate the call.
   //
