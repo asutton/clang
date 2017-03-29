@@ -2454,29 +2454,29 @@ SourceRange MetaclassDecl::getSourceRange() const {
 void ConstexprDecl::anchor() {}
 
 ConstexprDecl *ConstexprDecl::Create(ASTContext& Cxt, DeclContext *DC, 
-                                     SourceLocation CL, Decl *D) {
-  assert(isa<FunctionDecl>(D) && "Expected function declaration");
-  return new (Cxt, DC) ConstexprDecl(DC, CL, D);
+                                     SourceLocation CL, FunctionDecl *Fn) {
+  return new (Cxt, DC) ConstexprDecl(DC, CL, Fn);
 }
 
 ConstexprDecl *ConstexprDecl::Create(ASTContext& Cxt, DeclContext *DC, 
-                                     SourceLocation CL, Expr *E) {
-  assert(isa<LambdaExpr>(E) && "Expected lambda expression");
-  return new (Cxt, DC) ConstexprDecl(DC, CL, E);
+                                     SourceLocation CL, CXXRecordDecl *Class) {
+  return new (Cxt, DC) ConstexprDecl(DC, CL, Class);
 }
 
 ConstexprDecl *ConstexprDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) ConstexprDecl();
 }
 
-FunctionDecl *ConstexprDecl::getAsFunction() const {
-  Decl *D = Def.get<Decl *>();
-  return cast<FunctionDecl>(D);
+FunctionDecl *ConstexprDecl::getFunctionDecl() const {
+  return Def.get<FunctionDecl *>();
 }
 
-LambdaExpr *ConstexprDecl::getAsLambda() const {
-  Expr *E = Def.get<Expr *>();
-  return cast<LambdaExpr>(E);
+CXXRecordDecl *ConstexprDecl::getClosureDecl() const {
+  return Def.get<CXXRecordDecl *>();
+}
+
+CXXMethodDecl *ConstexprDecl::getClosureCallOperator() const {
+  return getClosureDecl()->getLambdaCallOperator();
 }
 
 SourceRange ConstexprDecl::getSourceRange() const {

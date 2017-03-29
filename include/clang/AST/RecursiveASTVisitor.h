@@ -1868,10 +1868,7 @@ DEF_TRAVERSE_DECL(MetaclassDecl, {
 })
 
 DEF_TRAVERSE_DECL(ConstexprDecl, {
-  if (D->hasFunctionRepresentation())
-    TRY_TO(TraverseDecl(D->getAsFunction()));
-  else
-    TRY_TO(TraverseStmt(D->getAsLambda()));
+  // FIXME: Not sure if we can do anything useful here.
 })
 
 DEF_TRAVERSE_DECL(FieldDecl, {

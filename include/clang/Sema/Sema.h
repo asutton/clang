@@ -8207,11 +8207,13 @@ public:
   DeclResult CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
                                 IdentifierInfo *II);
 
-  DeclResult ActOnStartConstexprDeclaration(SourceLocation Loc);
+  DeclResult ActOnStartConstexprDeclaration(SourceLocation Loc, 
+                                            int &ScopeFlags);
+  void ActOnStartOfConstexprDef(Decl *D);
   DeclResult ActOnFinishConstexprDeclaration(Decl *D, Stmt *S);
-  bool EvaluateConstexprDeclaration(FunctionDecl *D);
-  // DeclResult BuildConstexprDeclaration(SourceLocation ConstexprLoc, Stmt *Body);
-  // DeclResult FinishConstexprDeclaration(Decl* D);
+  bool EvaluateConstexprDeclaration(ConstexprDecl *CD, FunctionDecl *D);
+  bool EvaluateConstexprDeclaration(ConstexprDecl *CD, LambdaExpr *E);
+  bool EvaluateConstexprDeclCall(ConstexprDecl *CD, Expr *E);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
