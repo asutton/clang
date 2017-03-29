@@ -336,8 +336,8 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
 
   MPM.add(new TargetLibraryInfoWrapperPass(*TLII));
 
-  if (TM)
-    TM->adjustPassManager(PMBuilder);
+  // if (TM)
+  //   TM->adjustPassManager(PMBuilder);
 
   PMBuilder.addExtension(PassManagerBuilder::EP_EarlyAsPossible,
                          addAddDiscriminatorsPass);
