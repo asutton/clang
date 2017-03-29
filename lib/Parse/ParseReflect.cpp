@@ -183,6 +183,9 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
   Decl *Metaclass = Actions.ActOnMetaclass(getCurScope(), DLoc, IdLoc, II);
   CXXRecordDecl *MetaclassDef = nullptr;
 
+  // Enter a scope for the metaclass.
+  ParseScope MetaclassScope(this, Scope::DeclScope);
+
   Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass,
                                         MetaclassDef);
 
