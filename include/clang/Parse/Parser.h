@@ -2552,8 +2552,7 @@ private:
   ExprResult ParseReflectExpression();
   ExprResult ParseReflectionTrait();
   DeclGroupPtrTy ParseMetaclassDefinition();
-  bool TryAnnotateMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
-                                IdentifierInfo *II);
+  void AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass);
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

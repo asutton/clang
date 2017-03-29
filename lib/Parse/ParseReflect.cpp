@@ -206,36 +206,24 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
   return Actions.ConvertDeclToDeclGroup(Metaclass);
 }
 
-/// If the identifier refers to a metaclass name, then annotate the current
-/// token with the referenced metaclass information.
+/// \brief Replace the current identifier token (and possibly the C++ scope
+/// specifier that precedes it) with a C++ metaclass-name annotation token.
 ///
-// TODO: Check for metaclass template specializations.
-bool Parser::TryAnnotateMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
-                                      IdentifierInfo *II) {
-  DeclResult MC = Actions.CheckMetaclassName(SS, IdLoc, II);
-  if (MC.isInvalid())
-    return false;
+/// \param SS         If non-null, the C++ scope specifier that qualifies the
+///                   metaclass-name and was extracted from the preceding scope
+///                   annotation token.
+/// \param Metaclass  The C++ metaclass declaration that corresponds to the
+///                   metaclass-name.
+void Parser::AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass) {
+  assert(Tok.is(tok::identifier));
 
-  // If the scope specifier was given, then consume it now, so we can
-  // annotate the identifier token immediately after.
-  //
-  // Also, build the source range for the annotation. If SS was given, then
-  // the token spans the SS through the identifier.
-  SourceRange Range;
-  if (SS && SS->isNotEmpty()) {
-    Range = SourceRange(SS->getRange());
-    ConsumeToken();
-  } else
-    Range = SourceRange(IdLoc);
-  Range.setEnd(IdLoc);
-
-  // Annotate the token.
+  // Replace the current token with an annotation token.
   Tok.setKind(tok::annot_metaclass);
-  Tok.setAnnotationValue(MC.get());
-  Tok.setAnnotationRange(Range);
+  Tok.setAnnotationValue(Metaclass);
+  Tok.setAnnotationEndLoc(Tok.getLocation());
+  if (SS && SS->isNotEmpty()) // C++ qualified metaclass-name.
+    Tok.setLocation(SS->getBeginLoc());
 
   // Update any cached tokens.
   PP.AnnotateCachedTokens(Tok);
-
-  return true;
 }

@@ -1194,16 +1194,32 @@ void Sema::ActOnMetaclassDefinitionError(Scope *S, Decl *MD) {
   PopDeclContext();
 }
 
-/// If \p II refers to a metaclass in the given scope, prefixed by an optional
-/// scope specifier, return that declaration. If lookup fails, or if the
-/// name refers to some other declaration, then return an invalid result.
-DeclResult Sema::CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
-                                    IdentifierInfo *II) {
-  LookupResult R(*this, II, IdLoc, LookupTagName);
-  LookupParsedName(R, CurScope, SS);
+/// Determine whether the given identifier is the name of a C++ metaclass.
+///
+/// \param S                  The scope from which unqualified metaclass name
+///                           lookup will begin.
+/// \param SS                 If non-null, the C++ scope specifier that
+///                           qualifies the name \p Name.
+/// \param Name               The identifier.
+/// \param NameLoc            The source location of the identifier \p Name.
+/// \param [in,out] Metaclass If non-null and this function returns \c true,
+///                           will contain the metaclass declaration found by
+///                           lookup.
+/// \returns                  \c true if a metaclass declaration with the
+///                           specified name is found, \c false otherwise.
+bool Sema::isMetaclassName(Scope *S, CXXScopeSpec *SS,
+                           const IdentifierInfo &Name, SourceLocation NameLoc,
+                           Decl **Metaclass) {
+  // FIXME: What kind of lookup should be performed for metaclass names?
+  LookupResult R(*this, &Name, NameLoc, LookupOrdinaryName, ForRedeclaration);
+  // TODO: Check for metaclass template specializations.
+  LookupParsedName(R, S, SS);
 
-  if (MetaclassDecl *D = R.getAsSingle<MetaclassDecl>())
-    return D;
+  MetaclassDecl *MD = R.getAsSingle<MetaclassDecl>();
 
+  if (!MD)
+    return false;
+  if (Metaclass)
+    *Metaclass = MD;
   return true;
 }

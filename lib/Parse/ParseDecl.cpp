@@ -2880,11 +2880,15 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
           isConstructorDeclarator(/*Unqualified*/ false))
         goto DoneWithDeclSpec;
 
-      // This will introduce a class-specifier. If the identifier is a scope 
-      // specifier, the scope token will be consumed.
-      if (TryAnnotateMetaclassName(&SS, Next.getLocation(),
-                                   Next.getIdentifierInfo()))
+      // This will introduce a class-specifier. If the current token is a C++
+      // scope specifier, the scope token will be consumed.
+      Decl *Metaclass = nullptr;
+      if (Actions.isMetaclassName(getCurScope(), &SS, *Next.getIdentifierInfo(),
+                                  Next.getLocation(), &Metaclass)) {
+        ConsumeToken(); // The C++ scope.
+        AnnotateMetaclassName(&SS, Metaclass);
         continue;
+      }
 
       ParsedType TypeRep =
           Actions.getTypeName(*Next.getIdentifierInfo(), Next.getLocation(),
@@ -3030,11 +3034,15 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         continue;
       }
 
-      // If the identifier refers to a metaclass, then this will introduce
+      // If the identifier refers to a C++ metaclass, then this will introduce
       // a class-specifier.
-      if (TryAnnotateMetaclassName(nullptr, Tok.getLocation(),
-                                   Tok.getIdentifierInfo()))
+      Decl *Metaclass = nullptr;
+      if (Actions.isMetaclassName(getCurScope(), nullptr,
+                                  *Tok.getIdentifierInfo(), Tok.getLocation(),
+                                  &Metaclass)) {
+        AnnotateMetaclassName(nullptr, Metaclass);
         continue;
+      }
 
       ParsedType TypeRep = Actions.getTypeName(
           *Tok.getIdentifierInfo(), Tok.getLocation(), getCurScope(), nullptr,
