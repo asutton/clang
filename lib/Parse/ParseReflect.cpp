@@ -14,6 +14,7 @@
 #include "RAIIObjectsForParser.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
+#include "clang/Sema/PrettyDeclStackTrace.h"
 
 using namespace clang;
 
@@ -146,38 +147,85 @@ ExprResult Parser::ParseReflectionTrait() {
   return Actions.ActOnReflectionTrait(Loc, Trait, Args, EndLoc);
 }
 
-/// If the identifier refers to a metaclass name, then annotate the current
-/// token with the referenced metaclass information.
+/// Parse a C++ metaclass definition.
 ///
-// TODO: Check for metaclass template specializations.
-bool Parser::TryAnnotateMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
-                                      IdentifierInfo *II) {
-  DeclResult MC = Actions.CheckMetaclassName(SS, IdLoc, II);
-  if (MC.isInvalid())
-    return false;
+/// \verbatim
+///   metaclass-definition:
+///     '$class' identifier '{' member-specification[opt] '}'
+/// \endverbatim
+/// 
+// FIXME: [PIM] Actually define the grammar for this thing. Note that
+// returning nullptr will allow parsing to continue after the tokens
+// have been consumed.
+Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
+  assert(Tok.is(tok::dollar));
+  SourceLocation DLoc = ConsumeToken();
+  // For now, pretend we are defining a class that was declared with the
+  // 'struct' class-key.
+  DeclSpec::TST TagType = DeclSpec::TST_struct;
+  assert(Tok.is(tok::kw_class)); // TODO: Support for '$struct' and '$union'?
+  ConsumeToken();
 
-  // If the scope specifier was given, then consume it now, so we can
-  // annotate the identifier token immediately after.
-  //
-  // Also, build the source range for the annotation. If SS was given, then
-  // the token spans the SS through the identifier.
-  SourceRange Range;
-  if (SS && SS->isNotEmpty()) {
-    Range = SourceRange(SS->getRange());
-    ConsumeToken();
-  } else
-    Range = SourceRange(IdLoc);
-  Range.setEnd(IdLoc);
+  // TODO: Parse attributes?
+  ParsedAttributesWithRange attrs(AttrFactory);
+  SourceLocation AttrFixItLoc = Tok.getLocation();
 
-  // Annotate the token.
+  // Parse the metaclass name.
+  assert(Tok.is(tok::identifier));
+  IdentifierInfo *II = Tok.getIdentifierInfo();
+  SourceLocation IdLoc = ConsumeToken();
+
+  if (Tok.isNot(tok::l_brace)) {
+    Diag(Tok, diag::err_expected) << tok::l_brace;
+    return nullptr;
+  }
+
+  Decl *Metaclass = Actions.ActOnMetaclass(getCurScope(), DLoc, IdLoc, II);
+  CXXRecordDecl *MetaclassDef = nullptr;
+
+  // Enter a scope for the metaclass.
+  ParseScope MetaclassScope(this, Scope::DeclScope);
+
+  Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass,
+                                        MetaclassDef);
+
+  PrettyDeclStackTraceEntry CrashInfo(Actions, Metaclass, DLoc,
+                                      "parsing metaclass body");
+
+  // Parse the body of the metaclass.
+  ParseCXXMemberSpecification(DLoc, AttrFixItLoc, attrs, TagType, MetaclassDef);
+
+  if (MetaclassDef->isInvalidDecl()) {
+    Actions.ActOnMetaclassDefinitionError(getCurScope(), Metaclass);
+    return nullptr;
+  }
+
+  Actions.ActOnMetaclassFinishDefinition(getCurScope(), Metaclass,
+                                         MetaclassDef->getBraceRange());
+
+  return Actions.ConvertDeclToDeclGroup(Metaclass);
+}
+
+/// \brief Replace the current identifier token (and possibly the C++ scope
+/// specifier that precedes it) with a C++ metaclass-name annotation token.
+///
+/// \param SS         If non-null, the C++ scope specifier that qualifies the
+///                   metaclass-name and was extracted from the preceding scope
+///                   annotation token.
+/// \param Metaclass  The C++ metaclass declaration that corresponds to the
+///                   metaclass-name.
+void Parser::AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass) {
+  assert(Tok.is(tok::identifier));
+
+  // Replace the current token with an annotation token.
   Tok.setKind(tok::annot_metaclass);
-  Tok.setAnnotationValue(MC.get());
-  Tok.setAnnotationRange(Range);
+  Tok.setAnnotationValue(Metaclass);
+  Tok.setAnnotationEndLoc(Tok.getLocation());
+  if (SS && SS->isNotEmpty()) // C++ qualified metaclass-name.
+    Tok.setLocation(SS->getBeginLoc());
 
   // Update any cached tokens.
   PP.AnnotateCachedTokens(Tok);
-
-  return true;
 }
 
 /// Parse a constexpr declaration.

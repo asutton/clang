@@ -1183,7 +1183,8 @@ void ASTDeclWriter::VisitConstructorUsingShadowDecl(
 void ASTDeclWriter::VisitMetaclassDecl(MetaclassDecl *D) {
   VisitNamedDecl(D);
   Record.AddSourceLocation(D->getDollarLoc());
-  Record.AddStmt(D->getBody());
+  Record.AddSourceRange(D->getBraceRange());
+  Record.AddDeclRef(D->getDefinition());
   Code = serialization::DECL_METACLASS;
 }
 

@@ -2885,11 +2885,15 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
           isConstructorDeclarator(/*Unqualified*/ false))
         goto DoneWithDeclSpec;
 
-      // This will introduce a class-specifier. If the identifier is a scope 
-      // specifier, the scope token will be consumed.
-      if (TryAnnotateMetaclassName(&SS, Next.getLocation(), 
-                                   Next.getIdentifierInfo()))
+      // This will introduce a class-specifier. If the current token is a C++
+      // scope specifier, the scope token will be consumed.
+      Decl *Metaclass = nullptr;
+      if (Actions.isMetaclassName(getCurScope(), &SS, *Next.getIdentifierInfo(),
+                                  Next.getLocation(), &Metaclass)) {
+        ConsumeToken(); // The C++ scope.
+        AnnotateMetaclassName(&SS, Metaclass);
         continue;
+      }
 
       ParsedType TypeRep =
           Actions.getTypeName(*Next.getIdentifierInfo(), Next.getLocation(),
@@ -3035,11 +3039,15 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         continue;
       }
 
-      // If the identifier refers to a metaclass, then this will introduce
+      // If the identifier refers to a C++ metaclass, then this will introduce
       // a class-specifier.
-      if (TryAnnotateMetaclassName(nullptr, Tok.getLocation(), 
-                                   Tok.getIdentifierInfo()))
+      Decl *Metaclass = nullptr;
+      if (Actions.isMetaclassName(getCurScope(), nullptr,
+                                  *Tok.getIdentifierInfo(), Tok.getLocation(),
+                                  &Metaclass)) {
+        AnnotateMetaclassName(nullptr, Metaclass);
         continue;
+      }
 
       ParsedType TypeRep = Actions.getTypeName(
           *Tok.getIdentifierInfo(), Tok.getLocation(), getCurScope(), nullptr,
@@ -3450,8 +3458,10 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
     case tok::kw_union: 
     case tok::annot_metaclass: {
       tok::TokenKind Kind = Tok.getKind();
+
       if (Kind == tok::annot_metaclass)
-        DS.setMetaclass((Decl*)Tok.getAnnotationValue());
+        DS.setMetaclass((Decl *)Tok.getAnnotationValue());
+      
       ConsumeToken();
 
       // These are attributes following class specifiers.
@@ -4384,6 +4394,8 @@ bool Parser::isKnownToBeTypeSpecifier(const Token &Tok) const {
   case tok::kw_struct:
   case tok::kw___interface:
   case tok::kw_union:
+  case tok::annot_metaclass:
+
     // enum-specifier
   case tok::kw_enum:
 
@@ -4459,6 +4471,8 @@ bool Parser::isTypeSpecifierQualifier() {
   case tok::kw_struct:
   case tok::kw___interface:
   case tok::kw_union:
+  case tok::annot_metaclass:
+
     // enum-specifier
   case tok::kw_enum:
 
@@ -4613,6 +4627,8 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   case tok::kw_struct:
   case tok::kw_union:
   case tok::kw___interface:
+  case tok::annot_metaclass:
+
     // enum-specifier
   case tok::kw_enum:
 

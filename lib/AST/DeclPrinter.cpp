@@ -387,8 +387,7 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
         ((isa<FunctionDecl>(*D) &&
           cast<FunctionDecl>(*D)->doesThisDeclarationHaveABody()) ||
          (isa<FunctionTemplateDecl>(*D) &&
-          cast<FunctionTemplateDecl>(*D)->getTemplatedDecl()->doesThisDeclarationHaveABody()) ||
-         isa<MetaclassDecl>(*D)))
+          cast<FunctionTemplateDecl>(*D)->getTemplatedDecl()->doesThisDeclarationHaveABody())))
       ; // StmtPrinter already added '\n' after CompoundStmt.
     else
       Out << "\n";
@@ -950,9 +949,9 @@ void DeclPrinter::VisitMetaclassDecl(MetaclassDecl *D) {
   if (Policy.TerseOutput) {
     Out << " {}";
   } else {
-    Out << ' ';
-    if (D->getBody())
-      D->getBody()->printPretty(Out, nullptr, Policy, Indentation);
+    Out << " {\n";
+    VisitDeclContext(D->getDefinition());
+    Indent() << "}";
   }
 }
 

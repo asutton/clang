@@ -88,7 +88,7 @@ CXXRecordDecl::CXXRecordDecl(Kind K, TagKind TK, const ASTContext &C,
                              CXXRecordDecl *PrevDecl)
     : RecordDecl(K, TK, C, DC, StartLoc, IdLoc, Id, PrevDecl),
       DefinitionData(PrevDecl ? PrevDecl->DefinitionData : nullptr),
-      TemplateOrInstantiation(), Meta(nullptr) {}
+      TemplateOrInstantiation(), Metaclass(nullptr) {}
 
 CXXRecordDecl *CXXRecordDecl::Create(const ASTContext &C, TagKind TK,
                                      DeclContext *DC, SourceLocation StartLoc,
@@ -1473,6 +1473,12 @@ bool CXXRecordDecl::mayBeAbstract() const {
   return false;
 }
 
+bool CXXRecordDecl::isMetaclassDefinition() const {
+  return isImplicit() && getDeclName() &&
+         isa<MetaclassDecl>(getDeclContext()) &&
+         cast<MetaclassDecl>(getDeclContext())->getDeclName() == getDeclName();
+}
+
 void CXXDeductionGuideDecl::anchor() { }
 
 CXXDeductionGuideDecl *CXXDeductionGuideDecl::Create(
@@ -2435,19 +2441,18 @@ void MetaclassDecl::anchor() {}
 
 MetaclassDecl *MetaclassDecl::Create(ASTContext &C, DeclContext *DC,
                                      SourceLocation DLoc, SourceLocation IdLoc,
-                                     IdentifierInfo *II, Stmt *B) {
-  return new (C, DC) MetaclassDecl(DC, DLoc, IdLoc, II, B);
+                                     IdentifierInfo *II) {
+  return new (C, DC) MetaclassDecl(DC, DLoc, IdLoc, II);
 }
 
 MetaclassDecl *MetaclassDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) MetaclassDecl(nullptr, SourceLocation(), SourceLocation(),
-                                   nullptr, nullptr);
+                                   nullptr);
 }
 
 SourceRange MetaclassDecl::getSourceRange() const {
-  SourceLocation RangeEnd = getLocation();
-  if (Stmt *Body = getBody())
-    RangeEnd = Body->getLocEnd();
+  SourceLocation RBraceLoc = BraceRange.getEnd();
+  SourceLocation RangeEnd = RBraceLoc.isValid() ? RBraceLoc : getLocation();
   return SourceRange(getDollarLoc(), RangeEnd);
 }
 

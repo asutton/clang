@@ -197,6 +197,10 @@ serialization::getDefinitiveDeclContext(const DeclContext *DC) {
   case Decl::ClassTemplatePartialSpecialization:
     return nullptr;
 
+  // C++ metaclasses can only be defined in one place.
+  case Decl::Metaclass:
+    return DC;
+
   // Each function, method, and block declaration is its own DeclContext.
   case Decl::Function:
   case Decl::CXXMethod:

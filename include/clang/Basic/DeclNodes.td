@@ -71,7 +71,7 @@ def Named : Decl<1>;
   def UsingPack : DDecl<Named>;
   def UsingShadow : DDecl<Named>;
     def ConstructorUsingShadow : DDecl<UsingShadow>;
-  def Metaclass : DDecl<Named>;
+  def Metaclass : DDecl<Named>, DeclContext;
   def Constexpr : Decl;
   def ObjCMethod : DDecl<Named>, DeclContext;
   def ObjCContainer : DDecl<Named, 1>, DeclContext;

@@ -840,7 +840,7 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
     // If we get '$' as a token, then -freflection must be enabled.
     // This can be disambiguated from an expression-statement since an
     // identifier must follow.
-    if (NextToken().is(tok::kw_class) && 
+    if (NextToken().is(tok::kw_class) &&
         GetLookAheadToken(2).is(tok::identifier))
       return ParseMetaclassDefinition();
     goto dont_know;

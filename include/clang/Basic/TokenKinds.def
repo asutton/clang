@@ -727,7 +727,8 @@ ANNOTATION(template_id)  // annotation for a C++ template-id that names a
 ANNOTATION(primary_expr) // annotation for a primary expression
 ANNOTATION(decltype)     // annotation for a decltype expression,
                          // e.g., "decltype(foo.bar())"
-ANNOTATION(metaclass)    // annotation for a C++ metaclass-as-class-key
+ANNOTATION(metaclass)    // annotation for a C++ metaclass-name that begins a
+                         // type-specifier
 
 // Annotation for #pragma unused(...)
 // For each argument inside the parentheses the pragma handler will produce

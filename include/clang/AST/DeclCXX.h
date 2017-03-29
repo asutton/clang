@@ -619,7 +619,7 @@ class CXXRecordDecl : public RecordDecl {
   llvm::PointerUnion<ClassTemplateDecl*, MemberSpecializationInfo*>
     TemplateOrInstantiation;
 
-  MetaclassDecl *Meta;
+  MetaclassDecl *Metaclass;
 
   friend class DeclContext;
   friend class LambdaExpr;
@@ -1736,14 +1736,18 @@ public:
     return getLambdaData().MethodTyInfo;
   }
 
+  /// \brief Returns \c true if this declaration contains the definition of a
+  /// C++ metaclass.
+  bool isMetaclassDefinition() const;
+
   /// \brief Associates a metaclass definition with this class.
   ///
   /// When the class definition is completed, the metaclass is instantiated
   /// and evaluated, ultimately replacing this class with the generated one.
-  void setMetaclass(MetaclassDecl *MC) { Meta = MC; }
+  void setMetaclass(MetaclassDecl *MC) { Metaclass = MC; }
 
   /// \brief Returns the metaclass the class was declared with. May be null.
-  MetaclassDecl *getMetaclass() const { return Meta; }
+  MetaclassDecl *getMetaclass() const { return Metaclass; }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) {
@@ -3608,31 +3612,94 @@ public:
   friend class ASTDeclReader;
 };
 
+/// An instance of this class represents the declaration of a property
+/// member.  This is a Microsoft extension to C++, first introduced in
+/// Visual Studio .NET 2003 as a parallel to similar features in C#
+/// and Managed C++.
+///
+/// A property must always be a non-static class member.
+///
+/// A property member superficially resembles a non-static data
+/// member, except preceded by a property attribute:
+///   __declspec(property(get=GetX, put=PutX)) int x;
+/// Either (but not both) of the 'get' and 'put' names may be omitted.
+///
+/// A reference to a property is always an lvalue.  If the lvalue
+/// undergoes lvalue-to-rvalue conversion, then a getter name is
+/// required, and that member is called with no arguments.
+/// If the lvalue is assigned into, then a setter name is required,
+/// and that member is called with one argument, the value assigned.
+/// Both operations are potentially overloaded.  Compound assignments
+/// are permitted, as are the increment and decrement operators.
+///
+/// The getter and putter methods are permitted to be overloaded,
+/// although their return and parameter types are subject to certain
+/// restrictions according to the type of the property.
+///
+/// A property declared using an incomplete array type may
+/// additionally be subscripted, adding extra parameters to the getter
+/// and putter methods.
+class MSPropertyDecl : public DeclaratorDecl {
+  IdentifierInfo *GetterId, *SetterId;
+
+  MSPropertyDecl(DeclContext *DC, SourceLocation L, DeclarationName N,
+                 QualType T, TypeSourceInfo *TInfo, SourceLocation StartL,
+                 IdentifierInfo *Getter, IdentifierInfo *Setter)
+      : DeclaratorDecl(MSProperty, DC, L, N, T, TInfo, StartL),
+        GetterId(Getter), SetterId(Setter) {}
+
+public:
+  static MSPropertyDecl *Create(ASTContext &C, DeclContext *DC,
+                                SourceLocation L, DeclarationName N, QualType T,
+                                TypeSourceInfo *TInfo, SourceLocation StartL,
+                                IdentifierInfo *Getter, IdentifierInfo *Setter);
+  static MSPropertyDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  static bool classof(const Decl *D) { return D->getKind() == MSProperty; }
+
+  bool hasGetter() const { return GetterId != nullptr; }
+  IdentifierInfo* getGetterId() const { return GetterId; }
+  bool hasSetter() const { return SetterId != nullptr; }
+  IdentifierInfo* getSetterId() const { return SetterId; }
+
+  friend class ASTDeclReader;
+};
+
 /// \brief Represents a C++ metaclass.
 ///
 /// For example:
-/// \code{.cpp}
+/// \code
 /// $class Ifoo { ... }
 /// \endcode
-class MetaclassDecl : public NamedDecl {
+class MetaclassDecl : public NamedDecl, public DeclContext {
   void anchor() override;
 
   /// \brief The location of the \c $ operator.
   SourceLocation DollarLoc;
 
-  /// \brief The body of the metaclass definition.
-  Stmt *Body;
+  /// \brief The range of the opening and closing braces enclosing the metaclass
+  /// body.
+  SourceRange BraceRange;
+
+  /// \brief Contains the members that were declared within the metaclass body
+  /// and are to be merged with the class prototype.
+  CXXRecordDecl *Definition;
 
   MetaclassDecl(DeclContext *DC, SourceLocation DLoc, SourceLocation IdLoc,
-                IdentifierInfo *II, Stmt *B)
-      : NamedDecl(Metaclass, DC, IdLoc, II), DollarLoc(DLoc), Body(B) {}
+                IdentifierInfo *II)
+      : NamedDecl(Metaclass, DC, IdLoc, II), DeclContext(Metaclass),
+        DollarLoc(DLoc), BraceRange(), Definition(nullptr) {}
 
 public:
   /// \brief Returns the location of the \c $ keyword.
   SourceLocation getDollarLoc() const { return DollarLoc; }
 
-  /// \brief Returns the body of the metaclass definition.
-  Stmt *getBody() const override { return Body; }
+  SourceRange getBraceRange() const { return BraceRange; }
+  void setBraceRange(SourceRange R) { BraceRange = R; }
+
+  CXXRecordDecl *getDefinition() const { return Definition; }
+
+  void setDefinition(CXXRecordDecl *RD) { Definition = RD; }
 
   MetaclassDecl *getCanonicalDecl() override {
     return cast<MetaclassDecl>(NamedDecl::getCanonicalDecl());
@@ -3663,8 +3730,8 @@ public:
   /// \brief Create a metaclass node.
   static MetaclassDecl *Create(ASTContext &C, DeclContext *DC,
                                SourceLocation DLoc, SourceLocation IdLoc,
-                               IdentifierInfo *II, Stmt *B);
-  
+                               IdentifierInfo *II);
+
   /// \brief Create an empty metaclass node.
   static MetaclassDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
@@ -3672,6 +3739,12 @@ public:
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == Metaclass; }
+  static DeclContext *castToDeclContext(const MetaclassDecl *D) {
+    return static_cast<DeclContext *>(const_cast<MetaclassDecl*>(D));
+  }
+  static MetaclassDecl *castFromDeclContext(const DeclContext *DC) {
+    return static_cast<MetaclassDecl *>(const_cast<DeclContext*>(DC));
+  }
 
   friend class DeclContext; // Friend for getUsingDirectiveName.
   friend class ASTDeclReader;
@@ -3739,59 +3812,6 @@ public:
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == Constexpr; }
-
-  friend class ASTDeclReader;
-};
-
-/// An instance of this class represents the declaration of a property
-/// member.  This is a Microsoft extension to C++, first introduced in
-/// Visual Studio .NET 2003 as a parallel to similar features in C#
-/// and Managed C++.
-///
-/// A property must always be a non-static class member.
-///
-/// A property member superficially resembles a non-static data
-/// member, except preceded by a property attribute:
-///   __declspec(property(get=GetX, put=PutX)) int x;
-/// Either (but not both) of the 'get' and 'put' names may be omitted.
-///
-/// A reference to a property is always an lvalue.  If the lvalue
-/// undergoes lvalue-to-rvalue conversion, then a getter name is
-/// required, and that member is called with no arguments.
-/// If the lvalue is assigned into, then a setter name is required,
-/// and that member is called with one argument, the value assigned.
-/// Both operations are potentially overloaded.  Compound assignments
-/// are permitted, as are the increment and decrement operators.
-///
-/// The getter and putter methods are permitted to be overloaded,
-/// although their return and parameter types are subject to certain
-/// restrictions according to the type of the property.
-///
-/// A property declared using an incomplete array type may
-/// additionally be subscripted, adding extra parameters to the getter
-/// and putter methods.
-class MSPropertyDecl : public DeclaratorDecl {
-  IdentifierInfo *GetterId, *SetterId;
-
-  MSPropertyDecl(DeclContext *DC, SourceLocation L, DeclarationName N,
-                 QualType T, TypeSourceInfo *TInfo, SourceLocation StartL,
-                 IdentifierInfo *Getter, IdentifierInfo *Setter)
-      : DeclaratorDecl(MSProperty, DC, L, N, T, TInfo, StartL),
-        GetterId(Getter), SetterId(Setter) {}
-
-public:
-  static MSPropertyDecl *Create(ASTContext &C, DeclContext *DC,
-                                SourceLocation L, DeclarationName N, QualType T,
-                                TypeSourceInfo *TInfo, SourceLocation StartL,
-                                IdentifierInfo *Getter, IdentifierInfo *Setter);
-  static MSPropertyDecl *CreateDeserialized(ASTContext &C, unsigned ID);
-
-  static bool classof(const Decl *D) { return D->getKind() == MSProperty; }
-
-  bool hasGetter() const { return GetterId != nullptr; }
-  IdentifierInfo* getGetterId() const { return GetterId; }
-  bool hasSetter() const { return SetterId != nullptr; }
-  IdentifierInfo* getSetterId() const { return SetterId; }
 
   friend class ASTDeclReader;
 };

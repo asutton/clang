@@ -149,34 +149,28 @@ static std::pair<ReflectionKind, void *> ExplodeOpaqueValue(std::uintptr_t N) {
 // TODO: Do we want a more precise set of types for these things?
 static char const *GetReflectionClass(Decl *D) {
   switch (D->getKind()) {
-  case Decl::Var:
-    return "variable";
-  case Decl::Field:
-    return "member_variable";
-
-  case Decl::ParmVar:
-    return "parameter";
-
-  case Decl::Function:
-    return "function";
-  case Decl::CXXMethod:
-    return "member_function";
   case Decl::CXXConstructor:
     return "constructor";
-  case Decl::CXXDestructor:
-    return "destructor";
   case Decl::CXXConversion:
     return "conversion";
-
+  case Decl::CXXDestructor:
+    return "destructor";
+  case Decl::CXXMethod:
+    return "member_function";
   case Decl::EnumConstant:
     return "enumerator";
-
-  case Decl::TranslationUnit:
-    return "tu";
-
+  case Decl::Field:
+    return "member_variable";
+  case Decl::Function:
+    return "function";
   case Decl::Namespace:
     return "ns";
-
+  case Decl::ParmVar:
+    return "parameter";
+  case Decl::TranslationUnit:
+    return "tu";
+  case Decl::Var:
+    return "variable";
   default:
     break;
   }
@@ -465,30 +459,22 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
     return ReflectName(D);
   case URT_ReflectQualifiedName:
     return ReflectQualifiedName(D);
-
   case URT_ReflectDeclarationContext:
     return ReflectDeclarationContext(D);
-
   case URT_ReflectLexicalContext:
     return ReflectLexicalContext(D);
-
   case URT_ReflectTraits:
     return ReflectTraits(D);
-
   case URT_ReflectPointer:
     return ReflectPointer(D);
-
   case URT_ReflectValue:
     return ReflectValue(D);
-
   case URT_ReflectType:
     return ReflectType(D);
-
   case URT_ReflectNumParameters:
     return ReflectNumParameters(D);
   case BRT_ReflectParameter:
     return ReflectParameter(D, Vals[1]);
-
   case URT_ReflectNumMembers:
     return ReflectNumMembers(D);
   case BRT_ReflectMember:
@@ -507,21 +493,16 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
     return ReflectName(T);
   case URT_ReflectQualifiedName:
     return ReflectQualifiedName(T);
-
   case URT_ReflectDeclarationContext:
     return ReflectDeclarationContext(T);
-
   case URT_ReflectLexicalContext:
     return ReflectLexicalContext(T);
-
   case URT_ReflectTraits:
     return ReflectTraits(T);
-
   case URT_ReflectNumMembers:
     return ReflectNumMembers(T->getAsTagDecl());
   case BRT_ReflectMember:
     return ReflectMember(T->getAsTagDecl(), Vals[1]);
-
   default:
     break;
   }
@@ -732,8 +713,7 @@ struct FunctionTraits {
 static bool getNothrow(ASTContext &C, FunctionDecl *D) {
   if (const FunctionProtoType *Ty = D->getType()->getAs<FunctionProtoType>())
     return Ty->isNothrow(C);
-  else
-    return false;
+  return false;
 }
 
 static FunctionTraits getFunctionTraits(ASTContext &C, FunctionDecl *D) {
@@ -1134,11 +1114,11 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   return ExprError();
 }
 
-DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
-                                          SourceLocation IdLoc,
-                                          IdentifierInfo *II, Stmt *Body) {
-  assert(isa<CompoundStmt>(Body));
+Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
+                           IdentifierInfo *II) {
   assert(II);
+
+  bool IsInvalid = false;
 
   // Make sure that this definition doesn't conflict with existing tag
   // definitions.
@@ -1153,38 +1133,95 @@ DeclResult Sema::ActOnMetaclassDefinition(SourceLocation DLoc,
   // the elaborated-type-specifier grammar.
   //
   // This is probably fine for now.
-  LookupResult R(*this, II, IdLoc, LookupAnyName, ForRedeclaration);
-  LookupName(R, CurScope);
-  if (!R.empty()) {
-    if (MetaclassDecl *D = R.getAsSingle<MetaclassDecl>()) {
+  LookupResult Previous(*this, II, IdLoc, LookupOrdinaryName, ForRedeclaration);
+  LookupName(Previous, S);
+
+  if (!Previous.empty()) {
+    NamedDecl *PrevDecl = Previous.getRepresentativeDecl();
+    MetaclassDecl *PrevMD = dyn_cast<MetaclassDecl>(PrevDecl);
+    if (PrevMD) {
       Diag(IdLoc, diag::err_redefinition) << II;
-      Diag(D->getLocation(), diag::note_previous_definition);
+      Diag(PrevMD->getLocation(), diag::note_previous_definition);
     } else {
       Diag(IdLoc, diag::err_redefinition_different_kind) << II;
-      if (Decl *D = R.getAsSingle<Decl>())
-        Diag(D->getLocation(), diag::note_previous_definition);
+      Diag(PrevDecl->getLocation(), diag::note_previous_definition);
     }
-    return true;
+    IsInvalid = true;
   }
 
-  MetaclassDecl *D =
-      MetaclassDecl::Create(Context, CurContext, DLoc, IdLoc, II, Body);
-  CurContext->addDecl(D);
+  MetaclassDecl *Metaclass =
+      MetaclassDecl::Create(Context, CurContext, DLoc, IdLoc, II);
 
-  return D;
+  if (IsInvalid)
+    Metaclass->setInvalidDecl();
+
+  PushOnScopeChains(Metaclass, S);
+  return Metaclass;
 }
 
-/// If \p II refers to a metaclass in the given scope, prefixed by an optional
-/// scope specifier, return that declaration. If lookup fails, or if the
-/// name refers to some other declaration, then return an invalid result.
-DeclResult Sema::CheckMetaclassName(CXXScopeSpec *SS, SourceLocation IdLoc,
-                                    IdentifierInfo *II) {
-  LookupResult R(*this, II, IdLoc, LookupTagName);
-  LookupParsedName(R, CurScope, SS);
+void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD,
+                                         CXXRecordDecl *&Definition) {
+  MetaclassDecl *Metaclass = cast<MetaclassDecl>(MD);
 
-  if (MetaclassDecl *D = R.getAsSingle<MetaclassDecl>())
-    return D;
+  PushDeclContext(S, Metaclass);
+  ActOnDocumentableDecl(Metaclass);
 
+  TagTypeKind Kind = TypeWithKeyword::getTagTypeKindForTypeSpec(TST_metaclass);
+
+  // Create a nested class to store the metaclass member declarations.
+  Definition = CXXRecordDecl::Create(
+      Context, Kind, CurContext, Metaclass->getLocStart(),
+      Metaclass->getLocation(), Metaclass->getIdentifier());
+  Definition->setImplicit();
+  CurContext->addHiddenDecl(Definition);
+  Definition->startDefinition();
+  assert(Definition->isMetaclassDefinition() && "Broken metaclass definition");
+
+  Metaclass->setDefinition(Definition);
+}
+
+void Sema::ActOnMetaclassFinishDefinition(Scope *S, Decl *MD,
+                                          SourceRange BraceRange) {
+  MetaclassDecl *Metaclass = cast<MetaclassDecl>(MD);
+  Metaclass->setBraceRange(BraceRange);
+
+  PopDeclContext();
+}
+
+void Sema::ActOnMetaclassDefinitionError(Scope *S, Decl *MD) {
+  MetaclassDecl *Metaclass = cast<MetaclassDecl>(MD);
+  Metaclass->setInvalidDecl();
+
+  PopDeclContext();
+}
+
+/// Determine whether the given identifier is the name of a C++ metaclass.
+///
+/// \param S                  The scope from which unqualified metaclass name
+///                           lookup will begin.
+/// \param SS                 If non-null, the C++ scope specifier that
+///                           qualifies the name \p Name.
+/// \param Name               The identifier.
+/// \param NameLoc            The source location of the identifier \p Name.
+/// \param [in,out] Metaclass If non-null and this function returns \c true,
+///                           will contain the metaclass declaration found by
+///                           lookup.
+/// \returns                  \c true if a metaclass declaration with the
+///                           specified name is found, \c false otherwise.
+bool Sema::isMetaclassName(Scope *S, CXXScopeSpec *SS,
+                           const IdentifierInfo &Name, SourceLocation NameLoc,
+                           Decl **Metaclass) {
+  // FIXME: What kind of lookup should be performed for metaclass names?
+  LookupResult R(*this, &Name, NameLoc, LookupOrdinaryName, ForRedeclaration);
+  // TODO: Check for metaclass template specializations.
+  LookupParsedName(R, S, SS);
+
+  MetaclassDecl *MD = R.getAsSingle<MetaclassDecl>();
+
+  if (!MD)
+    return false;
+  if (Metaclass)
+    *Metaclass = MD;
   return true;
 }
 

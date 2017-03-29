@@ -1354,7 +1354,6 @@ void ASTDumper::VisitMetaclassDecl(const MetaclassDecl *D) {
   if (D->isModulePrivate())
     OS << " __module_private__";
   OS << " definition";
-  dumpStmt(D->getBody());
 }
 
 void ASTDumper::VisitStaticAssertDecl(const StaticAssertDecl *D) {
