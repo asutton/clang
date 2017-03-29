@@ -3575,6 +3575,32 @@ public:
                                   BuildForRangeKind Kind);
   StmtResult FinishCXXForRangeStmt(Stmt *ForRange, Stmt *Body);
 
+  StmtResult ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
+                                   SourceLocation EllipsisLoc,
+                                   Stmt *LoopVar,
+                                   SourceLocation ColonLoc, Expr *Collection,
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind);
+  StmtResult BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
+                                        SourceLocation EllipsisLoc,
+                                        SourceLocation ColonLoc,
+                                        Stmt *RangeVarDecl,
+                                        Stmt *LoopVarDecl,
+                                        SourceLocation RParenLoc,
+                                        BuildForRangeKind Kind);
+  StmtResult BuildCXXPackExpansionStmt(SourceLocation ForLoc,
+                                       SourceLocation EllipsisLoc,
+                                       SourceLocation ColonLoc,
+                                       Expr *PackExpr,
+                                       Stmt *LoopVarDecl,
+                                       SourceLocation RParenLoc,
+                                       BuildForRangeKind Kind);
+  StmtResult FinishCXXExpansionStmt(Stmt *Expansion, Stmt *Body);
+  StmtResult FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *Expansion, 
+                                         Stmt *Body);
+  StmtResult FinishCXXPackExpansionStmt(CXXPackExpansionStmt *Expansion, 
+                                        Stmt *Body);
+
   StmtResult ActOnGotoStmt(SourceLocation GotoLoc,
                            SourceLocation LabelLoc,
                            LabelDecl *TheDecl);
@@ -6879,7 +6905,10 @@ public:
 
       /// We are instantiating the exception specification for a function
       /// template which was deferred until it was needed.
-      ExceptionSpecInstantiation
+      ExceptionSpecInstantiation,
+
+      /// We are instantiating the body of a range-based loop over a tuple.
+      ForLoopInstantiation
     } Kind;
 
     /// \brief The point of instantiation within the source code.
@@ -6892,6 +6921,13 @@ public:
 
     /// \brief The entity that is being instantiated.
     Decl *Entity;
+
+    /// \brief The dependent for loop body in which we are performing 
+    /// substitutions.
+    ///
+    /// TODO: Make this a union with Entity since we are instantiating either
+    /// a declaration or a statement, never both.
+    Stmt *Loop;
 
     /// \brief The list of template arguments we are substituting, if they
     /// are not part of the entity.
@@ -6914,8 +6950,9 @@ public:
     SourceRange InstantiationRange;
 
     ActiveTemplateInstantiation()
-      : Kind(TemplateInstantiation), Template(nullptr), Entity(nullptr),
-        TemplateArgs(nullptr), NumTemplateArgs(0), DeductionInfo(nullptr) {}
+      : Kind(TemplateInstantiation), Template(nullptr), Entity(nullptr), 
+        Loop(nullptr), TemplateArgs(nullptr), NumTemplateArgs(0),
+        DeductionInfo(nullptr) {}
 
     /// \brief Determines whether this template is an actual instantiation
     /// that should be counted toward the maximum instantiation depth.
@@ -6944,6 +6981,8 @@ public:
       case DefaultFunctionArgumentInstantiation:
         return X.TemplateArgs == Y.TemplateArgs;
 
+      case ForLoopInstantiation:
+        return X.Loop == Y.Loop;
       }
 
       llvm_unreachable("Invalid InstantiationKind!");
@@ -7147,6 +7186,11 @@ public:
                           ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange);
 
+    /// \brief Note that we are substituting into the body of a for-tuple
+    /// statement.
+    InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
+                          Stmt *S, ArrayRef<TemplateArgument>TemplateArgs,
+                          SourceRange InstantiationRange);
 
     /// \brief Note that we have finished instantiating this template.
     void Clear();
@@ -7436,6 +7480,8 @@ public:
 
   StmtResult SubstStmt(Stmt *S,
                        const MultiLevelTemplateArgumentList &TemplateArgs);
+  StmtResult SubstForTupleBody(Stmt *Body,
+                            const MultiLevelTemplateArgumentList &TemplateArgs);
 
   Decl *SubstDecl(Decl *D, DeclContext *Owner,
                   const MultiLevelTemplateArgumentList &TemplateArgs);

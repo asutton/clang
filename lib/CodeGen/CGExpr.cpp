@@ -2221,10 +2221,8 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
                      getContext().getDeclAlign(VD));
 
     // No other cases for now.
-    } else {
+    } else
       llvm_unreachable("DeclRefExpr for Decl not entered in LocalDeclMap?");
-    }
-
 
     // Check for OpenMP threadprivate variables.
     if (getLangOpts().OpenMP && VD->hasAttr<OMPThreadPrivateDeclAttr>()) {

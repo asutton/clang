@@ -193,6 +193,7 @@ bool Sema::ActiveTemplateInstantiation::isInstantiationRecord() const {
   case ExplicitTemplateArgumentSubstitution:
   case DeducedTemplateArgumentSubstitution:
   case PriorTemplateArgumentSubstitution:
+  case ForLoopInstantiation:
     return true;
 
   case DefaultTemplateArgumentChecking:
@@ -229,6 +230,7 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
     Inst.DeductionInfo = DeductionInfo;
     Inst.InstantiationRange = InstantiationRange;
     AlreadyInstantiating =
+        Inst.Entity && // There is no entity when instantiating a for loop.
         !SemaRef.InstantiatingSpecializations
              .insert(std::make_pair(Inst.Entity->getCanonicalDecl(), Inst.Kind))
              .second;
@@ -347,6 +349,21 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
           SemaRef, ActiveTemplateInstantiation::DefaultTemplateArgumentChecking,
           PointOfInstantiation, InstantiationRange, Param, Template,
           TemplateArgs) {}
+
+// For tuple-for instantiation.
+Sema::InstantiatingTemplate::InstantiatingTemplate(
+    Sema &SemaRef, SourceLocation PointOfInstantiation, Stmt *S,
+    ArrayRef<TemplateArgument> TemplateArgs, SourceRange InstantiationRange)
+    : InstantiatingTemplate(
+          SemaRef, 
+          ActiveTemplateInstantiation::ForLoopInstantiation,
+          PointOfInstantiation, InstantiationRange, nullptr, nullptr,
+          TemplateArgs) {
+  // Set the loop on the active instantiation.
+  ActiveTemplateInstantiation& Inst = 
+    SemaRef.ActiveTemplateInstantiations.back();
+  Inst.Loop = S;      
+}
 
 void Sema::InstantiatingTemplate::Clear() {
   if (!Invalid) {
@@ -597,6 +614,11 @@ void Sema::PrintInstantiationStack() {
         << cast<FunctionDecl>(Active->Entity)
         << Active->InstantiationRange;
       break;
+
+    case ActiveTemplateInstantiation::ForLoopInstantiation:
+      // FIXME: Add a new diagnostic and then actually diagnose the error.
+      // It should be something like: "for loop instantiation here".
+      Diags.Report(Active->PointOfInstantiation, diag::err_not_implemented);
     }
   }
 }
@@ -620,6 +642,7 @@ Optional<TemplateDeductionInfo *> Sema::isSFINAEContext() const {
       // Fall through.
     case ActiveTemplateInstantiation::DefaultFunctionArgumentInstantiation:
     case ActiveTemplateInstantiation::ExceptionSpecInstantiation:
+    case ActiveTemplateInstantiation::ForLoopInstantiation:
       // This is a template instantiation, so there is no SFINAE.
       return None;
 
@@ -2673,9 +2696,53 @@ Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
   if (!S)
     return S;
 
-  TemplateInstantiator Instantiator(*this, TemplateArgs,
-                                    SourceLocation(),
+  TemplateInstantiator Instantiator(*this, TemplateArgs, SourceLocation(),
                                     DeclarationName());
+  return Instantiator.TransformStmt(S);
+}
+
+namespace {
+  /// The loop body instantiator is like the template instantatior in
+  /// that it produces new trees by substituting template arguments. Unlike
+  /// the TemplateInstantiator, this does not from declarations in a dependent
+  /// context to an instantiated context. It simply rebuilds the tree, 
+  /// performing local substitutions and lookups as needed.
+  class LoopBodyInstantiator : public TreeTransform<LoopBodyInstantiator> {
+    const MultiLevelTemplateArgumentList &TemplateArgs;
+    SourceLocation Loc;
+
+  public:
+    typedef TreeTransform<LoopBodyInstantiator> inherited;
+
+    LoopBodyInstantiator(Sema &SemaRef,
+                         const MultiLevelTemplateArgumentList &TemplateArgs,
+                         SourceLocation Loc)
+      : inherited(SemaRef), TemplateArgs(TemplateArgs), Loc(Loc) { }
+
+    // The loop body instantiator always rebuilds trees.
+    bool AlwaysRebuild() { return true; }
+
+    /// \brief Transform the definition of the given declaration by
+    /// instantiating it.
+    Decl *TransformDefinition(SourceLocation Loc, Decl *D) {
+      Decl *Inst = getSema().SubstDecl(D, getSema().CurContext, TemplateArgs);
+      if (!Inst)
+        return nullptr;
+      getSema().CurrentInstantiationScope->InstantiatedLocal(D, Inst);
+      transformedLocalDecl(D, Inst);
+      return Inst;
+    }
+  };
+} // namespace
+
+/// Substitution into a loop body is different than substitution in other
+/// contexts. In particular, we are not actually instantiating a template.
+/// We're just rebuilding a tree and rewiring expressions that refer to
+/// newly instantiated declarations.
+StmtResult
+Sema::SubstForTupleBody(Stmt *S,
+                        const MultiLevelTemplateArgumentList &TemplateArgs) {
+  LoopBodyInstantiator Instantiator(*this, TemplateArgs, SourceLocation());
   return Instantiator.TransformStmt(S);
 }
 
