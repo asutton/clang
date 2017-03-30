@@ -48,11 +48,12 @@ public:
   // Always rebuild nodes; we're effectively copying from one AST to another.
   bool AlwaysRebuild() const { return true; }
 
-  Decl* TransformDecl(Decl *D);
-  Decl* TransformDecl(SourceLocation, Decl *D);
-  Decl* TransformCXXMethodDecl(CXXMethodDecl *D);
-  Decl* TransformCXXConstructorDecl(CXXConstructorDecl *D);
-  Decl* TransformCXXDestructorDecl(CXXDestructorDecl *D);
+  Decl *TransformDecl(Decl *D);
+  Decl *TransformDecl(SourceLocation, Decl *D);
+  Decl *TransformParmVarDecl(ParmVarDecl *D);
+  Decl *TransformCXXMethodDecl(CXXMethodDecl *D);
+  Decl *TransformCXXConstructorDecl(CXXConstructorDecl *D);
+  Decl *TransformCXXDestructorDecl(CXXDestructorDecl *D);
 };
 
 /// Look to see if the declaration has been locally transformed. If so,
@@ -74,12 +75,28 @@ Decl *MetaclassInjector::TransformDecl(SourceLocation Loc, Decl *D) {
     default:
       llvm::errs() << "SKIPPING: " << D->getDeclKindName() << '\n';
       return nullptr;
+    case Decl::ParmVar:
+      return TransformParmVarDecl(cast<ParmVarDecl>(D));
+    case Decl::CXXMethod:
+      return TransformCXXMethodDecl(cast<CXXMethodDecl>(D));
+    case Decl::CXXConstructor:
+      return TransformCXXConstructorDecl(cast<CXXConstructorDecl>(D));
     case Decl::CXXDestructor:
       return TransformCXXDestructorDecl(cast<CXXDestructorDecl>(D));
   }
 }
 
-Decl * MetaclassInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
+Decl *MetaclassInjector::TransformParmVarDecl(ParmVarDecl *D) {
+  TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
+  auto *R = SemaRef.CheckParameter(SemaRef.Context.getTranslationUnitDecl(),
+                                   D->getInnerLocStart(), D->getLocation(),
+                                   D->getIdentifier(), TypeInfo->getType(), 
+                                   TypeInfo, D->getStorageClass());
+  // FIXME: Transform the default argument also.
+  return R;
+}
+
+Decl *MetaclassInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
   DeclarationNameInfo NameInfo = 
     TransformDeclarationNameInfo(D->getNameInfo());
 
@@ -99,10 +116,10 @@ Decl * MetaclassInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
                                       NameInfo, TypeInfo->getType(), TypeInfo,
                                       D->isInlineSpecified(), false);
   else
-    assert(false && "not implemented");
-    // R = CXXMethodDecl::Create(SemaRef.Context, Dest, D->getLocation(),
-    //                                   NameInfo, TypeInfo->getType(), TypeInfo,
-    //                                   D->isInlineSpecified(), false);
+    R = CXXMethodDecl::Create(SemaRef.Context, Dest, D->getLocStart(),
+                              NameInfo, TypeInfo->getType(), TypeInfo,
+                              D->getStorageClass(), D->isInlineSpecified(),
+                              D->isConstexpr(), D->getLocEnd());
 
   // Copy over common attributes.
   R->setDefaulted(D->isDefaulted());
@@ -110,11 +127,19 @@ Decl * MetaclassInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
   R->setDeletedAsWritten(D->isDeletedAsWritten());
   R->setVirtualAsWritten(D->isVirtualAsWritten());
 
+  // Transform parameters
+  llvm::SmallVector<ParmVarDecl *, 4> Params;
+  for (auto Iter = D->param_begin(); Iter != D->param_end(); ++Iter) {
+    ParmVarDecl *P = cast<ParmVarDecl>(TransformDecl(*Iter));
+    P->setOwningFunction(R);
+    Params.push_back(P);
+  }
+  R->setParams(Params);
+
   // TODO: Transform the body of the declaration.
 
-  // FIXME: Handle redeclaration, etc.
+  // FIXME: Handle redeclaration, update w.r.t. virtual functions, etc.
   Dest->addDecl(R);
-
   return R;
 }
 
