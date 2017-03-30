@@ -13779,19 +13779,6 @@ void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
          "Broken injected-class-name");
 }
 
-/// \brief Instantiate and evaluate the metaclass.
-///
-/// The class \p C is the innermost template parameter for the metaclass
-/// template \p MC.
-///
-// FIXME: MC should be a metaclass template.
-// FIXME: Move this into SemaReflect.cpp or into a new file, SemaMetaclass.cpp?
-// This will also need to be a member of Sema.
-static CXXRecordDecl *EvaluateMetaclass(MetaclassDecl *MC, CXXRecordDecl *C) {
-  // C->dump();
-  return C;
-}
-
 void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
                                     SourceRange BraceRange) {
   AdjustDeclIfTemplate(TagD);
@@ -13822,28 +13809,29 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
   if (!Tag->isInvalidDecl())
     Consumer.HandleTagDeclDefinition(Tag);
 
-  // Lastly... apply the metaclass, if it exists.
-  if (CXXRecordDecl *Old = dyn_cast<CXXRecordDecl>(Tag)) {
-    if (MetaclassDecl *MC = Old->getMetaclass()) {
-      CXXRecordDecl *New = EvaluateMetaclass(MC, Old);
+  // FIXME: Remove this... it's too late.
+  // // Lastly... apply the metaclass, if it exists.
+  // if (CXXRecordDecl *Old = dyn_cast<CXXRecordDecl>(Tag)) {
+  //   if (MetaclassDecl *MC = Old->getMetaclass()) {
+  //     CXXRecordDecl *New = EvaluateMetaclass(MC, Old);
 
-      // TODO: This is not efficient. Removing declarations from a DC is a
-      // linear in the number of declarations in the DC. It would be more
-      // efficient to simply swap the values of the old and new classes.
+  //     // TODO: This is not efficient. Removing declarations from a DC is a
+  //     // linear in the number of declarations in the DC. It would be more
+  //     // efficient to simply swap the values of the old and new classes.
 
-      // Replace the old declaration with the new declaration in its context.
-      DeclContext *SemaDC = Old->getDeclContext();
-      DeclContext *LexDC = Old->getDeclContext();
-      SemaDC->removeDecl(Old);
-      if (SemaDC != LexDC)
-        LexDC->removeDecl(Old);
-      SemaDC->addDecl(New);
+  //     // Replace the old declaration with the new declaration in its context.
+  //     DeclContext *SemaDC = Old->getDeclContext();
+  //     DeclContext *LexDC = Old->getDeclContext();
+  //     SemaDC->removeDecl(Old);
+  //     if (SemaDC != LexDC)
+  //       LexDC->removeDecl(Old);
+  //     SemaDC->addDecl(New);
 
-      // Replace the old declaration
-      IdResolver.RemoveDecl(Old);
-      IdResolver.AddDecl(New);
-    }
-  }
+  //     // Replace the old declaration
+  //     IdResolver.RemoveDecl(Old);
+  //     IdResolver.AddDecl(New);
+  //   }
+  // }
 }
 
 void Sema::ActOnObjCContainerFinishDefinition() {
@@ -14524,6 +14512,26 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
   }
 
   RecordDecl *Record = dyn_cast<RecordDecl>(EnclosingDecl);
+
+  {
+    // If this record is part of a metaclass, we'll mark it complete but
+    // actually skip all of the member processing below. 
+    //
+    // FIXME: This seems fragile.
+    DeclContext *Parent = Record->getParent();
+    if (MetaclassDecl *Meta = dyn_cast<MetaclassDecl>(Parent)) {
+      Record->completeDefinition();
+      return;
+    }
+
+    // If the record subscribes to a metaclass, then we need to inject and
+    // apply those declarations prior to analysis.
+    if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record))
+      if (MetaclassDecl *Meta = Class->getMetaclass()) {
+        SmallVector<Decl *, 32> InjectedFields;
+        InjectMetaclassMembers(Meta, Class, InjectedFields);
+      }
+  }
 
   // Start counting up the number of named members; make sure to include
   // members of anonymous structs and unions in the total.

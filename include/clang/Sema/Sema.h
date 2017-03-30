@@ -8258,6 +8258,9 @@ public:
   bool isMetaclassName(Scope *S, CXXScopeSpec *SS, const IdentifierInfo &Name,
                        SourceLocation NameLoc, Decl **Metaclass = nullptr);
 
+  void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
+                              SmallVectorImpl<Decl *> &Fields);
+
   DeclResult ActOnStartConstexprDeclaration(SourceLocation Loc, 
                                             int &ScopeFlags);
   void ActOnStartOfConstexprDef(Decl *D);
