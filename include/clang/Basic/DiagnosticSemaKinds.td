@@ -8836,7 +8836,7 @@ def err_coroutine_promise_return_ill_formed : Error<
   "%0 declares both 'return_value' and 'return_void'">;
 }
 
-// [Meta] Reflection
+// [Meta] Reflection and code generation
 let CategoryName = "Reflection Issue" in {
 def err_not_implemented : Error<
   "feature not implemented">;

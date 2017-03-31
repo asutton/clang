@@ -299,3 +299,47 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
   }
   // Class->dump();
 }
+
+// Try to apply a request to modify access.
+static bool InjectAccessModification(Sema& SemaRef, ReflectionTraitExpr *E) {
+  llvm::outs() << "ACCESS\n";
+  E->dump();
+  return true;
+}
+
+// Try to apply a request to make a member function virtual or non-virtual.
+static bool InjectVirtualModification(Sema& SemaRef, ReflectionTraitExpr *E) {
+  llvm::outs() << "VIRTUAL\n";
+  E->dump();
+  return true;
+} 
+
+/// Apply one injection. Returns true if no error is encountered.
+bool Sema::InjectCode(Stmt *Injection) {
+  switch (Injection->getStmtClass()) {
+    case Stmt::ReflectionTraitExprClass: {
+      ReflectionTraitExpr *E = cast<ReflectionTraitExpr>(Injection);
+      switch (E->getTrait()) {
+        case BRT_ModifyAccess:
+          return InjectAccessModification(*this, E);
+        case BRT_ModifyVirtual:
+          return InjectVirtualModification(*this, E);
+        default:
+          llvm_unreachable("Invalid reflection trait");
+      }
+    }
+    default:
+      break;
+  }
+  llvm_unreachable("Invalid injection");
+}
+
+/// Inject a sequence of source code fragments or modification requests
+/// into the current AST. Returns false if an error is encountered.
+bool Sema::InjectCode(SmallVectorImpl<Stmt *>& Injections) {
+  for (Stmt *S : Injections)
+    if (!InjectCode(S))
+      return false;
+    return true;
+}
+

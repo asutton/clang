@@ -155,6 +155,10 @@ def note_constexpr_baa_value_insufficient_alignment : Note<
   "value of the aligned pointer (%0) is not a multiple of the asserted %1 "
   "%plural{1:byte|:bytes}1">;
 
+// [Meta] Compile-time code generation
+def note_decl_modification_outside_constexpr_decl : Error<
+  "request to modify a declaration outside of a constexpr-declaration">;
+
 def warn_integer_constant_overflow : Warning<
   "overflow in expression; result is %0 with type %1">,
   InGroup<DiagGroup<"integer-overflow">>;

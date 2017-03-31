@@ -8260,6 +8260,8 @@ public:
 
   void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                               SmallVectorImpl<Decl *> &Fields);
+  bool InjectCode(SmallVectorImpl<Stmt *>& Injections);
+  bool InjectCode(Stmt *Injection);
 
   DeclResult ActOnStartConstexprDeclaration(SourceLocation Loc, 
                                             int &ScopeFlags);

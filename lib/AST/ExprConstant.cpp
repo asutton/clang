@@ -9783,6 +9783,28 @@ public:
       return true;
     }
   }
+
+  // Try adding the injection for future processing.
+  bool RegisterInjection(const Expr *E) {
+    if (Info.EvalStatus.Injections) {
+      Info.EvalStatus.Injections->push_back(const_cast<Expr *>(E));
+      return true;
+    }
+    else {
+      return Error(E, diag::note_decl_modification_outside_constexpr_decl);
+    }
+  }
+
+  // Queue up modification traits as injections.
+  bool VisitReflectionTraitExpr(const ReflectionTraitExpr* E) {
+    switch (E->getTrait()) {
+      case BRT_ModifyAccess:
+      case BRT_ModifyVirtual: 
+        return RegisterInjection(E);
+      default:
+        return Success(E->getValue(), E);
+    }
+  }
 };
 } // end anonymous namespace
 

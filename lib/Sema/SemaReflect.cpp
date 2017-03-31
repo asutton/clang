@@ -394,10 +394,14 @@ struct Reflector {
   ExprResult ReflectMember(Decl *, const llvm::APSInt &N);
   ExprResult ReflectNumMembers(Type *);
   ExprResult ReflectMember(Type *, const llvm::APSInt &N);
-
-  ExprResult ModifyAccess(Decl *, const llvm::APSInt &N);
-  ExprResult ModifyVirtual(Decl *, const llvm::APSInt &N);
 };
+
+/// Returns true if RTK is a trait that would modify a property of a 
+/// declaration.
+static inline bool
+IsModificationTrait(ReflectionTrait RTK) {
+  return RTK >= BRT_ModifyAccess;
+}
 
 ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
                                       ReflectionTrait Kind,
@@ -406,13 +410,20 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
   // If any arguments are dependent, then the result is a dependent
   // expression.
   //
-  // TODO: What if a argument is type dependent? Or instantiation dependent?
+  // TODO: What if a argument is type dependent?
   for (unsigned i = 0; i < Args.size(); ++i) {
     if (Args[i]->isValueDependent()) {
       QualType Ty = Context.DependentTy;
       return new (Context) ReflectionTraitExpr(Context, Kind, Ty, Args,
                                                APValue(), KWLoc, RParenLoc);
     }
+  }
+
+  // Modifications are preserved until constexpr evaluation.
+  // Note that these expressions have type void.
+  if (IsModificationTrait(Kind)) {
+    return new (Context) ReflectionTraitExpr(Context, Kind, Context.VoidTy, 
+                                             Args, APValue(), KWLoc, RParenLoc);
   }
 
   // Ensure that each operand has integral type.
@@ -460,7 +471,8 @@ static ExprResult MakeString(ASTContext &C, const std::string &Str) {
 
 ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
   switch (RT) {
-  // Name(s) of a declaration.
+  default:
+    break;
   case URT_ReflectName:
     return ReflectName(D);
   case URT_ReflectQualifiedName:
@@ -485,11 +497,6 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
     return ReflectNumMembers(D);
   case BRT_ReflectMember:
     return ReflectMember(D, Vals[1]);
-
-  case BRT_ModifyAccess:
-    return ModifyAccess(D, Vals[1]);
-  case BRT_ModifyVirtual:
-    return ModifyVirtual(D, Vals[2]);
   }
 
   // FIXME: Improve this error message.
@@ -499,7 +506,8 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
 
 ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
   switch (RT) {
-  // Type name.
+  default:
+    break;
   case URT_ReflectName:
     return ReflectName(T);
   case URT_ReflectQualifiedName:
@@ -514,8 +522,6 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
     return ReflectNumMembers(T->getAsTagDecl());
   case BRT_ReflectMember:
     return ReflectMember(T->getAsTagDecl(), Vals[1]);
-  default:
-    break;
   }
 
   // FIXME: Improve this error message.
@@ -1125,19 +1131,6 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   return ExprError();
 }
 
-/// Modify the access specifier of a member declaration. If D is not a member
-/// of a class, the program is ill-formed.
-ExprResult Reflector::ModifyAccess(Decl * D, const llvm::APSInt &N) {
-  llvm::outs() << "Change access to " << N << '\n';
-  return ExprError();
-}
-
-/// Make a non-virtual function virtual or pure virtual. 
-ExprResult Reflector::ModifyVirtual(Decl * D, const llvm::APSInt &N) {
-  llvm::outs() << "Change virtual to " << N << '\n';
-  return ExprError();
-}
-
 Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
                            IdentifierInfo *II) {
   assert(II);
@@ -1436,6 +1429,8 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, Expr *E) {
       return false;
     }
   }
+
+  return InjectCode(Injections);
 
   // FIXME: Move this into SemaInject.
   for (Stmt *S : Injections) {
