@@ -2537,8 +2537,10 @@ GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   LookupResult SizeLookup(SemaRef, SizeName, Loc, Sema::LookupAnyName);
   SemaRef.LookupQualifiedName(SizeLookup, Std);
   ClassTemplateDecl *TupleSize = SizeLookup.getAsSingle<ClassTemplateDecl>();
-  if (!TupleSize)
+  if (!TupleSize) {
+    SemaRef.Diag(Loc, diag::err_no_member) << SizeName << Std;
     return false;
+  }
 
   // Build a template specialization, instantiate it, and then complete it.
   TemplateName TempName(TupleSize);
@@ -2563,14 +2565,18 @@ GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   LookupResult ValueLookup(SemaRef, ValueName, Loc, Sema::LookupOrdinaryName);
   SemaRef.LookupQualifiedName(ValueLookup, Spec);
   VarDecl *Value = ValueLookup.getAsSingle<VarDecl>();
-  if (!Value)
+  if (!Value) {
+    llvm::outs() << "NO VALUE\n";
     return false;
+  }
 
   // Build an expression that accesses the member and evaluate it.
   ExprResult Ref = 
     SemaRef.BuildDeclRefExpr(Value, Value->getType(), VK_LValue, Loc);
-  if (!Ref.get()->EvaluateAsInt(Size, SemaRef.Context))
+  if (!Ref.get()->EvaluateAsInt(Size, SemaRef.Context)) {
+    SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;
     return false;
+  }
   return true;
 }
 
@@ -2659,16 +2665,17 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
     if (!LoopVar->isInvalidDecl() && Kind != BFRK_Check)
       LoopVar->setType(SubstAutoType(LoopVar->getType(), Context.DependentTy));
   } else {
+    RangeClassType = RangeClassType.getDesugaredType(Context);
+
     // FIXME: Support expansion over an array. For arrays, the loop variable
-    // should be 'loop-var = __tuple[I]' instead of a get expression.
-    assert(RangeClassType->isClassType() && 
+    // should be 'loop-var = __tuple[I]' instead of a get expression.    
+
+    assert(!RangeClassType->isArrayType() && 
            "Expansion over arrays not implemented");
 
     // Get the tuple size for the number of expansions.
-    if (!GetTupleSize(*this, ColonLoc, RangeClassType, Size)) {
-      Diag(ColonLoc, diag::err_not_implemented);
+    if (!GetTupleSize(*this, ColonLoc, RangeClassType, Size))
       return StmtError();
-    }
 
     // Declare a new template parameter __N for which we will be substituting
     // concrete values later.
@@ -2713,9 +2720,8 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
     // of the range type.
     LookupResult R(*this, DNI.getName(), ColonLoc, Sema::LookupOrdinaryName);
     if (!LookupQualifiedName(R, RangeClass->getDeclContext())) {
-      // FIXME: This is a diagnosable error. If no X::get names can be 
-      // found, then the loop cannot be constructed.
-      Diag(ColonLoc, diag::err_not_implemented);
+      CXXRecordDecl *D = RangeClassType->getAsCXXRecordDecl();
+      Diag(ColonLoc, diag::err_no_member) << Name << D->getParent();
       return StmtError();
     }
     const UnresolvedSetImpl& FoundNames = R.asUnresolvedSet();
@@ -2734,9 +2740,8 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
     // The __tuple argument.
     ExprResult RangeRef = 
       BuildDeclRefExpr(RangeVar, RangeClassType, VK_LValue, ColonLoc);
-    if (RangeRef.isInvalid()) {
+    if (RangeRef.isInvalid())
       return StmtError();
-    }
 
     // Build the actual call expression NNS::get<I>(__tuple)
     Expr* Args[] { RangeRef.get() };
@@ -2744,9 +2749,8 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
 
     // And make that the initializer of the tuple argument.
     AddInitializerToDecl(LoopVar, Call.get(), false);
-    if (LoopVar->isInvalidDecl()) {
+    if (LoopVar->isInvalidDecl())
       return StmtError();
-    }
   }
 
   // Note that the body isn't parsed yet.

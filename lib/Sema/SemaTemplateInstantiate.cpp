@@ -616,9 +616,9 @@ void Sema::PrintInstantiationStack() {
       break;
 
     case ActiveTemplateInstantiation::ForLoopInstantiation:
-      // FIXME: Add a new diagnostic and then actually diagnose the error.
-      // It should be something like: "for loop instantiation here".
-      Diags.Report(Active->PointOfInstantiation, diag::err_not_implemented);
+      // FIXME: Provide more context about the loop body error.
+      Diags.Report(Active->PointOfInstantiation, 
+                   diag::note_loop_body_instantiation_here);
     }
   }
 }
