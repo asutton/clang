@@ -281,6 +281,7 @@ void MetaclassInjector::TransformFunctionDefinition(FunctionDecl *D,
 void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                                   SmallVectorImpl<Decl *> &Fields)
 {
+  Meta->dump();
   CXXRecordDecl *Def = Meta->getDefinition();
   for (Decl *D : Def->decls()) {
     if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {

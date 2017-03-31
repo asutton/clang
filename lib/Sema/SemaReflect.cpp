@@ -179,6 +179,10 @@ static char const *GetReflectionClass(Decl *D) {
 
 /// \brief Return an expression whose type reflects the given node.
 ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
+  // References to a metaclass should refer to the underlying class.
+  if (auto *MC = dyn_cast<MetaclassDecl>(D))
+    D = MC->getDefinition();
+
   // Use BuildTypeReflection for type declarations.
   if (TagDecl *TD = dyn_cast<TagDecl>(D))
     return BuildTypeReflection(Loc, Context.getTagDeclType(TD));
@@ -1258,6 +1262,7 @@ NeedsFunctionRep(const DeclContext *C)
 DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc,
                                                 int &ScopeFlags)
 {
+  ConstexprDecl *CD;
   if (NeedsFunctionRep(CurContext)) {    
     // Build the function
     //
@@ -1279,7 +1284,7 @@ DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc,
 
     // Build the constexpr declaration around the function.
     ScopeFlags = Scope::FnScope | Scope::DeclScope;
-    return ConstexprDecl::Create(Context, CurContext, Loc, Fn);
+    CD = ConstexprDecl::Create(Context, CurContext, Loc, Fn);
   }
   else if (CurContext->isFunctionOrMethod()) {
     // Build the expression
@@ -1317,9 +1322,15 @@ DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc,
     // NOTE: The call operator is not yet attached to the closure type. That
     // happens in ActOnFinishConstexprDeclaration. The operator is, however,
     // available in the LSI.
-    return ConstexprDecl::Create(Context, CurContext, Loc, Closure);
+    CD = ConstexprDecl::Create(Context, CurContext, Loc, Closure);
   }
-  assert(false && "Constexpr declaration in unsupported context");
+  else {
+    llvm_unreachable("Constexpr declaration in unsupported context");
+  }
+
+  CurContext->addDecl(CD);
+
+  return CD;
 }
 
 /// Called just prior to parsing the definition of a constexpr-declaration.
@@ -1431,11 +1442,4 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, Expr *E) {
   }
 
   return InjectCode(Injections);
-
-  // FIXME: Move this into SemaInject.
-  for (Stmt *S : Injections) {
-    S->dump();
-  }
-  
-  return true;  
 }
