@@ -553,8 +553,17 @@ public:
     /// expression *is* a constant expression, no notes will be produced.
     SmallVectorImpl<PartialDiagnosticAt> *Diag;
 
+    /// \brief A list of source code injections encountered during evaluation.
+    ///
+    /// If evaluation encounters an source code injection when this is not
+    /// set, the expression has undefined behavior. This is only set for the
+    /// evaluation of constexpr-delarations. No other evaluations should modify
+    /// source code.
+    SmallVectorImpl<Stmt *> *Injections;
+
     EvalStatus()
-        : HasSideEffects(false), HasUndefinedBehavior(false), Diag(nullptr) {}
+        : HasSideEffects(false), HasUndefinedBehavior(false), Diag(nullptr),
+          Injections(nullptr) {}
 
     // hasSideEffects - Return true if the evaluated expression has
     // side effects.

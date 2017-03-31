@@ -394,6 +394,9 @@ struct Reflector {
   ExprResult ReflectMember(Decl *, const llvm::APSInt &N);
   ExprResult ReflectNumMembers(Type *);
   ExprResult ReflectMember(Type *, const llvm::APSInt &N);
+
+  ExprResult ModifyAccess(Decl *, const llvm::APSInt &N);
+  ExprResult ModifyVirtual(Decl *, const llvm::APSInt &N);
 };
 
 ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
@@ -421,8 +424,8 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
     }
   }
 
-  // Evaluate all of the operands ahead of time. Note that trait arity
-  // is checked at parse time.
+  // Evaluate all of the operands ahead of time. Note that trait arity is 
+  // checked at parse time.
   SmallVector<llvm::APSInt, 2> Vals;
   Vals.resize(Args.size());
   for (unsigned i = 0; i < Args.size(); ++i) {
@@ -443,7 +446,7 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
   if (Info.first == RK_Type)
     return R.Reflect(Kind, (Type *)Info.second);
 
-  llvm_unreachable("Unhandled reflection");
+  llvm_unreachable("Unhandled reflection kind");
 }
 
 /// Returns a string literal that has the given name.
@@ -482,6 +485,11 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
     return ReflectNumMembers(D);
   case BRT_ReflectMember:
     return ReflectMember(D, Vals[1]);
+
+  case BRT_ModifyAccess:
+    return ModifyAccess(D, Vals[1]);
+  case BRT_ModifyVirtual:
+    return ModifyVirtual(D, Vals[2]);
   }
 
   // FIXME: Improve this error message.
@@ -1117,6 +1125,19 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   return ExprError();
 }
 
+/// Modify the access specifier of a member declaration. If D is not a member
+/// of a class, the program is ill-formed.
+ExprResult Reflector::ModifyAccess(Decl * D, const llvm::APSInt &N) {
+  llvm::outs() << "Change access to " << N << '\n';
+  return ExprError();
+}
+
+/// Make a non-virtual function virtual or pure virtual. 
+ExprResult Reflector::ModifyVirtual(Decl * D, const llvm::APSInt &N) {
+  llvm::outs() << "Change virtual to " << N << '\n';
+  return ExprError();
+}
+
 Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
                            IdentifierInfo *II) {
   assert(II);
@@ -1394,8 +1415,10 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, Expr *E) {
   // FIXME: Don't evaluate this if... reasons.
 
   SmallVector<PartialDiagnosticAt, 8> Notes;
+  SmallVector<Stmt *, 16> Injections;
   Expr::EvalResult Eval;
   Eval.Diag = &Notes;
+  Eval.Injections = &Injections;
   bool Result = E->EvaluateAsRValue(Eval, Context);
   if (!Result) {
     // If the only error is that we didn't initialize a (void) value, that's 
@@ -1413,5 +1436,11 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, Expr *E) {
       return false;
     }
   }
+
+  // FIXME: Move this into SemaInject.
+  for (Stmt *S : Injections) {
+    S->dump();
+  }
+  
   return true;  
 }
