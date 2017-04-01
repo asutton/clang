@@ -171,6 +171,10 @@ static char const *GetReflectionClass(Decl *D) {
     return "tu";
   case Decl::Var:
     return "variable";
+  
+  case Decl::Constexpr:
+    // Return something that is effectively unusable.
+    return "decl";
   default:
     break;
   }
