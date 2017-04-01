@@ -48,6 +48,9 @@ public:
   // Always rebuild nodes; we're effectively copying from one AST to another.
   bool AlwaysRebuild() const { return true; }
 
+  bool TransformTemplateArgument(const TemplateArgumentLoc &Input, 
+                                 TemplateArgumentLoc &Output, bool Uneval);
+
   Decl *TransformDecl(Decl *D);
   Decl *TransformDecl(SourceLocation, Decl *D);
   Decl *TransformVarDecl(VarDecl *D);
@@ -57,10 +60,27 @@ public:
   Decl *TransformCXXConstructorDecl(CXXConstructorDecl *D);
   Decl *TransformCXXDestructorDecl(CXXDestructorDecl *D);
   Decl *TransformFieldDecl(FieldDecl *D);
+  Decl *TransformConstexprDecl(ConstexprDecl *D);
 
   void TransformFunctionParameters(FunctionDecl *D, FunctionDecl *R);
   void TransformFunctionDefinition(FunctionDecl *D, FunctionDecl *R);
 };
+
+
+// For some reason, the default does not expect integer template arguments.
+// So we override that behavior here.
+bool MetaclassInjector::
+TransformTemplateArgument(const TemplateArgumentLoc &Input,
+                          TemplateArgumentLoc &Output, bool Uneval) {
+  const TemplateArgument &Arg = Input.getArgument();
+  if (Arg.getKind() == TemplateArgument::Integral) {
+    Output = Input;
+    return false;
+  }
+  return TreeTransform<MetaclassInjector>::TransformTemplateArgument(Input,
+                                                                     Output,
+                                                                     Uneval);
+}
 
 /// Look to see if the declaration has been locally transformed. If so,
 /// return that. Otherwise, explicitly rebuild the declaration.
@@ -68,9 +88,26 @@ Decl *MetaclassInjector::TransformDecl(Decl *D) {
   return TransformDecl(D->getLocation(), D);
 }
 
+/// Returns true if the given declaration is not a candidate for 
+/// transformation. This is true for any declaration that is not directly
+/// contained within the metaclass, either directly as a member or indirectly
+/// as e.g., a local variable in a member function.
+static inline bool ShouldNotTransform(Decl *D, DeclContext *Cxt) {
+  DeclContext *DC = D->getDeclContext();
+  while (DC) {
+    if (DC == Cxt)
+      break;
+    DC = DC->getParent();
+  }
+  return DC == nullptr;
+}
+
 /// Look to see if the declaration has been locally transformed. If so,
 /// return that. Otherwise, explicitly rebuild the declaration.
 Decl *MetaclassInjector::TransformDecl(SourceLocation Loc, Decl *D) {
+  if (ShouldNotTransform(D, Source))
+    return D;
+
   llvm::DenseMap<Decl *, Decl *>::iterator Known
     = TransformedLocalDecls.find(D);
   if (Known != TransformedLocalDecls.end())
@@ -79,6 +116,7 @@ Decl *MetaclassInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   /// FIXME: It might be a better idea to use a DeclVisitor here.
   switch (D->getKind()) {
     default:
+      D->dump();
       llvm_unreachable("Injection not implemented");
     case Decl::Var:
       return TransformVarDecl(cast<VarDecl>(D));
@@ -94,22 +132,48 @@ Decl *MetaclassInjector::TransformDecl(SourceLocation Loc, Decl *D) {
       return TransformCXXDestructorDecl(cast<CXXDestructorDecl>(D));
     case Decl::Field:
       return TransformFieldDecl(cast<FieldDecl>(D));
+    case Decl::Constexpr:
+      return TransformConstexprDecl(cast<ConstexprDecl>(D));
+
+    case Decl::CXXRecord: 
+    case Decl::ClassTemplate: {
+      // FIXME: What other 
+      // If the class is not enclosed by the metaclass, then we shouldn't
+      // modify it.
+      CXXRecordDecl *Class = cast<CXXRecordDecl>(D);
+      if (!Source->Encloses(Class))
+        return D;
+      llvm_unreachable("Class injection not implemented");
+    }
   }
 }
 
 Decl *MetaclassInjector::TransformVarDecl(VarDecl *D) {
   TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
-  VarDecl *R = VarDecl::Create(SemaRef.Context, Dest,  D->getLocation(),
-                               D->getLocation(), D->getIdentifier(),
-                               TypeInfo->getType(), TypeInfo, 
-                               D->getStorageClass());
+  VarDecl *R = VarDecl::Create(SemaRef.Context, SemaRef.CurContext,  
+                               D->getLocation(), D->getLocation(), 
+                               D->getIdentifier(), TypeInfo->getType(), 
+                               TypeInfo, D->getStorageClass());
   transformedLocalDecl(D, R);
 
   // FIXME: Other attributes to translate?
+  
+  SemaRef.CurContext->addDecl(R);
 
-  Dest->addDecl(R);
-
-  // FIXME: Transform the initializer as needed.
+  // Transform the initializer.
+  // FIXME: Look at Sema::InstantiateVariableInitializer to see how this
+  // should be done.
+  if (D->getInit()) {
+    VarDecl::InitializationStyle InitStyle = D->getInitStyle();
+    ExprResult Init = TransformInitializer(D->getInit(),
+                                           InitStyle == VarDecl::CallInit);
+    if (Init.isInvalid()) {
+      R->setInvalidDecl();
+    } else {
+      R->setInitStyle(InitStyle);
+      R->setInit(Init.get());
+    }
+  }
 
   return R;
 }
@@ -134,7 +198,7 @@ Decl *MetaclassInjector::TransformFunctionDecl(FunctionDecl *D) {
   DeclarationNameInfo NameInfo = 
     TransformDeclarationNameInfo(D->getNameInfo());
   TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
-  FunctionDecl *R = FunctionDecl::Create(SemaRef.Context, Dest, 
+  FunctionDecl *R = FunctionDecl::Create(SemaRef.Context, SemaRef.CurContext, 
                                          D->getLocation(), 
                                          NameInfo.getLoc(), 
                                          NameInfo.getName(),
@@ -153,7 +217,7 @@ Decl *MetaclassInjector::TransformFunctionDecl(FunctionDecl *D) {
     SemaRef.SetDeclDeleted(R, R->getLocation());
   
   // FIXME: Make sure that we aren't overriding an existing declaration.
-  Dest->addDecl(R);
+  SemaRef.CurContext->addDecl(R);
 
   TransformFunctionDefinition(D, R);
   return R;
@@ -168,22 +232,27 @@ Decl *MetaclassInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
   TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
 
   // FIXME: Handle conversion operators.
+  CXXRecordDecl *CurClass = cast<CXXRecordDecl>(SemaRef.CurContext);
   CXXMethodDecl *R;
   if (auto *Ctor = dyn_cast<CXXConstructorDecl>(D))
-    R = CXXConstructorDecl::Create(SemaRef.Context, Dest, D->getLocation(),
-                                   NameInfo, TypeInfo->getType(), TypeInfo,
+    R = CXXConstructorDecl::Create(SemaRef.Context, CurClass, 
+                                   D->getLocation(), NameInfo, 
+                                   TypeInfo->getType(), TypeInfo,
                                    Ctor->isExplicitSpecified(),
                                    Ctor->isInlineSpecified(), 
                                    /*isImplicitlyDeclared=*/false,
                                    Ctor->isConstexpr(),
                                    InheritedConstructor());
   else if (isa<CXXDestructorDecl>(D))
-    R = CXXDestructorDecl::Create(SemaRef.Context, Dest, D->getLocation(),
-                                      NameInfo, TypeInfo->getType(), TypeInfo,
-                                      D->isInlineSpecified(), false);
+    R = CXXDestructorDecl::Create(SemaRef.Context, CurClass, 
+                                  D->getLocation(), NameInfo, 
+                                  TypeInfo->getType(), TypeInfo, 
+                                  D->isInlineSpecified(), 
+                                  /*isImplicitlyDeclared=*/false);
   else
-    R = CXXMethodDecl::Create(SemaRef.Context, Dest, D->getLocStart(),
-                              NameInfo, TypeInfo->getType(), TypeInfo,
+    R = CXXMethodDecl::Create(SemaRef.Context, CurClass, 
+                              D->getLocStart(), NameInfo, 
+                              TypeInfo->getType(), TypeInfo,
                               D->getStorageClass(), D->isInlineSpecified(),
                               D->isConstexpr(), D->getLocEnd());
   transformedLocalDecl(D, R);
@@ -202,7 +271,7 @@ Decl *MetaclassInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
     SemaRef.CheckPureMethod(R, SourceRange());
 
   // FIXME: Make sure that we aren't overriding an existing declaration.
-  Dest->addDecl(R);
+  SemaRef.CurContext->addDecl(R);
 
   TransformFunctionDefinition(D, R);
   return R;
@@ -218,8 +287,9 @@ Decl * MetaclassInjector::TransformCXXDestructorDecl(CXXDestructorDecl *D) {
 
 Decl *MetaclassInjector::TransformFieldDecl(FieldDecl *D) {
   TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
-  FieldDecl *R = FieldDecl::Create(SemaRef.Context, Dest, D->getLocation(),
-                                   D->getLocation(), D->getIdentifier(),
+  FieldDecl *R = FieldDecl::Create(SemaRef.Context, SemaRef.CurContext, 
+                                   D->getLocation(), D->getLocation(), 
+                                   D->getIdentifier(), 
                                    TypeInfo->getType(), TypeInfo,
                                    /*Bitwidth*/nullptr, D->isMutable(), 
                                    D->getInClassInitStyle());
@@ -229,9 +299,24 @@ Decl *MetaclassInjector::TransformFieldDecl(FieldDecl *D) {
   // FIXME: What other properties do we need to copy?
   R->setAccess(D->getAccess()); // FIXME: Is this right?
   
-  Dest->addDecl(R);
+  SemaRef.CurContext->addDecl(R);
 
   // FIXME: Transform the initializer, if present.
+  return R;
+}
+
+Decl *MetaclassInjector::TransformConstexprDecl(ConstexprDecl *D) {
+  // We can use the ActOn* members since the initial parsing for these
+  // declarations is trivial (i.e., don't have to translate declarators).
+  int F; // Unused
+  DeclResult New = SemaRef.ActOnStartConstexprDeclaration(D->getLocation(), F);
+  ConstexprDecl *R = cast<ConstexprDecl>(New.get());
+  SemaRef.ActOnStartOfConstexprDef(R);
+  StmtResult S = TransformStmt(D->getBody());
+  if (S.isInvalid())
+    R->setInvalidDecl();
+  else
+    SemaRef.ActOnFinishConstexprDeclaration(R, S.get());
   return R;
 }
 
@@ -281,7 +366,13 @@ void MetaclassInjector::TransformFunctionDefinition(FunctionDecl *D,
 void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                                   SmallVectorImpl<Decl *> &Fields)
 {
+  llvm::outs() << "INJECT MEMBERS\n";
   Meta->dump();
+
+  // Make the receiving class the top-level context.
+  Sema::ContextRAII SavedContext(*this, Class);
+
+  // Inject each metaclass member in turn.
   CXXRecordDecl *Def = Meta->getDefinition();
   for (Decl *D : Def->decls()) {
     if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {
@@ -298,7 +389,8 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
         Fields.push_back(R);
     }
   }
-  // Class->dump();
+  llvm::outs() << "RESULTING CLASS\n";
+  Class->dump();
 }
 
 // Try to apply a request to modify access.

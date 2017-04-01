@@ -3775,10 +3775,10 @@ class ConstexprDecl : public Decl {
     : Decl(Constexpr, nullptr, SourceLocation()), Def() { }
 
   ConstexprDecl(DeclContext *DC, SourceLocation CL, FunctionDecl *Fn)
-    : Decl(Constexpr, DC, CL), Def(Fn) { }
+    : Decl(Constexpr, DC, CL), Def(Fn), Call(nullptr) { }
 
   ConstexprDecl(DeclContext *DC, SourceLocation CL, CXXRecordDecl *Class)
-    : Decl(Constexpr, DC, CL), Def(Class) { }
+    : Decl(Constexpr, DC, CL), Def(Class), Call(nullptr) { }
 
 public:
   static ConstexprDecl *Create(ASTContext& CXT, DeclContext *DC, 
@@ -3801,6 +3801,10 @@ public:
 
   /// \brief Returns the call operator of the closure.
   CXXMethodDecl *getClosureCallOperator() const;
+
+  /// \brief Returns the body of the constexpr-declaration. This is only valid
+  /// after the definition has been completed.
+  Stmt *getBody() const override;
 
   /// Returns the expression that evaluates the constexpr-declaration.
   Expr *getCallExpr() const { return Call; }

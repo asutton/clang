@@ -2484,6 +2484,20 @@ CXXMethodDecl *ConstexprDecl::getClosureCallOperator() const {
   return getClosureDecl()->getLambdaCallOperator();
 }
 
+Stmt *ConstexprDecl::getBody() const {
+  if (hasFunctionRepresentation()) {
+    return getFunctionDecl()->getBody();
+  } else {
+    CXXRecordDecl *Class = getClosureDecl();
+    DeclarationName Name = 
+      getASTContext().DeclarationNames.getCXXOperatorName(OO_Call);
+    DeclContext::lookup_result Calls = Class->lookup(Name);
+    if (Calls.empty())
+      return nullptr;
+    return cast<CXXMethodDecl>(Calls.front())->getBody();
+  }
+}
+
 SourceRange ConstexprDecl::getSourceRange() const {
   // FIXME: This is wrong.
   return Decl::getSourceRange();

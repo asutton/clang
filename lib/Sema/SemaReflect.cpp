@@ -1282,9 +1282,11 @@ DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc,
                                           FunctionProtoType::ExtProtoInfo());
     TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Ty, Loc);
     FunctionDecl *Fn = FunctionDecl::Create(Context, CurContext, Loc, DNI, Ty, 
-                                            TSI, SC_None, false, false);
+                                            TSI, SC_None,
+                                            /*isInlineSpecfied=*/false, 
+                                            /*hasWrittenPrototype=*/false,
+                                            /*isConstexpr=*/true);
     Fn->setImplicit();
-    Fn->setConstexpr(true);
 
     // Build the constexpr declaration around the function.
     ScopeFlags = Scope::FnScope | Scope::DeclScope;
@@ -1369,7 +1371,6 @@ DeclResult Sema::ActOnFinishConstexprDeclaration(Decl *D, Stmt *S)
     if (!EvaluateConstexprDeclaration(CD, Lambda))
       return DeclResult(true);
   }
-
   return CD;
 }
 
@@ -1418,9 +1419,13 @@ bool Sema::EvaluateConstexprDeclaration(ConstexprDecl *CD, LambdaExpr* E) {
 /// them as declarations after execution. That would require a modification to 
 /// EvalResult (e.g., an injection set?).
 bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, Expr *E) {
+  // Associate the call expression with the declaration. 
   CD->setCallExpr(E);
 
-  // FIXME: Don't evaluate this if... reasons.
+  // Don't evaluate the call if this declaration appears within a metaclass.
+  DeclContext *ParentCxt = CurContext->getParent();
+  if (isa<MetaclassDecl>(ParentCxt))
+    return true;
 
   SmallVector<PartialDiagnosticAt, 8> Notes;
   SmallVector<Stmt *, 16> Injections;

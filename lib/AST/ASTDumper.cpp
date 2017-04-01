@@ -481,6 +481,7 @@ namespace  {
     void VisitLinkageSpecDecl(const LinkageSpecDecl *D);
     void VisitAccessSpecDecl(const AccessSpecDecl *D);
     void VisitFriendDecl(const FriendDecl *D);
+    void VisitConstexprDecl(const ConstexprDecl *D);
 
     // ObjC Decls
     void VisitObjCIvarDecl(const ObjCIvarDecl *D);
@@ -1570,6 +1571,11 @@ void ASTDumper::VisitFriendDecl(const FriendDecl *D) {
     dumpType(T->getType());
   else
     dumpDecl(D->getFriendDecl());
+}
+
+void ASTDumper::VisitConstexprDecl(const ConstexprDecl *D) {
+  if (Stmt *Body = D->getBody())
+    dumpStmt(Body);
 }
 
 //===----------------------------------------------------------------------===//

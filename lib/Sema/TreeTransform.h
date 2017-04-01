@@ -2013,12 +2013,15 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  ///
-  /// FIXME: Actually implement this function.
-  StmtResult RebuildCXXTupleExpansionStmt(Stmt *Range, 
+  StmtResult RebuildCXXTupleExpansionStmt(SourceLocation ForLoc, 
+                                          SourceLocation EllipsisLoc,
+                                          SourceLocation ColonLoc,
+                                          Stmt *RangeVar, 
                                           Stmt *LoopVar,
-                                          Stmt *Body) {
-    llvm_unreachable("not implemented");
+                                          SourceLocation RParenLoc) {
+    return getSema().BuildCXXTupleExpansionStmt(ForLoc, EllipsisLoc, ColonLoc,
+                                                RangeVar, LoopVar,
+                                                RParenLoc, Sema::BFRK_Rebuild);
   }
 
   /// \brief Build a new C++ tuple-based pack expansion statement.
@@ -7296,72 +7299,48 @@ template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXTupleExpansionStmt(
                                                      CXXTupleExpansionStmt *S) {
-  llvm_unreachable("not implemented");
-#if 0
-  StmtResult Range = getDerived().TransformStmt(S->getRangeStmt());
-  if (Range.isInvalid())
-    return StmtError();
 
-  StmtResult Begin = getDerived().TransformStmt(S->getBeginStmt());
-  if (Begin.isInvalid())
+  StmtResult RangeVar = getDerived().TransformStmt(S->getRangeVarStmt());
+  if (RangeVar.isInvalid()) {
+    llvm::outs() << "FAILED RANGE VAR\n";
     return StmtError();
-  StmtResult End = getDerived().TransformStmt(S->getEndStmt());
-  if (End.isInvalid())
-    return StmtError();
-
-  ExprResult Cond = getDerived().TransformExpr(S->getCond());
-  if (Cond.isInvalid())
-    return StmtError();
-  if (Cond.get())
-    Cond = SemaRef.CheckBooleanCondition(S->getColonLoc(), Cond.get());
-  if (Cond.isInvalid())
-    return StmtError();
-  if (Cond.get())
-    Cond = SemaRef.MaybeCreateExprWithCleanups(Cond.get());
-
-  ExprResult Inc = getDerived().TransformExpr(S->getInc());
-  if (Inc.isInvalid())
-    return StmtError();
-  if (Inc.get())
-    Inc = SemaRef.MaybeCreateExprWithCleanups(Inc.get());
+  }
 
   StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
-  if (LoopVar.isInvalid())
+  if (LoopVar.isInvalid()) {
+    llvm::outs() << "FAILED LOOP VAR\n";
     return StmtError();
+  }
 
   StmtResult NewStmt = S;
   if (getDerived().AlwaysRebuild() ||
-      Range.get() != S->getRangeStmt() ||
-      Begin.get() != S->getBeginStmt() ||
-      End.get() != S->getEndStmt() ||
-      Cond.get() != S->getCond() ||
-      Inc.get() != S->getInc() ||
+      RangeVar.get() != S->getRangeVarStmt() ||
       LoopVar.get() != S->getLoopVarStmt()) {
-    NewStmt = getDerived().RebuildCXXForRangeStmt(S->getForLoc(),
-                                                  S->getCoawaitLoc(),
-                                                  S->getColonLoc(), Range.get(),
-                                                  Begin.get(), End.get(),
-                                                  Cond.get(),
-                                                  Inc.get(), LoopVar.get(),
-                                                  S->getRParenLoc());
+    NewStmt = getDerived().RebuildCXXTupleExpansionStmt(S->getForLoc(),
+                                                        S->getEllipsisLoc(),
+                                                        S->getColonLoc(), 
+                                                        RangeVar.get(),
+                                                        LoopVar.get(), 
+                                                        S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
 
   StmtResult Body = getDerived().TransformStmt(S->getBody());
-  if (Body.isInvalid())
+  if (Body.isInvalid()) {
+    llvm::outs() << "FAILED BODY\n";
     return StmtError();
+  }
 
   // Body has changed but we didn't rebuild the for-range statement. Rebuild
   // it now so we have a new statement to attach the body to.
   if (Body.get() != S->getBody() && NewStmt.get() == S) {
-    NewStmt = getDerived().RebuildCXXForRangeStmt(S->getForLoc(),
-                                                  S->getCoawaitLoc(),
-                                                  S->getColonLoc(), Range.get(),
-                                                  Begin.get(), End.get(),
-                                                  Cond.get(),
-                                                  Inc.get(), LoopVar.get(),
-                                                  S->getRParenLoc());
+    NewStmt = getDerived().RebuildCXXTupleExpansionStmt(S->getForLoc(),
+                                                        S->getEllipsisLoc(),
+                                                        S->getColonLoc(), 
+                                                        RangeVar.get(),
+                                                        LoopVar.get(), 
+                                                        S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
@@ -7369,8 +7348,8 @@ TreeTransform<Derived>::TransformCXXTupleExpansionStmt(
   if (NewStmt.get() == S)
     return S;
 
-  return FinishCXXForRangeStmt(NewStmt.get(), Body.get());
-  #endif
+  CXXTupleExpansionStmt *TES = cast<CXXTupleExpansionStmt>(NewStmt.get());
+  return getSema().FinishCXXTupleExpansionStmt(TES, Body.get());
 }
 
 template<typename Derived>
