@@ -507,7 +507,6 @@ KEYWORD(__array_extent              , KEYCXX)
 // [Meta] Extensions for C++ Reflection
 //
 // TODO: Put these in a KEYREFLECTION category.
-KEYWORD(__compiler_error            , KEYALL)
 REFLECTION_TRAIT_1(__reflect_name, ReflectName)
 REFLECTION_TRAIT_1(__reflect_qualified_name, ReflectQualifiedName)
 REFLECTION_TRAIT_1(__reflect_type, ReflectType)
@@ -523,6 +522,7 @@ REFLECTION_TRAIT_1(__reflect_num_members, ReflectNumMembers)
 REFLECTION_TRAIT_2(__reflect_member, ReflectMember)
 REFLECTION_TRAIT_2(__modify_access, ModifyAccess)
 REFLECTION_TRAIT_2(__modify_virtual, ModifyVirtual)
+KEYWORD(__compiler_error            , KEYALL)
 
 // Apple Extension.
 KEYWORD(__private_extern__          , KEYALL)

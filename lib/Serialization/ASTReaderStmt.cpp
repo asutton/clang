@@ -938,19 +938,19 @@ void ASTStmtReader::VisitAtomicExpr(AtomicExpr *E) {
   E->RParenLoc = ReadSourceLocation();
 }
 
-void ASTStmtReader::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
-  VisitExpr(E);
-  E->setMessage(Record.readSubExpr());
-  E->setBuiltinLoc(ReadSourceLocation());
-  E->setRParenLoc(ReadSourceLocation());
-}
-
 void ASTStmtReader::VisitReflectionExpr(ReflectionExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
 void ASTStmtReader::VisitReflectionTraitExpr(ReflectionTraitExpr *E) {
   llvm_unreachable("unimplemented");
+}
+
+void ASTStmtReader::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
+  VisitExpr(E);
+  E->setMessage(Record.readSubExpr());
+  E->setBuiltinLoc(ReadSourceLocation());
+  E->setRParenLoc(ReadSourceLocation());
 }
 
 //===----------------------------------------------------------------------===//

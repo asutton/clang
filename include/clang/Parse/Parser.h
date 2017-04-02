@@ -2549,10 +2549,10 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ Reflection [Meta]
 
-  ExprResult ParseCompilerErrorExpression();
-
   ExprResult ParseReflectExpression();
   ExprResult ParseReflectionTrait();
+
+  ExprResult ParseCompilerErrorExpression();
 
   DeclGroupPtrTy ParseMetaclassDefinition();
   void AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass);

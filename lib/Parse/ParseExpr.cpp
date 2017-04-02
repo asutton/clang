@@ -602,6 +602,7 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 /// [Meta]  '$' nested-name-specifier[opt] namespace-name
 /// [Meta]  unary-reflection-trait '(' expression ')'
 /// [Meta]  binary-reflection-trait '(' expression ',' expression ')'
+/// [Meta]  '__compiler_error' '(' constant-expression ')'
 ///
 ///       constant: [C99 6.4.4]
 ///         integer-constant
@@ -1341,11 +1342,6 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return Result;
   }
 
-  // [PIM] primary-expression: '__compiler_error' '(' constant-expression ')'
-  case tok::kw___compiler_error:
-    Res = ParseCompilerErrorExpression();
-    break;
-
   case tok::dollar:  // [Meta] '$' [id-expression | type-name | namespace-name]
     Res = ParseReflectExpression();
     break;
@@ -1367,6 +1363,11 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw_##Spelling:
 #include "clang/Basic/TokenKinds.def"
     return ParseReflectionTrait();
+
+  // [Meta] primary-expression: '__compiler_error' '(' constant-expression ')'
+  case tok::kw___compiler_error:
+    Res = ParseCompilerErrorExpression();
+    break;
 
   case tok::at: {
     SourceLocation AtLoc = ConsumeToken();

@@ -1464,6 +1464,9 @@ namespace clang {
       EXPR_MATERIALIZE_TEMPORARY, // MaterializeTemporaryExpr
       EXPR_CXX_FOLD,              // CXXFoldExpr
 
+      // [Meta] C++ Reflection
+      EXPR_COMPILER_ERROR,         // CompilerErrorExpr
+
       // CUDA
       EXPR_CUDA_KERNEL_CALL,       // CUDAKernelCallExpr      
 
@@ -1534,8 +1537,7 @@ namespace clang {
       EXPR_OBJC_BRIDGED_CAST,     // ObjCBridgedCastExpr
       
       STMT_MS_DEPENDENT_EXISTS,   // MSDependentExistsStmt
-      EXPR_LAMBDA,                // LambdaExpr
-      EXPR_COMPILER_ERROR         // CompilerErrorExpr
+      EXPR_LAMBDA                 // LambdaExpr
     };
 
     /// \brief The kinds of designators that can occur in a

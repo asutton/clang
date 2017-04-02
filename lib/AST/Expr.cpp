@@ -2920,9 +2920,9 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case ObjCAvailabilityCheckExprClass:
   case CXXUuidofExprClass:
   case OpaqueValueExprClass:
-  case CompilerErrorExprClass:
   case ReflectionExprClass:
   case ReflectionTraitExprClass:
+  case CompilerErrorExprClass:
     // These never have a side-effect.
     return false;
 

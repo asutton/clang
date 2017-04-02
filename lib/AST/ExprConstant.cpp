@@ -9784,11 +9784,6 @@ public:
     }
   }
 
-  bool VisitCompilerErrorExpr(const CompilerErrorExpr *E) {
-    // Allow the use of __compiler_error within constant expressions.
-    return true;
-  }
-
   // Try adding the injection for future processing.
   bool RegisterInjection(const Expr *E) {
     if (Info.EvalStatus.Injections) {
@@ -9807,6 +9802,11 @@ public:
     default:
       return Success(E->getValue(), E);
     }
+  }
+
+  bool VisitCompilerErrorExpr(const CompilerErrorExpr *E) {
+    // Allow the use of __compiler_error within constant expressions.
+    return true;
   }
 };
 } // end anonymous namespace

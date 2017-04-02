@@ -922,20 +922,20 @@ void ASTStmtWriter::VisitAtomicExpr(AtomicExpr *E) {
   Code = serialization::EXPR_ATOMIC;
 }
 
-void ASTStmtWriter::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
-  VisitExpr(E);
-  Record.AddStmt(E->getMessage());
-  Record.AddSourceLocation(E->getBuiltinLoc());
-  Record.AddSourceLocation(E->getRParenLoc());
-  Code = serialization::EXPR_COMPILER_ERROR;
-}
-
 void ASTStmtWriter::VisitReflectionExpr(ReflectionExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
 void ASTStmtWriter::VisitReflectionTraitExpr(ReflectionTraitExpr *E) {
   llvm_unreachable("unimplemented");
+}
+
+void ASTStmtWriter::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
+  VisitExpr(E);
+  Record.AddStmt(E->getMessage());
+  Record.AddSourceLocation(E->getBuiltinLoc());
+  Record.AddSourceLocation(E->getRParenLoc());
+  Code = serialization::EXPR_COMPILER_ERROR;
 }
 
 //===----------------------------------------------------------------------===//

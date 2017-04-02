@@ -2510,12 +2510,6 @@ void StmtPrinter::VisitCoyieldExpr(CoyieldExpr *S) {
 
 // [Meta] C++ Reflection
 
-void StmtPrinter::VisitCompilerErrorExpr(CompilerErrorExpr *Node) {
-  OS << "__compiler_error(";
-  PrintExpr(Node->getMessage());
-  OS << ")";
-}
-
 static const char *getReflectionTraitName(ReflectionTrait RT) {
   switch (RT) {
 #define REFLECTION_TRAIT_1(Spelling, Kind) \
@@ -2543,6 +2537,12 @@ void StmtPrinter::VisitReflectionTraitExpr(ReflectionTraitExpr *E) {
       OS << ", ";
   }
   OS << ')';
+}
+
+void StmtPrinter::VisitCompilerErrorExpr(CompilerErrorExpr *Node) {
+  OS << "__compiler_error(";
+  PrintExpr(Node->getMessage());
+  OS << ")";
 }
 
 // Obj-C

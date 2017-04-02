@@ -8232,14 +8232,6 @@ public:
   // C++ Reflection [Meta]
   //
 
-  // __compiler_error(constExpr)
-  ExprResult ActOnCompilerErrorExpr(Expr *MessageExpr,
-                                    SourceLocation BuiltinLoc,
-                                    SourceLocation RParenLoc);
-  ExprResult BuildCompilerErrorExpr(Expr *MessageExpr,
-                                    SourceLocation BuiltinLoc,
-                                    SourceLocation RParenLoc);
-
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Expr *E);
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, TypeSourceInfo *TSI);
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Declarator &D);
@@ -8258,6 +8250,14 @@ public:
                                   SourceLocation RParenLoc);
   bool ModifyDeclarationAccess(ReflectionTraitExpr *E);
   bool ModifyDeclarationVirtual(ReflectionTraitExpr *E);
+
+  // __compiler_error(constExpr)
+  ExprResult ActOnCompilerErrorExpr(Expr *MessageExpr,
+                                    SourceLocation BuiltinLoc,
+                                    SourceLocation RParenLoc);
+  ExprResult BuildCompilerErrorExpr(Expr *MessageExpr,
+                                    SourceLocation BuiltinLoc,
+                                    SourceLocation RParenLoc);
 
   Decl *ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
                        IdentifierInfo *II);
