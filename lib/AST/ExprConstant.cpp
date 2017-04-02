@@ -4022,7 +4022,7 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
 
   case Stmt::CXXTupleExpansionStmtClass: {
     const CXXTupleExpansionStmt *TES = cast<CXXTupleExpansionStmt>(S);
-    
+
     // Evaluate the range variable.
     EvalStmtResult ESR = EvaluateStmt(Result, Info, TES->getRangeVarStmt());
     if (ESR != ESR_Succeeded)
@@ -9790,19 +9790,17 @@ public:
       Info.EvalStatus.Injections->push_back(const_cast<Expr *>(E));
       return true;
     }
-    else {
-      return Error(E, diag::note_decl_modification_outside_constexpr_decl);
-    }
+    return Error(E, diag::note_decl_modification_outside_constexpr_decl);
   }
 
   // Queue up modification traits as injections.
-  bool VisitReflectionTraitExpr(const ReflectionTraitExpr* E) {
+  bool VisitReflectionTraitExpr(const ReflectionTraitExpr *E) {
     switch (E->getTrait()) {
-      case BRT_ModifyAccess:
-      case BRT_ModifyVirtual: 
-        return RegisterInjection(E);
-      default:
-        return Success(E->getValue(), E);
+    case BRT_ModifyAccess:
+    case BRT_ModifyVirtual:
+      return RegisterInjection(E);
+    default:
+      return Success(E->getValue(), E);
     }
   }
 };
@@ -10537,7 +10535,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   }
   case Expr::ReflectionExprClass:
   case Expr::ReflectionTraitExprClass:
-    llvm_unreachable("not implemented");
+    llvm_unreachable("unimplemented");
   }
 
   llvm_unreachable("Invalid StmtClass!");

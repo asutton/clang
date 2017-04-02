@@ -1382,7 +1382,7 @@ public:
     return getSema().BuildCoyieldExpr(CoyieldLoc, Result);
   }
 
-  // [PIM]
+  // [Meta]
 
   /// \brief Build a new reflection expression.
   ///
@@ -2013,27 +2013,24 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  StmtResult RebuildCXXTupleExpansionStmt(SourceLocation ForLoc, 
+  StmtResult RebuildCXXTupleExpansionStmt(SourceLocation ForLoc,
                                           SourceLocation EllipsisLoc,
                                           SourceLocation ColonLoc,
-                                          Stmt *RangeVar, 
-                                          Stmt *LoopVar,
+                                          Stmt *RangeVar, Stmt *LoopVar,
                                           SourceLocation RParenLoc) {
     return getSema().BuildCXXTupleExpansionStmt(ForLoc, EllipsisLoc, ColonLoc,
-                                                RangeVar, LoopVar,
-                                                RParenLoc, Sema::BFRK_Rebuild);
+                                                RangeVar, LoopVar, RParenLoc,
+                                                Sema::BFRK_Rebuild);
   }
 
   /// \brief Build a new C++ tuple-based pack expansion statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  ///
-  /// FIXME: Actually implement this function.
-  StmtResult RebuildCXXPackExpansionStmt(Stmt *Range, 
-                                         Stmt *LoopVar,
+  StmtResult RebuildCXXPackExpansionStmt(Stmt *Range, Stmt *LoopVar,
                                          Stmt *Body) {
-    llvm_unreachable("not implemented");
+    // FIXME: Actually implement this function.
+    llvm_unreachable("unimplemented");
   }
 
   /// \brief Build a new C++0x range-based for statement.
@@ -6932,7 +6929,7 @@ TreeTransform<Derived>::TransformCoyieldExpr(CoyieldExpr *E) {
   return getDerived().RebuildCoyieldExpr(E->getKeywordLoc(), Result.get());
 }
 
-// [PIM]
+// [Meta]
 
 template <typename Derived>
 ExprResult TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
@@ -7295,52 +7292,44 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
   return FinishCXXForRangeStmt(NewStmt.get(), Body.get());
 }
 
-template<typename Derived>
+template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXTupleExpansionStmt(
-                                                     CXXTupleExpansionStmt *S) {
-
+    CXXTupleExpansionStmt *S) {
   StmtResult RangeVar = getDerived().TransformStmt(S->getRangeVarStmt());
   if (RangeVar.isInvalid()) {
-    llvm::outs() << "FAILED RANGE VAR\n";
+    llvm::errs() << "FAILED RANGE VAR\n";
     return StmtError();
   }
 
   StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
   if (LoopVar.isInvalid()) {
-    llvm::outs() << "FAILED LOOP VAR\n";
+    llvm::errs() << "FAILED LOOP VAR\n";
     return StmtError();
   }
 
   StmtResult NewStmt = S;
-  if (getDerived().AlwaysRebuild() ||
-      RangeVar.get() != S->getRangeVarStmt() ||
+  if (getDerived().AlwaysRebuild() || RangeVar.get() != S->getRangeVarStmt() ||
       LoopVar.get() != S->getLoopVarStmt()) {
-    NewStmt = getDerived().RebuildCXXTupleExpansionStmt(S->getForLoc(),
-                                                        S->getEllipsisLoc(),
-                                                        S->getColonLoc(), 
-                                                        RangeVar.get(),
-                                                        LoopVar.get(), 
-                                                        S->getRParenLoc());
+    NewStmt = getDerived().RebuildCXXTupleExpansionStmt(
+        S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(), RangeVar.get(),
+        LoopVar.get(), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
 
   StmtResult Body = getDerived().TransformStmt(S->getBody());
   if (Body.isInvalid()) {
-    llvm::outs() << "FAILED BODY\n";
+    llvm::errs() << "FAILED BODY\n";
     return StmtError();
   }
 
   // Body has changed but we didn't rebuild the for-range statement. Rebuild
   // it now so we have a new statement to attach the body to.
   if (Body.get() != S->getBody() && NewStmt.get() == S) {
-    NewStmt = getDerived().RebuildCXXTupleExpansionStmt(S->getForLoc(),
-                                                        S->getEllipsisLoc(),
-                                                        S->getColonLoc(), 
-                                                        RangeVar.get(),
-                                                        LoopVar.get(), 
-                                                        S->getRParenLoc());
+    NewStmt = getDerived().RebuildCXXTupleExpansionStmt(
+        S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(), RangeVar.get(),
+        LoopVar.get(), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
@@ -7352,10 +7341,10 @@ TreeTransform<Derived>::TransformCXXTupleExpansionStmt(
   return getSema().FinishCXXTupleExpansionStmt(TES, Body.get());
 }
 
-template<typename Derived>
+template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
-  llvm_unreachable("not implemented");
+  llvm_unreachable("unimplemented");
 }
 
 template<typename Derived>

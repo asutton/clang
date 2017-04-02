@@ -4337,7 +4337,7 @@ public:
   }
 
   /// \brief Returns the array of arguments.
-  Expr** getArgs() const { return Args; }
+  Expr **getArgs() const { return Args; }
 
   /// Returns the operand representing the reflected entity.
   Expr *getASTNode() const { return cast<Expr>(Args[0]); }

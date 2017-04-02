@@ -133,9 +133,11 @@ namespace clang {
     BRT_ReflectMember,
     /// @}
 
-    // Reflection traits that modify values.
-    BRT_ModifyAccess,  // 2nd operand indicates access level
-    BRT_ModifyVirtual, // 2nd operand is true to indicate pure virtual
+    /// \name Modifiers
+    /// @{
+    BRT_ModifyAccess,  ///< Second operand indicates access level.
+    BRT_ModifyVirtual  ///< Second operand is \c true to indicate pure virtual.
+    /// @}
   };
 }
 

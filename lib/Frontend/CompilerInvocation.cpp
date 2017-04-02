@@ -1962,7 +1962,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
                                    OPT_fno_dollars_in_identifiers,
                                    Opts.DollarIdents);
 
-  // [PIM] Determine if reflection is supported. If so, disable 
+  // [Meta] Determine if C++ reflection is supported. If so, disable
   // -fdollar-in-identifiers.
   Opts.Reflection = Args.hasArg(OPT_freflection);
   if (Opts.Reflection)

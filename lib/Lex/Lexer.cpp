@@ -3218,7 +3218,7 @@ LexNextToken:
     MIOpt.ReadToken();
     return LexIdentifier(Result, CurPtr);
 
-  case '$':   // $ in identifiers or [PIM] as punctuator.
+  case '$':   // $ in identifiers or [Meta] as punctuator.
     if (LangOpts.DollarIdents) {
       if (!isLexingRawMode())
         Diag(CurPtr-1, diag::ext_dollar_in_identifier);

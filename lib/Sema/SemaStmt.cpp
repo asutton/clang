@@ -1945,7 +1945,6 @@ static bool ObjCEnumerationCollection(Expr *Collection) {
           && Collection->getType()->getAs<ObjCObjectPointerType>() != nullptr;
 }
 
-
 // FIXME: Look away.
 extern ExprResult FinishOverloadedCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
                                            UnresolvedLookupExpr *ULE,
@@ -1982,21 +1981,23 @@ extern ExprResult FinishOverloadedCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
 /// If range-for lookup fails, try to synthesize a range over a tuple. In
 /// particular, we will try to construct the following:
 ///
+/// \verbatim
 ///   {
 ///     auto&& __range = range-init;
 ///     for<int I> {
 ///       for-range-declaration = get<I>(__range);
 ///       statement
 ///   }
+/// \endverbatim
 ///
-/// The `for<int I>` is obviously not valid C++. Internally, this syntax 
-/// parameterizes the range body by an unspecified integer value. When the
-/// statement is finished, we instantiate the body for each value of I from
-/// 0 to the tuple size of the range-init.
+/// The <tt>for\<int I\></tt> is obviously not valid C++. Internally, this
+/// syntax parameterizes the range body by an unspecified integer value. When
+/// the statement is finished, we instantiate the body for each value of \c I
+/// from 0 to the tuple size of the range-init.
 ///
 /// Note that if size() == 0, then then the body could simply be skipped.
 ///
-/// As noted above, the body of the loop is not available yet. 
+/// As noted above, the body of the loop is not available yet.
 StmtResult Sema::ActOnCXXForRangeStmt(Scope *S, SourceLocation ForLoc,
                                       SourceLocation CoawaitLoc, Stmt *First,
                                       SourceLocation ColonLoc, Expr *Range,
@@ -2463,9 +2464,9 @@ Sema::BuildCXXForRangeStmt(SourceLocation ForLoc, SourceLocation CoawaitLoc,
       ColonLoc, RParenLoc);
 }
 
-// Unpacks a loop variable from its statement.
-static bool UnpackLoopVar(Sema& SemaRef, Stmt *First, Expr *Second, 
-                          DeclStmt *& DS, Decl *& Var) {
+/// Unpacks a loop variable from its statement.
+static bool UnpackLoopVar(Sema &SemaRef, Stmt *First, Expr *Second,
+                          DeclStmt *&DS, Decl *&Var) {
   DS = dyn_cast<DeclStmt>(First);
   assert(DS && "first part of for range not a decl stmt");
 
@@ -2484,16 +2485,17 @@ static bool UnpackLoopVar(Sema& SemaRef, Stmt *First, Expr *Second,
   return true;
 }
 
-/// Synthesize a mostly qualified nested name specifier for a declaration. 
-/// this assumes the the declaration is both non-dependent and has no
-/// dependent components of its scope. Note that the source locations refer 
+/// Synthesize a mostly qualified nested name specifier for a declaration.
+///
+/// This assumes the the declaration is both non-dependent and has no
+/// dependent components of its scope. Note that the source locations refer
 /// to the point of synthesis, not physical source code locations.
 ///
-/// TODO: Allow this to be dependent.
-static NestedNameSpecifierLoc
-GetQualifiedNameForDecl(ASTContext& Cxt, Decl *D, SourceLocation Loc) {
+// TODO: Allow this to be dependent.
+static NestedNameSpecifierLoc GetQualifiedNameForDecl(ASTContext &Cxt, Decl *D,
+                                                      SourceLocation Loc) {
   // Get the path to the the TU.
-  llvm::SmallVector<DeclContext*, 4> Path;
+  llvm::SmallVector<DeclContext *, 4> Path;
   for (DeclContext *DC = D->getDeclContext(); !isa<TranslationUnitDecl>(DC);
        DC = DC->getParent()) {
     if (NamespaceDecl *NS = dyn_cast<NamespaceDecl>(DC)) {
@@ -2509,12 +2511,12 @@ GetQualifiedNameForDecl(ASTContext& Cxt, Decl *D, SourceLocation Loc) {
   NestedNameSpecifierLocBuilder Builder;
   for (DeclContext *DC : Path) {
     if (NamespaceDecl *NS = dyn_cast<NamespaceDecl>(DC)) {
-      // Builds NS::
+      // Builds 'NS::'.
       Builder.Extend(Cxt, NS, Loc, Loc);
     } else if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(DC)) {
       QualType T = Cxt.getTagDeclType(Class);
       TypeSourceInfo *TSI = Cxt.getTrivialTypeSourceInfo(T);
-      // Builds Class::. There is no template keyword.
+      // Builds 'Class::'. There is no template keyword.
       Builder.Extend(Cxt, SourceLocation(), TSI->getTypeLoc(), Loc);
     } else {
       llvm_unreachable("Unhandled nested name specifier kind");
@@ -2523,15 +2525,15 @@ GetQualifiedNameForDecl(ASTContext& Cxt, Decl *D, SourceLocation Loc) {
   return Builder.getWithLocInContext(Cxt);
 }
 
-
-// Build an expression that evaluates 'std::tuple_size<range-type>::value'.
-// Returns false if that expression cannot be evaluated. Otherwise, this
-// initializes the Size parameter with the number of elements in the Tuple
-// and returns true. Note that RangeType must not be dependent.
-static bool
-GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType, 
-             llvm::APSInt& Size)
-{
+/// Build an expression that evaluates \c std::tuple_size\<RangeType\>::value
+/// for the given type \p RangeType.
+///
+/// \p RangeType must not be a dependent type.
+///
+/// \returns  \c true if the expression can be evaluated, \c false otherwise.
+///           If \c true, \p Size is set to the number of elements in the tuple.
+static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
+                         llvm::APSInt &Size) {
   NamespaceDecl *Std = SemaRef.getStdNamespace();
   IdentifierInfo *SizeName = &SemaRef.PP.getIdentifierTable().get("tuple_size");
   LookupResult SizeLookup(SemaRef, SizeName, Loc, Sema::LookupAnyName);
@@ -2545,12 +2547,13 @@ GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   // Build a template specialization, instantiate it, and then complete it.
   TemplateName TempName(TupleSize);
   TemplateArgument Arg(RangeType);
-  TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(RangeType, Loc);
+  TypeSourceInfo *TSI =
+      SemaRef.Context.getTrivialTypeSourceInfo(RangeType, Loc);
   TemplateArgumentLoc ArgLoc(Arg, TSI);
   TemplateArgumentListInfo TempArgs(Loc, Loc);
   TempArgs.addArgument(ArgLoc);
   QualType SpecType = SemaRef.CheckTemplateIdType(TempName, Loc, TempArgs);
-  
+
   // Try to complete the type, but do so as if in a SFINAE context so
   // non-tuples don't give compiler errors.
   {
@@ -2559,20 +2562,20 @@ GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
       return false;
   }
   CXXRecordDecl *Spec = SpecType->getAsCXXRecordDecl();
- 
-  // Lookup the the ::value member in the specifier.
+
+  // Lookup the the '::value' member in the specifier.
   IdentifierInfo *ValueName = &SemaRef.PP.getIdentifierTable().get("value");
   LookupResult ValueLookup(SemaRef, ValueName, Loc, Sema::LookupOrdinaryName);
   SemaRef.LookupQualifiedName(ValueLookup, Spec);
   VarDecl *Value = ValueLookup.getAsSingle<VarDecl>();
   if (!Value) {
-    llvm::outs() << "NO VALUE\n";
+    llvm::errs() << "NO VALUE\n";
     return false;
   }
 
   // Build an expression that accesses the member and evaluate it.
-  ExprResult Ref = 
-    SemaRef.BuildDeclRefExpr(Value, Value->getType(), VK_LValue, Loc);
+  ExprResult Ref =
+      SemaRef.BuildDeclRefExpr(Value, Value->getType(), VK_LValue, Loc);
   if (!Ref.get()->EvaluateAsInt(Size, SemaRef.Context)) {
     SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;
     return false;
@@ -2580,13 +2583,15 @@ GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   return true;
 }
 
-/// Build a C++ expansion statement. This performs a primary analysis of
-/// the range initializer to determine which expansion mechanism is going to
-/// be used (tuple expansion, pack expansion, or structure expansion).
+/// Build a C++ expansion statement.
 ///
-/// Given a range variable, and a loop variable (First is a DeclStmt containing 
-/// the loop var), build a new CXXForTupleStmt containing that information. Note
-/// that the body will be parsed and instantiated later.
+/// This performs a primary analysis of the range initializer to determine which
+/// expansion mechanism is going to be used (tuple expansion, pack expansion, or
+/// structure expansion).
+///
+/// Given a range variable and a loop variable, build a new CXXForTupleStmt
+/// containing that information. Note that the body will be parsed and
+/// instantiated later.
 StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
                                        SourceLocation EllipsisLoc, Stmt *Init,
                                        SourceLocation ColonLoc, Expr *Range,
@@ -2609,18 +2614,17 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
   // the range is non-dependent to figure out the expansion method (either
   // as a tuple or structure bindings).
   //
-  // Build  auto && __tuple = range-init
+  // Build 'auto && __tuple = range-init'.
   SourceLocation RangeLoc = Range->getLocStart();
-  VarDecl *RangeVar = BuildForRangeVarDecl(*this, RangeLoc,
-                                           Context.getAutoRRefDeductType(),
-                                           "__tuple");
+  VarDecl *RangeVar = BuildForRangeVarDecl(
+      *this, RangeLoc, Context.getAutoRRefDeductType(), "__tuple");
   if (FinishForRangeVarDecl(*this, RangeVar, Range, RangeLoc,
                             diag::err_for_range_deduction_failure)) {
     LoopVar->setInvalidDecl();
     return StmtError();
   }
 
-  // Claim the type doesn't contain auto: we've already done the checking.
+  // Claim the type doesn't contain 'auto': we've already done the checking.
   DeclGroupPtrTy RangeGroup =
       BuildDeclaratorGroup(MutableArrayRef<Decl *>((Decl **)&RangeVar, 1));
   StmtResult RangeDecl = ActOnDeclStmt(RangeGroup, RangeLoc, RangeLoc);
@@ -2630,10 +2634,9 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
   }
 
   // Build the other various subexpressions needed for the loop body.
-  return BuildCXXTupleExpansionStmt(ForLoc, EllipsisLoc, ColonLoc, 
+  return BuildCXXTupleExpansionStmt(ForLoc, EllipsisLoc, ColonLoc,
                                     RangeDecl.get(), LoopDS, RParenLoc, Kind);
 }
-
 
 /// Given an initial decomposition of the expansion syntax, enough information
 /// that supports the parsing of the loop body.
@@ -2643,8 +2646,7 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
                                             Stmt *RangeVarDecl,
                                             Stmt *LoopVarDecl,
                                             SourceLocation RParenLoc,
-                                            BuildForRangeKind Kind)
-{
+                                            BuildForRangeKind Kind) {
   DeclStmt *RangeVarDS = cast<DeclStmt>(RangeVarDecl);
   VarDecl *RangeVar = cast<VarDecl>(RangeVarDS->getSingleDecl());
   QualType RangeVarType = RangeVar->getType();
@@ -2668,84 +2670,75 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
     RangeClassType = RangeClassType.getDesugaredType(Context);
 
     // FIXME: Support expansion over an array. For arrays, the loop variable
-    // should be 'loop-var = __tuple[I]' instead of a get expression.    
-
-    assert(!RangeClassType->isArrayType() && 
+    // should be 'loop-var = __tuple[I]' instead of a get expression.
+    assert(!RangeClassType->isArrayType() &&
            "Expansion over arrays not implemented");
 
     // Get the tuple size for the number of expansions.
     if (!GetTupleSize(*this, ColonLoc, RangeClassType, Size))
       return StmtError();
 
-    // Declare a new template parameter __N for which we will be substituting
+    // Declare a new template parameter '__N' for which we will be substituting
     // concrete values later.
     //
     // FIXME: Correctly compute the template parameter depth.
     IdentifierInfo *ParmName = &PP.getIdentifierTable().get("__N");
     const QualType ParmTy = Context.getSizeType();
-    TypeSourceInfo *ParmTI 
-      = Context.getTrivialTypeSourceInfo(ParmTy, ColonLoc);
-    NonTypeTemplateParmDecl *Parm
-      = NonTypeTemplateParmDecl::Create(Context, 
-                                        Context.getTranslationUnitDecl(),
-                                        ColonLoc, ColonLoc,
-                                        /*Depth=*/0, /*Position=*/0, 
-                                        ParmName, ParmTy, false, ParmTI);
-    NamedDecl *Parms[] {Parm};
-    ParmList = TemplateParameterList::Create(Context, ColonLoc, ColonLoc,
-                                             Parms, ColonLoc, nullptr);
+    TypeSourceInfo *ParmTI = Context.getTrivialTypeSourceInfo(ParmTy, ColonLoc);
+    NonTypeTemplateParmDecl *Parm = NonTypeTemplateParmDecl::Create(
+        Context, Context.getTranslationUnitDecl(), ColonLoc, ColonLoc,
+        /*Depth=*/0, /*Position=*/0, ParmName, ParmTy, false, ParmTI);
+    NamedDecl *Parms[] = {Parm};
+    ParmList = TemplateParameterList::Create(Context, ColonLoc, ColonLoc, Parms,
+                                             ColonLoc, nullptr);
 
-    // Build the dependent expression `NNS::get<__N>(__tuple)` where NS is the
-    // nested name specifier denoting the scope in which the __tuple type is 
-    // defined.
-    // Dependent template argument N.
-    ExprResult ParmRef = 
-      BuildDeclRefExpr(Parm, ParmTy, VK_RValue, ColonLoc);
+    // Build the dependent expression 'NNS::get<__N>(__tuple)' where 'NNS' is
+    // the nested name specifier denoting the scope in which the '__tuple' type
+    // is defined.
+    // Dependent template argument '__N'.
+    ExprResult ParmRef = BuildDeclRefExpr(Parm, ParmTy, VK_RValue, ColonLoc);
     if (ParmRef.isInvalid())
-      return StmtError(); 
+      return StmtError();
     TemplateArgument Arg(ParmRef.get());
     TemplateArgumentLocInfo ArgLocInfo(ParmRef.get());
     TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
     TemplateArgumentListInfo TempArgs(ColonLoc, ColonLoc);
     TempArgs.addArgument(ArgLoc);
 
-    // Get the name information for NNS::get.
-    CXXRecordDecl *RangeClass = RangeClassType->getAsCXXRecordDecl();  
-    NestedNameSpecifierLoc NNS = GetQualifiedNameForDecl(Context, RangeClass, 
-                                                         ColonLoc);
+    // Get the name information for 'NNS::get'.
+    CXXRecordDecl *RangeClass = RangeClassType->getAsCXXRecordDecl();
+    NestedNameSpecifierLoc NNS =
+        GetQualifiedNameForDecl(Context, RangeClass, ColonLoc);
     IdentifierInfo *Name = &PP.getIdentifierTable().get("get");
     DeclarationNameInfo DNI(Name, ColonLoc);
 
-    // Do an initial lookup for NNS::get where NNS is the declaration context
-    // of the range type.
+    // Do an initial lookup for 'NNS::get' where 'NNS' is the declaration
+    // context of the range type.
     LookupResult R(*this, DNI.getName(), ColonLoc, Sema::LookupOrdinaryName);
     if (!LookupQualifiedName(R, RangeClass->getDeclContext())) {
       CXXRecordDecl *D = RangeClassType->getAsCXXRecordDecl();
       Diag(ColonLoc, diag::err_no_member) << Name << D->getParent();
       return StmtError();
     }
-    const UnresolvedSetImpl& FoundNames = R.asUnresolvedSet();
+    const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
 
-    // Build the lookup expression NNS::get<I>.
-    UnresolvedLookupExpr *Fn =
-      UnresolvedLookupExpr::Create(Context, 
-                                   /*NamingClass=*/nullptr,
-                                   NNS, 
-                                   /*TemplateKWLoc=*/SourceLocation(),
-                                   DNI,
-                                   /*NeedsADL=*/false, 
-                                   &TempArgs,
-                                   FoundNames.begin(), FoundNames.end());
+    // Build the lookup expression 'NNS::get<I>'.
+    UnresolvedLookupExpr *Fn = UnresolvedLookupExpr::Create(
+        Context,
+        /*NamingClass=*/nullptr, NNS,
+        /*TemplateKWLoc=*/SourceLocation(), DNI,
+        /*NeedsADL=*/false, &TempArgs, FoundNames.begin(), FoundNames.end());
 
-    // The __tuple argument.
-    ExprResult RangeRef = 
-      BuildDeclRefExpr(RangeVar, RangeClassType, VK_LValue, ColonLoc);
+    // The '__tuple' argument.
+    ExprResult RangeRef =
+        BuildDeclRefExpr(RangeVar, RangeClassType, VK_LValue, ColonLoc);
     if (RangeRef.isInvalid())
       return StmtError();
 
-    // Build the actual call expression NNS::get<I>(__tuple)
-    Expr* Args[] { RangeRef.get() };
-    ExprResult Call = ActOnCallExpr(getCurScope(), Fn, ColonLoc, Args, ColonLoc);
+    // Build the actual call expression 'NNS::get<I>(__tuple)'.
+    Expr *Args[]{RangeRef.get()};
+    ExprResult Call =
+        ActOnCallExpr(getCurScope(), Fn, ColonLoc, Args, ColonLoc);
 
     // And make that the initializer of the tuple argument.
     AddInitializerToDecl(LoopVar, Call.get(), false);
@@ -2754,21 +2747,18 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
   }
 
   // Note that the body isn't parsed yet.
-  return new (Context) CXXTupleExpansionStmt(ParmList, RangeVarDS, LoopVarDS, 
-                                             nullptr, Size.getExtValue(), 
-                                             ForLoc, EllipsisLoc, ColonLoc, 
-                                             RParenLoc);
+  return new (Context) CXXTupleExpansionStmt(
+      ParmList, RangeVarDS, LoopVarDS, nullptr, Size.getExtValue(), ForLoc,
+      EllipsisLoc, ColonLoc, RParenLoc);
 }
 
 StmtResult Sema::BuildCXXPackExpansionStmt(SourceLocation ForLoc,
                                            SourceLocation EllipsisLoc,
                                            SourceLocation ColonLoc,
-                                           Expr *PackExpr,
-                                           Stmt *LoopVarDecl,
+                                           Expr *PackExpr, Stmt *LoopVarDecl,
                                            SourceLocation RParenLoc,
-                                           BuildForRangeKind Kind)
-{
-  llvm_unreachable("Not implemented");
+                                           BuildForRangeKind Kind) {
+  llvm_unreachable("unimplemented");
 }
 
 /// FinishObjCForCollectionStmt - Attach the body to a objective-C foreach
@@ -3019,7 +3009,7 @@ StmtResult Sema::FinishCXXPackExpansionStmt(CXXPackExpansionStmt *S, Stmt *B) {
 StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
   if (CXXTupleExpansionStmt *TES = dyn_cast<CXXTupleExpansionStmt>(S))
     return FinishCXXTupleExpansionStmt(TES, B);
-  else if (CXXPackExpansionStmt *PES = dyn_cast<CXXPackExpansionStmt>(S))
+  if (CXXPackExpansionStmt *PES = dyn_cast<CXXPackExpansionStmt>(S))
     return FinishCXXPackExpansionStmt(PES, B);
   llvm_unreachable("Invalid expansion statement");
 }

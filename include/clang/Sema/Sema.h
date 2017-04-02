@@ -3576,29 +3576,26 @@ public:
   StmtResult FinishCXXForRangeStmt(Stmt *ForRange, Stmt *Body);
 
   StmtResult ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
-                                   SourceLocation EllipsisLoc,
-                                   Stmt *LoopVar,
+                                   SourceLocation EllipsisLoc, Stmt *LoopVar,
                                    SourceLocation ColonLoc, Expr *Collection,
                                    SourceLocation RParenLoc,
                                    BuildForRangeKind Kind);
   StmtResult BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
                                         SourceLocation EllipsisLoc,
                                         SourceLocation ColonLoc,
-                                        Stmt *RangeVarDecl,
-                                        Stmt *LoopVarDecl,
+                                        Stmt *RangeVarDecl, Stmt *LoopVarDecl,
                                         SourceLocation RParenLoc,
                                         BuildForRangeKind Kind);
   StmtResult BuildCXXPackExpansionStmt(SourceLocation ForLoc,
                                        SourceLocation EllipsisLoc,
-                                       SourceLocation ColonLoc,
-                                       Expr *PackExpr,
+                                       SourceLocation ColonLoc, Expr *PackExpr,
                                        Stmt *LoopVarDecl,
                                        SourceLocation RParenLoc,
                                        BuildForRangeKind Kind);
   StmtResult FinishCXXExpansionStmt(Stmt *Expansion, Stmt *Body);
-  StmtResult FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *Expansion, 
+  StmtResult FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *Expansion,
                                          Stmt *Body);
-  StmtResult FinishCXXPackExpansionStmt(CXXPackExpansionStmt *Expansion, 
+  StmtResult FinishCXXPackExpansionStmt(CXXPackExpansionStmt *Expansion,
                                         Stmt *Body);
 
   StmtResult ActOnGotoStmt(SourceLocation GotoLoc,
@@ -6922,11 +6919,11 @@ public:
     /// \brief The entity that is being instantiated.
     Decl *Entity;
 
-    /// \brief The dependent for loop body in which we are performing 
+    /// \brief The dependent for loop body in which we are performing
     /// substitutions.
     ///
-    /// TODO: Make this a union with Entity since we are instantiating either
-    /// a declaration or a statement, never both.
+    // TODO: Make this a union with Entity since we are instantiating either
+    // a declaration or a statement, never both.
     Stmt *Loop;
 
     /// \brief The list of template arguments we are substituting, if they
@@ -7189,7 +7186,7 @@ public:
     /// \brief Note that we are substituting into the body of a for-tuple
     /// statement.
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
-                          Stmt *S, ArrayRef<TemplateArgument>TemplateArgs,
+                          Stmt *S, ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange);
 
     /// \brief Note that we have finished instantiating this template.
@@ -7480,8 +7477,10 @@ public:
 
   StmtResult SubstStmt(Stmt *S,
                        const MultiLevelTemplateArgumentList &TemplateArgs);
-  StmtResult SubstForTupleBody(Stmt *Body,
-                            const MultiLevelTemplateArgumentList &TemplateArgs);
+
+  StmtResult
+  SubstForTupleBody(Stmt *Body,
+                    const MultiLevelTemplateArgumentList &TemplateArgs);
 
   Decl *SubstDecl(Decl *D, DeclContext *Owner,
                   const MultiLevelTemplateArgumentList &TemplateArgs);
@@ -8248,10 +8247,9 @@ public:
   ExprResult ActOnReflectionTrait(SourceLocation KWLoc, ReflectionTrait Trait,
                                   ArrayRef<Expr *> Args,
                                   SourceLocation RParenLoc);
-  
   bool ModifyDeclarationAccess(ReflectionTraitExpr *E);
   bool ModifyDeclarationVirtual(ReflectionTraitExpr *E);
-  
+
   Decl *ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
                        IdentifierInfo *II);
   void ActOnMetaclassStartDefinition(Scope *S, Decl *MD,
@@ -8264,13 +8262,14 @@ public:
 
   void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                               SmallVectorImpl<Decl *> &Fields);
-  bool InjectCode(SmallVectorImpl<Stmt *>& Injections);
+  bool InjectCode(SmallVectorImpl<Stmt *> &Injections);
   bool InjectCode(Stmt *Injection);
 
-  DeclResult ActOnStartConstexprDeclaration(SourceLocation Loc, 
+  DeclResult ActOnStartConstexprDeclaration(SourceLocation Loc,
                                             int &ScopeFlags);
   void ActOnStartOfConstexprDef(Decl *D);
   DeclResult ActOnFinishConstexprDeclaration(Decl *D, Stmt *S);
+
   bool EvaluateConstexprDeclaration(ConstexprDecl *CD, FunctionDecl *D);
   bool EvaluateConstexprDeclaration(ConstexprDecl *CD, LambdaExpr *E);
   bool EvaluateConstexprDeclCall(ConstexprDecl *CD, Expr *E);

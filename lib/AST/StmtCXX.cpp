@@ -87,12 +87,11 @@ const VarDecl *CXXForRangeStmt::getLoopVariable() const {
   return const_cast<CXXForRangeStmt *>(this)->getLoopVariable();
 }
 
-
-CXXExpansionStmt::CXXExpansionStmt(StmtClass SC, DeclStmt *Range, 
-                                   DeclStmt *LoopVar, Stmt *Body, std::size_t N, 
-                                   SourceLocation FL, SourceLocation EL, 
+CXXExpansionStmt::CXXExpansionStmt(StmtClass SC, DeclStmt *Range,
+                                   DeclStmt *LoopVar, Stmt *Body, std::size_t N,
+                                   SourceLocation FL, SourceLocation EL,
                                    SourceLocation CL, SourceLocation RPL)
-    : Stmt(SC), ForLoc(FL), ColonLoc(CL), RParenLoc(RPL), Size(N), 
+    : Stmt(SC), ForLoc(FL), ColonLoc(CL), RParenLoc(RPL), Size(N),
       InstantiatedStmts(nullptr) {
   SubExprs[RANGE] = Range;
   SubExprs[LOOP] = LoopVar;
@@ -109,17 +108,13 @@ const VarDecl *CXXExpansionStmt::getLoopVariable() const {
   return const_cast<CXXExpansionStmt *>(this)->getLoopVariable();
 }
 
-CXXTupleExpansionStmt::CXXTupleExpansionStmt(TemplateParameterList *TP, 
-                                             DeclStmt *RangeVar, 
-                                             DeclStmt *LoopVar, Stmt *Body, 
-                                             std::size_t N, SourceLocation FL, 
-                                             SourceLocation EL, 
-                                             SourceLocation CL,
-                                             SourceLocation RPL)
-  : CXXExpansionStmt(CXXTupleExpansionStmtClass, RangeVar, LoopVar, Body, N, 
-                     FL, EL, CL, RPL), 
-    Parms (TP) {
-}
+CXXTupleExpansionStmt::CXXTupleExpansionStmt(
+    TemplateParameterList *TP, DeclStmt *RangeVar, DeclStmt *LoopVar,
+    Stmt *Body, std::size_t N, SourceLocation FL, SourceLocation EL,
+    SourceLocation CL, SourceLocation RPL)
+    : CXXExpansionStmt(CXXTupleExpansionStmtClass, RangeVar, LoopVar, Body, N,
+                       FL, EL, CL, RPL),
+      Parms(TP) {}
 
 NonTypeTemplateParmDecl *CXXTupleExpansionStmt::getPlaceholderParameter() {
   return cast<NonTypeTemplateParmDecl>(Parms->getParam(0));
@@ -136,14 +131,13 @@ const Expr *CXXTupleExpansionStmt::getRangeInit() const {
   return const_cast<CXXTupleExpansionStmt *>(this)->getRangeInit();
 }
 
-CXXPackExpansionStmt::CXXPackExpansionStmt(DeclStmt *RangeVar, 
-                                           DeclStmt *LoopVar, Stmt *Body, 
-                                           SourceLocation FL, SourceLocation EL, 
-                                           SourceLocation CL, 
+CXXPackExpansionStmt::CXXPackExpansionStmt(DeclStmt *RangeVar,
+                                           DeclStmt *LoopVar, Stmt *Body,
+                                           SourceLocation FL, SourceLocation EL,
+                                           SourceLocation CL,
                                            SourceLocation RPL)
-  : CXXExpansionStmt(CXXPackExpansionStmtClass, RangeVar, LoopVar, Body, 0, FL,
-                     EL, CL, RPL) {  
-}
+    : CXXExpansionStmt(CXXPackExpansionStmtClass, RangeVar, LoopVar, Body, 0,
+                       FL, EL, CL, RPL) {}
 
 CoroutineBodyStmt *CoroutineBodyStmt::Create(
     const ASTContext &C, CoroutineBodyStmt::CtorArgs const& Args) {

@@ -333,7 +333,8 @@ void StmtPrinter::VisitCXXTupleExpansionStmt(CXXTupleExpansionStmt *Node) {
   OS << ") {\n";
   PrintStmt(Node->getBody());
   Indent() << "}";
-  if (Policy.IncludeNewlines) OS << "\n";
+  if (Policy.IncludeNewlines)
+    OS << "\n";
 }
 
 void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
@@ -346,7 +347,8 @@ void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
   OS << ") {\n";
   PrintStmt(Node->getBody());
   Indent() << "}";
-  if (Policy.IncludeNewlines) OS << "\n";
+  if (Policy.IncludeNewlines)
+    OS << "\n";
 }
 
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
@@ -2506,7 +2508,7 @@ void StmtPrinter::VisitCoyieldExpr(CoyieldExpr *S) {
   PrintExpr(S->getOperand());
 }
 
-// [PIM] Reflection traits
+// [Meta] C++ Reflection
 
 static const char *getReflectionTraitName(ReflectionTrait RT) {
   switch (RT) {
