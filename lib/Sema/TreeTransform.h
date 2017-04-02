@@ -6932,8 +6932,6 @@ TreeTransform<Derived>::TransformCoyieldExpr(CoyieldExpr *E) {
   return getDerived().RebuildCoyieldExpr(E->getKeywordLoc(), Result.get());
 }
 
-// [PIM]
-
 template <typename Derived>
 ExprResult TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
   if (E->hasExpressionOperand()) {
@@ -6943,7 +6941,7 @@ ExprResult TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
     return getDerived().RebuildReflectionExpr(E->getOperatorLoc(), Expr.get());
   } else {
     TypeSourceInfo *TSI = getDerived().TransformType(E->getTypeOperand());
-    if (!TSI)
+    if (!TSI) 
       return ExprError();
     return getDerived().RebuildReflectionExpr(E->getOperatorLoc(), TSI);
   }
@@ -7299,18 +7297,13 @@ template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXTupleExpansionStmt(
                                                      CXXTupleExpansionStmt *S) {
-
   StmtResult RangeVar = getDerived().TransformStmt(S->getRangeVarStmt());
-  if (RangeVar.isInvalid()) {
-    llvm::outs() << "FAILED RANGE VAR\n";
+  if (RangeVar.isInvalid())
     return StmtError();
-  }
 
   StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
-  if (LoopVar.isInvalid()) {
-    llvm::outs() << "FAILED LOOP VAR\n";
+  if (LoopVar.isInvalid())
     return StmtError();
-  }
 
   StmtResult NewStmt = S;
   if (getDerived().AlwaysRebuild() ||
@@ -7327,10 +7320,8 @@ TreeTransform<Derived>::TransformCXXTupleExpansionStmt(
   }
 
   StmtResult Body = getDerived().TransformStmt(S->getBody());
-  if (Body.isInvalid()) {
-    llvm::outs() << "FAILED BODY\n";
+  if (Body.isInvalid())
     return StmtError();
-  }
 
   // Body has changed but we didn't rebuild the for-range statement. Rebuild
   // it now so we have a new statement to attach the body to.

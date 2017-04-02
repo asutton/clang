@@ -32,6 +32,8 @@ using namespace sema;
 /// declaration context vs. semantic context and an extra flag that determines
 /// how that should be interpreted.
 class MetaclassInjector : public TreeTransform<MetaclassInjector> {
+  using BaseType = TreeTransform<MetaclassInjector>;
+
   /// The class containing injected declaration.
   CXXRecordDecl *Source;
 
@@ -50,6 +52,10 @@ public:
 
   bool TransformTemplateArgument(const TemplateArgumentLoc &Input, 
                                  TemplateArgumentLoc &Output, bool Uneval);
+
+  QualType TransformType(QualType T);
+  TypeSourceInfo *TransformType(TypeSourceInfo *TSI);
+  QualType TransformType(TypeLocBuilder &TLB, TypeLoc TL);
 
   Decl *TransformDecl(Decl *D);
   Decl *TransformDecl(SourceLocation, Decl *D);
@@ -84,6 +90,27 @@ TransformTemplateArgument(const TemplateArgumentLoc &Input,
   return TreeTransform<MetaclassInjector>::TransformTemplateArgument(Input,
                                                                      Output,
                                                                      Uneval);
+}
+
+QualType MetaclassInjector::TransformType(QualType T) {
+  return BaseType::TransformType(T);
+}
+
+// If the requested TSI happens to be that of the source class, then
+// replace it with the destination class.
+TypeSourceInfo *MetaclassInjector::TransformType(TypeSourceInfo *TSI) {
+  QualType LHS = SemaRef.Context.getRecordType(Source);
+  QualType RHS = TSI->getType();
+  if (LHS == RHS) {
+    QualType Ret = SemaRef.Context.getRecordType(Dest);
+    return SemaRef.Context.getTrivialTypeSourceInfo(Ret);
+  }
+  else
+    return BaseType::TransformType(TSI);
+}
+
+QualType MetaclassInjector::TransformType(TypeLocBuilder &TLB, TypeLoc TL) {
+  return BaseType::TransformType(TLB, TL);
 }
 
 /// Look to see if the declaration has been locally transformed. If so,
@@ -123,7 +150,6 @@ Decl *MetaclassInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   /// FIXME: It might be a better idea to use a DeclVisitor here.
   switch (D->getKind()) {
     default:
-      D->dump();
       llvm_unreachable("Injection not implemented");
     case Decl::Var:
       return TransformVarDecl(cast<VarDecl>(D));

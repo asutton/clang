@@ -89,14 +89,36 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec &SS,
   if (!D)
     return ExprError();
 
+
   // If the declaration is a template parameter, defer until instantiation.
   //
   // FIXME: This needs to be adapted for non-type and template template
   // parameters also. Most likely, we need to allow ReflectExprs to contain
   // declarations in addition to expressions and types.
   if (TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
-    QualType T = Context.getTypeDeclType(TD);
-    if (T->isDependentType()) {
+    QualType T = Context.getTypeDeclType(TD); // The reflected type
+    QualType R = T; // The result type of the expression
+
+    // If this refers to a metaclass specifier, then pretend that it's 
+    // dependent so we don't substitute too early.
+    //
+    // FIXME: This is a hack. It would be better if we always returned an 
+    // ReflectionExpr and then packed that will all of the evaluation 
+    // information needed for later.
+    //
+    // FIXME: This even hackier since we're adjusting the qualified type to
+    // avoid a more principled check for metaclassiness later on.
+    if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(TD)) {
+      if (Class->isInjectedClassName()) {
+        Class = dyn_cast<CXXRecordDecl>(Class->getDeclContext());
+        T = Context.getRecordType(Class); // Point at the actual type.
+      }
+      if (dyn_cast<MetaclassDecl>(Class->getDeclContext()))
+        R = Context.DependentTy;
+    }
+
+    // If the return type is dependent, don't evaluate too early.
+    if (R->isDependentType()) {
       TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(T);
       return new (Context) ReflectionExpr(OpLoc, TSI, Context.DependentTy);
     }
@@ -183,7 +205,10 @@ static char const *GetReflectionClass(Decl *D) {
 
 /// \brief Return an expression whose type reflects the given node.
 ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
+  assert(!isa<MetaclassDecl>(D) && "Reflection of a metaclass");
+  
   // References to a metaclass should refer to the underlying class.
+  // FIXME: Handle this above.
   if (auto *MC = dyn_cast<MetaclassDecl>(D))
     D = MC->getDefinition();
 
@@ -1148,34 +1173,28 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   return ExprError();
 }
 
+/// Modify the access declarations, changing 
 bool Sema::ModifyDeclarationAccess(ReflectionTraitExpr *E) {
   llvm::ArrayRef<Expr *> Args(E->getArgs(), E->getNumArgs());
-
   SmallVector<llvm::APSInt, 2> Vals;
   CheckReflectionArgs(*this, Args, Vals);
 
   // FIXME: Verify that this is actually a reflected node.
   auto Info = ExplodeOpaqueValue(Vals[0].getExtValue());
   if (Info.first != RK_Decl) {
-    Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
+    Diag(E->getLocStart(), diag::err_invalid_reflection) << 0;
     return false;
   }
   Decl *D = (Decl *)Info.second;
 
-  // FIXME: Emit an appropriate diagnostic. Should be something like:
-  // "cannot modify the access of a non-class member."
-  //
   // FIXME: What about friend declarations? 
-  if (!D->getDeclContext()->isRecord()) {
-    Diag(E->getLocStart(), diag::err_not_implemented);
+  DeclContext *Owner = D->getDeclContext();
+  if (!Owner->isRecord()) {
+    Diag(E->getLocStart(), diag::err_modifies_mem_spec_of_non_member) << 0;
     return false;
   }
 
   switch (Vals[1].getExtValue()) {
-    case AccessNone:
-      // FIXME: Emit an appropriate diagnostic. Or should this be an error?
-      Diag(E->getLocStart(), diag::err_not_implemented);
-      return false;
     case AccessPublic:
       D->setAccess(AS_public);
       break;
@@ -1185,52 +1204,60 @@ bool Sema::ModifyDeclarationAccess(ReflectionTraitExpr *E) {
     case AccessProtected:
       D->setAccess(AS_protected);
       break;
+    default:
+      Diag(E->getLocStart(), diag::err_invalid_access_specifier);
+      return false;
   }
+
+  Owner->updateDecl(D);
 
   return true;
 }
 
 bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
   llvm::ArrayRef<Expr *> Args(E->getArgs(), E->getNumArgs());
-
   SmallVector<llvm::APSInt, 2> Vals;
   CheckReflectionArgs(*this, Args, Vals);
 
   // FIXME: Verify that this is actually a reflected node.
   auto Info = ExplodeOpaqueValue(Vals[0].getExtValue());
   if (Info.first != RK_Decl) {
-    Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
+    Diag(E->getLocStart(), diag::err_invalid_reflection) << 0;
     return false;
   }
   Decl *D = (Decl *)Info.second;
 
-  // FIXME: Emit an appropriate diagnostic.
-  if (!D->getDeclContext()->isRecord()) {
-    Diag(E->getLocStart(), diag::err_not_implemented);
+  DeclContext *Owner = D->getDeclContext();
+  if (!Owner->isRecord()) {
+    Diag(E->getLocStart(), diag::err_modifies_mem_spec_of_non_member) << 1;
     return false;
   }
 
+  // FIXME: It is an error if D is a member function template. The diagnostic
+  // code is: err_virt_member_function_template
   CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(D);
-  if (!D) {
-    // FIXME: "only member functions can be made virtual"
-    Diag(E->getLocStart(), diag::err_not_implemented);
+  if (!Method) {
+    Diag(E->getLocStart(), diag::err_virtual_non_function);
     return false;
   }
   if (isa<CXXConstructorDecl>(Method)) {
-    // FIXME: "constructors cannot be made virtual."
-    Diag(E->getLocStart(), diag::err_not_implemented);
+    Diag(E->getLocStart(), diag::err_constructor_cannot_be) << "virtual";
     return false;    
   }
 
-  // FIXME: We need to update the class to make indicate that it's polymorphic 
-  // or abstract.
-  bool Pure = Vals[1].getExtValue();
+  // All requests make methods virtual.
   Method->setVirtualAsWritten(true);
-  // FIXME: Use CheckPureMethod.
-  //
-  // FIXME: Don't mark a method pure if it has a definition.
-  if (Pure)
-    Method->setPure(true);
+
+  // But it's only pure when the 2nd operand is non-zero.
+  if (Vals[1].getExtValue()) {
+    if (Method->isDefined() && !isa<CXXDestructorDecl>(Method)) {
+      Diag (E->getLocStart(), diag::err_pure_function_with_definition);
+      return false;
+    }
+    CheckPureMethod(Method, Method->getSourceRange());
+  }
+
+  Owner->updateDecl(D);
 
   return true;
 }
@@ -1431,7 +1458,7 @@ DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc,
     llvm_unreachable("Constexpr declaration in unsupported context");
   }
 
-  CurContext->addDecl(CD);
+  CurContext->addHiddenDecl(CD);
 
   return CD;
 }

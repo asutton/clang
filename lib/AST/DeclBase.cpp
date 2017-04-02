@@ -1363,6 +1363,23 @@ void DeclContext::addDeclInternal(Decl *D) {
         makeDeclVisibleInContextWithFlags(ND, true, true);
 }
 
+void DeclContext::updateDecl(Decl *D) {
+  assert(D->getDeclContext() == this && 
+         "Decl is not a member of this context");
+  assert(containsDecl(D) &&
+         "Decl is not contained within of this context");
+
+  // Just replay the set of checks for the updated method. Because reflection
+  // can only add specifiers, these updates should only ever build on the
+  // properties of the class, never revert them.
+  //
+  // TODO: We may have to start from scratch and replay all declarations if
+  // the hypothesis above is found not to hold.
+  if (CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(this))
+    Record->addedMember(D);
+}
+
+
 /// shouldBeHidden - Determine whether a declaration which was declared
 /// within its semantic context should be invisible to qualified name lookup.
 static bool shouldBeHidden(NamedDecl *D) {

@@ -372,9 +372,6 @@ StmtResult Sema::ActOnCompoundStmt(SourceLocation L, SourceLocation R,
   }
 
   return new (Context) CompoundStmt(Context, Elts, L, R);
-  // Stmt *S = new (Context) CompoundStmt(Context, Elts, L, R);
-  // S->dump();
-  // return S;
 }
 
 StmtResult
@@ -2964,15 +2961,13 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
                                              Stmt *B) {
   SourceLocation Loc = S->getColonLoc();
 
-  // Set the body to the uninstantiated loop body.
+  // The loop body is the pre-instantiated versions of the composed loop body.
   S->setBody(B);
 
-  // FIXME: If S's range is dependent, then we can't instantiate the
-  // loop body.
-
-  // Return an empty statement (not an error) if the size is 0.
-  if (S->getSize() == 0)
-    return StmtResult();
+  // If the range initializer is dependent, then we can't deduce the tuple
+  // type or instantiate the body. Just return the statement as-is.
+  if (S->getRangeInit()->isTypeDependent())
+    return S;
 
   // Create a new compound statement that binds the loop variable with the
   // parsed body. This is what we're going to instantiate.
@@ -2980,6 +2975,10 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
   Stmt *Body = new (Context) CompoundStmt(Context, VarAndBody, 
                                           SourceLocation(),
                                           SourceLocation());
+
+  // Return an empty statement (not an error) if the size is 0.
+  if (S->getSize() == 0)
+    return StmtResult();
 
   // Instantiate the loop body for each element of the tuple.
   llvm::SmallVector<Stmt*, 8> Stmts;

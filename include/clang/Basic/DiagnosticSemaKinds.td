@@ -8860,6 +8860,15 @@ def err_reflection_not_function : Error<
   "reflected entity is not a function">;
 def err_parameter_out_of_bounds : Error<
   "reflected parameter is out of bounds">;
+def err_invalid_reflection : Error<
+  "reflection requires a %select{declaration|type|expression}0">;
+def err_modifies_mem_spec_of_non_member : Error<
+  "modifying the %select{access|virtual}0-specifier of a "
+  "non-member declaration">;
+def err_invalid_access_specifier : Error<
+  "invalid access specifier">;
+def err_pure_function_with_definition : Error<
+  "making a defined function pure virtual">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {
