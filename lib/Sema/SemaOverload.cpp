@@ -11771,7 +11771,7 @@ bool Sema::buildOverloadedCallSet(Scope *S, Expr *Fn,
 /// the completed call expression. If overload resolution fails, emits
 /// diagnostics and returns ExprError()
 ///
-/// FIXME: This was static.
+// FIXME: This was static.
 ExprResult FinishOverloadedCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
                                            UnresolvedLookupExpr *ULE,
                                            SourceLocation LParenLoc,

@@ -642,16 +642,16 @@ bool Parser::ParseTopLevelDecl(DeclGroupPtrTy &Result) {
 /// [OBJC]  objc-method-definition
 /// [OBJC]  @end
 /// [C++]   linkage-specification
-/// [GNU] asm-definition:
-///         simple-asm-expr ';'
 /// [C++11] empty-declaration
 /// [C++11] attribute-declaration
+/// [Meta]  metaclass-definition
+/// [C++0x/GNU] 'extern' 'template' declaration
+///
+/// [GNU] asm-definition:
+///         simple-asm-expr ';'
 ///
 /// [C++11] empty-declaration:
 ///           ';'
-/// [Meta]  metaclass-definition
-///
-/// [C++0x/GNU] 'extern' 'template' declaration
 Parser::DeclGroupPtrTy
 Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
                                  ParsingDeclSpec *DS) {

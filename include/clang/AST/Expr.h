@@ -557,7 +557,7 @@ public:
     ///
     /// If evaluation encounters an source code injection when this is not
     /// set, the expression has undefined behavior. This is only set for the
-    /// evaluation of constexpr-delarations. No other evaluations should modify
+    /// evaluation of constexpr-declarations. No other evaluations should modify
     /// source code.
     SmallVectorImpl<Stmt *> *Injections;
 

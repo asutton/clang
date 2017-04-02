@@ -597,6 +597,11 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 /// [G++]   binary-type-trait '(' type-id ',' type-id ')'           [TODO]
 /// [EMBT]  array-type-trait '(' type-id ',' integer ')'
 /// [clang] '^' block-literal
+/// [Meta]  '$' id-expression
+/// [Meta]  '$' type-id
+/// [Meta]  '$' nested-name-specifier[opt] namespace-name
+/// [Meta]  unary-reflection-trait '(' expression ')'
+/// [Meta]  binary-reflection-trait '(' expression ',' expression ')'
 ///
 ///       constant: [C99 6.4.4]
 ///         integer-constant
@@ -690,25 +695,24 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 ///                   '__is_lvalue_expr'
 ///                   '__is_rvalue_expr'
 ///
-/// [PIM]   '$' id-expression
-///         '$' type-id
-///         '$' nested-name-specifier[opt] namespace-name
-///         reflection-trait
+/// [Meta] unary-reflection-trait:
+///          '__reflect_name'
+///          '__reflect_qualified_name'
+///          '__reflect_type'
+///          '__reflect_traits'
+///          '__reflect_specifiers'
+///          '__reflect_pointer'
+///          '__reflect_value'
+///          '__reflect_num_parameters'
+///          '__reflect_declaration_context'
+///          '__reflect_lexical_context'
+///          '__reflect_num_members'
 ///
-///       reflection-trait:
-///         '__reflect_name'
-///         '__reflect_qualified_name'
-///         '__reflect_type'
-///         '__reflect_traits'
-///         '__reflect_specifiers'
-///         '__reflect_pointer'
-///         '__reflect_value'
-///         '__reflect_num_parameters'
-///         '__reflect_parameter'
-///         '__reflect_declaration_context'
-///         '__reflect_lexical_context'
-///         '__reflect_num_members'
-///         '__reflect_member'
+///        binary-reflection-trait:
+///          '__reflect_parameter'
+///          '__reflect_member'
+///          '__modify_access'
+///          '__modify_virtual'
 /// \endverbatim
 ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
                                        bool isAddressOfOperand,
@@ -1337,7 +1341,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return Result;
   }
 
-  case tok::dollar:  // [PIM] '$' [id-expression | type-name | namespace-name]
+  case tok::dollar:  // [Meta] '$' [id-expression | type-name | namespace-name]
     Res = ParseReflectExpression();
     break;
 

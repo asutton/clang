@@ -70,13 +70,13 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Declarator &D) {
 }
 
 /// Try to construct a reflection for the declaration named by \p II.
-/// 
+///
 /// This will reflect:
 ///
 ///   - id-expressions whose unqualified-id is an identifier
 ///   - type-names that are identifiers, and
 ///   - namespace-names
-///   
+///
 // TODO: Handle ambiguous and overloaded lookups.
 ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec &SS,
                                      IdentifierInfo *II, SourceLocation IdLoc) {
@@ -193,7 +193,6 @@ static char const *GetReflectionClass(Decl *D) {
     return "tu";
   case Decl::Var:
     return "variable";
-  
   case Decl::Constexpr:
     // Return something that is effectively unusable.
     return "decl";
@@ -429,15 +428,14 @@ struct Reflector {
   ExprResult ReflectMember(Type *, const llvm::APSInt &N);
 };
 
-/// Returns true if RTK is a trait that would modify a property of a 
-/// declaration.
-static inline bool
-IsModificationTrait(ReflectionTrait RTK) {
+/// Returns \c true if \p RTK is a reflection trait that would modify a property
+/// of a declaration.
+static inline bool IsModificationTrait(ReflectionTrait RTK) {
   return RTK >= BRT_ModifyAccess;
 }
 
-static bool CheckReflectionArgs(Sema& SemaRef, ArrayRef<Expr *> Args, 
-                                SmallVectorImpl<llvm::APSInt>& Vals) {
+static bool CheckReflectionArgs(Sema &SemaRef, ArrayRef<Expr *> Args,
+                                SmallVectorImpl<llvm::APSInt> &Vals) {
   // Ensure that each operand has integral type.
   for (unsigned i = 0; i < Args.size(); ++i) {
     Expr *E = Args[i];
@@ -447,7 +445,7 @@ static bool CheckReflectionArgs(Sema& SemaRef, ArrayRef<Expr *> Args,
     }
   }
 
-  // Evaluate all of the operands ahead of time. Note that trait arity is 
+  // Evaluate all of the operands ahead of time. Note that trait arity is
   // checked at parse time.
   Vals.resize(Args.size());
   for (unsigned i = 0; i < Args.size(); ++i) {
@@ -479,10 +477,9 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
 
   // Modifications are preserved until constexpr evaluation. These expressions 
   // have type void.
-  if (IsModificationTrait(Kind)) {
-    return new (Context) ReflectionTraitExpr(Context, Kind, Context.VoidTy, 
+  if (IsModificationTrait(Kind))
+    return new (Context) ReflectionTraitExpr(Context, Kind, Context.VoidTy,
                                              Args, APValue(), KWLoc, RParenLoc);
-  }
 
   // Get the integer values from the trait arguments.
   SmallVector<llvm::APSInt, 2> Vals;
@@ -1000,7 +997,7 @@ ExprResult Reflector::ReflectTraits(Type *T) {
 }
 
 /// Reflects a pointer.
-/// 
+///
 /// This only applies to global variables, member variables, and functions.
 ///
 // TODO: We can actually reflect pointers to local variables by storing
@@ -1177,6 +1174,7 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
 bool Sema::ModifyDeclarationAccess(ReflectionTraitExpr *E) {
   llvm::ArrayRef<Expr *> Args(E->getArgs(), E->getNumArgs());
   SmallVector<llvm::APSInt, 2> Vals;
+
   CheckReflectionArgs(*this, Args, Vals);
 
   // FIXME: Verify that this is actually a reflected node.
@@ -1217,6 +1215,7 @@ bool Sema::ModifyDeclarationAccess(ReflectionTraitExpr *E) {
 bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
   llvm::ArrayRef<Expr *> Args(E->getArgs(), E->getNumArgs());
   SmallVector<llvm::APSInt, 2> Vals;
+
   CheckReflectionArgs(*this, Args, Vals);
 
   // FIXME: Verify that this is actually a reflected node.
@@ -1261,7 +1260,6 @@ bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
 
   return true;
 }
-
 
 Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
                            IdentifierInfo *II) {
@@ -1374,27 +1372,24 @@ bool Sema::isMetaclassName(Scope *S, CXXScopeSpec *SS,
   return true;
 }
 
-/// Returns true if a constexpr-declaration in context C would be represented
-/// using a function.
-static inline bool
-NeedsFunctionRep(const DeclContext *C)
-{
+/// Returns \c true if a constexpr-declaration in declaration context \p C would
+/// be represented using a function.
+static inline bool NeedsFunctionRep(const DeclContext *C) {
   return C->isTranslationUnit() || C->isNamespace() || C->isRecord();
 }
 
-/// Create a constexpr declaration that will hold the body of the constexpr
-/// declaration. 
+/// Create a constexpr-declaration that will hold the body of the
+/// constexpr-declaration.
 ///
 /// This sets the scope flags to those of the scope that will be pushed
 /// just after this call returns.
 DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc,
-                                                int &ScopeFlags)
-{
+                                                int &ScopeFlags) {
   ConstexprDecl *CD;
-  if (NeedsFunctionRep(CurContext)) {    
+  if (NeedsFunctionRep(CurContext)) {
     // Build the function
     //
-    //  contexpr void __constexpr_decl() compound-statement
+    //  constexpr void __constexpr_decl() compound-statement
     //
     // where compound-statement is the as-of-yet parsed body of the
     // constexpr-declaration.
@@ -1405,18 +1400,17 @@ DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc,
     QualType Ty = Context.getFunctionType(Context.VoidTy, ArrayRef<QualType>(),
                                           FunctionProtoType::ExtProtoInfo());
     TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Ty, Loc);
-    FunctionDecl *Fn = FunctionDecl::Create(Context, CurContext, Loc, DNI, Ty, 
-                                            TSI, SC_None,
-                                            /*isInlineSpecfied=*/false, 
-                                            /*hasWrittenPrototype=*/false,
-                                            /*isConstexpr=*/true);
+    FunctionDecl *Fn =
+        FunctionDecl::Create(Context, CurContext, Loc, DNI, Ty, TSI, SC_None,
+                             /*isInlineSpecfied=*/false,
+                             /*hasWrittenPrototype=*/false,
+                             /*isConstexpr=*/true);
     Fn->setImplicit();
 
     // Build the constexpr declaration around the function.
     ScopeFlags = Scope::FnScope | Scope::DeclScope;
     CD = ConstexprDecl::Create(Context, CurContext, Loc, Fn);
-  }
-  else if (CurContext->isFunctionOrMethod()) {
+  } else if (CurContext->isFunctionOrMethod()) {
     // Build the expression
     //
     //    [&]() -> void compound-statement
@@ -1438,25 +1432,23 @@ DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc,
     LambdaIntroducer Intro;
     Intro.Range = SourceRange(Loc, Loc);
     Intro.Default = LCD_None;
-    CXXRecordDecl *Closure = 
-      createLambdaClosureType(Intro.Range, TSI, false, Intro.Default);
-    CXXMethodDecl *Method = 
-      startLambdaDefinition(Closure, Intro.Range, TSI, Loc, {}, true);
+    CXXRecordDecl *Closure =
+        createLambdaClosureType(Intro.Range, TSI, false, Intro.Default);
+    CXXMethodDecl *Method =
+        startLambdaDefinition(Closure, Intro.Range, TSI, Loc, {}, true);
     buildLambdaScope(LSI, Method, Intro.Range, Intro.Default, Intro.DefaultLoc,
-                     /*ExplicitParams=*/false, 
-                     /*ExplicitResultType*/true, 
-                     /*Mutable*/false);
+                     /*ExplicitParams=*/false,
+                     /*ExplicitResultType*/ true,
+                     /*Mutable*/ false);
 
     ScopeFlags = Scope::BlockScope | Scope::FnScope | Scope::DeclScope;
 
     // NOTE: The call operator is not yet attached to the closure type. That
-    // happens in ActOnFinishConstexprDeclaration. The operator is, however,
+    // happens in ActOnFinishConstexprDeclaration(). The operator is, however,
     // available in the LSI.
     CD = ConstexprDecl::Create(Context, CurContext, Loc, Closure);
-  }
-  else {
-    llvm_unreachable("Constexpr declaration in unsupported context");
-  }
+  } else
+    llvm_unreachable("constexpr declaration in unsupported context");
 
   CurContext->addHiddenDecl(CD);
 
@@ -1464,6 +1456,7 @@ DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc,
 }
 
 /// Called just prior to parsing the definition of a constexpr-declaration.
+///
 /// This ensures that the declaration context is pushed with the appropriate
 /// scope.
 void Sema::ActOnStartOfConstexprDef(Decl *D) {
@@ -1471,79 +1464,76 @@ void Sema::ActOnStartOfConstexprDef(Decl *D) {
   if (CD->hasFunctionRepresentation())
     PushDeclContext(CurScope, CD->getFunctionDecl());
   else {
-    LambdaScopeInfo* LSI = cast<LambdaScopeInfo>(FunctionScopes.back());
+    LambdaScopeInfo *LSI = cast<LambdaScopeInfo>(FunctionScopes.back());
     PushDeclContext(CurScope, LSI->CallOperator);
-    PushExpressionEvaluationContext(PotentiallyEvaluated);  
+    PushExpressionEvaluationContext(PotentiallyEvaluated);
   }
 }
 
 /// Attach the parsed statements to the body.
-DeclResult Sema::ActOnFinishConstexprDeclaration(Decl *D, Stmt *S)
-{
+DeclResult Sema::ActOnFinishConstexprDeclaration(Decl *D, Stmt *S) {
   ConstexprDecl *CD = cast<ConstexprDecl>(D);
   if (CD->hasFunctionRepresentation()) {
     FunctionDecl *Fn = CD->getFunctionDecl();
     ActOnFinishFunctionBody(Fn, S);
     if (!EvaluateConstexprDeclaration(CD, Fn))
-      return DeclResult(true);
-  }
-  else {
-    LambdaScopeInfo* LSI = cast<LambdaScopeInfo>(FunctionScopes.back());
+      return true;
+  } else {
+    LambdaScopeInfo *LSI = cast<LambdaScopeInfo>(FunctionScopes.back());
     ActOnFinishFunctionBody(LSI->CallOperator, S);
     LambdaExpr *Lambda = cast<LambdaExpr>(
-      BuildLambdaExpr(CD->getLocStart(), S->getLocEnd(), LSI).get());
+        BuildLambdaExpr(CD->getLocStart(), S->getLocEnd(), LSI).get());
     if (!EvaluateConstexprDeclaration(CD, Lambda))
-      return DeclResult(true);
+      return true;
   }
   return CD;
 }
 
-/// Process a constexpr-declaration. This builds an unnamed constexpr void 
-/// function whose body is that of the constexpr-delaration, and evaluates
-/// a call to that function. 
-bool Sema::EvaluateConstexprDeclaration(ConstexprDecl *CD, FunctionDecl* D) {
+/// Process a constexpr-declaration.
+///
+/// This builds an unnamed \c constexpr \c void function whose body is that of
+/// the constexpr-delaration, and evaluates a call to that function.
+bool Sema::EvaluateConstexprDeclaration(ConstexprDecl *CD, FunctionDecl *D) {
   QualType Ty = D->getType();
-  DeclRefExpr *Ref = new (Context) DeclRefExpr(D, false, Ty, VK_LValue,
-                                               SourceLocation());
+  DeclRefExpr *Ref =
+      new (Context) DeclRefExpr(D, false, Ty, VK_LValue, SourceLocation());
   QualType PtrTy = Context.getPointerType(Ty);
-  ImplicitCastExpr *Cast = ImplicitCastExpr::Create(Context, PtrTy,
-                                                    CK_FunctionToPointerDecay,
-                                                    Ref, nullptr, VK_RValue);
-  Expr *Call = new (Context) CallExpr(Context, Cast, ArrayRef<Expr*>(), 
-                                      Context.VoidTy, VK_RValue, 
-                                      SourceLocation());
+  ImplicitCastExpr *Cast = ImplicitCastExpr::Create(
+      Context, PtrTy, CK_FunctionToPointerDecay, Ref, nullptr, VK_RValue);
+  Expr *Call =
+      new (Context) CallExpr(Context, Cast, ArrayRef<Expr *>(), Context.VoidTy,
+                             VK_RValue, SourceLocation());
   return EvaluateConstexprDeclCall(CD, Call);
 }
 
-/// Process a constexpr-declaration. This builds an unnamed constexpr void 
-/// function whose body is that of the constexpr-delaration, and evaluates
-/// a call to that function. 
-bool Sema::EvaluateConstexprDeclaration(ConstexprDecl *CD, LambdaExpr* E) {
+/// Process a constexpr-declaration.
+///
+/// This builds an unnamed \c constexpr \c void function whose body is that of
+/// the constexpr-delaration, and evaluates a call to that function.
+bool Sema::EvaluateConstexprDeclaration(ConstexprDecl *CD, LambdaExpr *E) {
   CXXMethodDecl *Method = E->getCallOperator();
   QualType MethodTy = Method->getType();
-  DeclRefExpr *Ref = new (Context) DeclRefExpr(Method, false, MethodTy, 
-                                               VK_LValue, SourceLocation());
+  DeclRefExpr *Ref = new (Context)
+      DeclRefExpr(Method, false, MethodTy, VK_LValue, SourceLocation());
   QualType PtrTy = Context.getPointerType(MethodTy);
-  ImplicitCastExpr *Cast = ImplicitCastExpr::Create(Context, PtrTy,
-                                                    CK_FunctionToPointerDecay,
-                                                    Ref, nullptr, 
-                                                    VK_RValue);
-  Expr *Call = new (Context) CXXOperatorCallExpr(Context, OO_Call, Cast,
-                                                 {E}, 
-                                                 Context.VoidTy,
-                                                 VK_RValue,
-                                                 SourceLocation(),
-                                                 /*fpContractible=*/false);
+  ImplicitCastExpr *Cast = ImplicitCastExpr::Create(
+      Context, PtrTy, CK_FunctionToPointerDecay, Ref, nullptr, VK_RValue);
+  Expr *Call = new (Context) CXXOperatorCallExpr(
+      Context, OO_Call, Cast, {E}, Context.VoidTy, VK_RValue, SourceLocation(),
+      /*fpContractible=*/false);
   return EvaluateConstexprDeclCall(CD, Call);
 }
 
 /// Evaluate the expression.
 ///
-/// FIXME: We probably want to trap declarative effects so that we can apply 
-/// them as declarations after execution. That would require a modification to 
-/// EvalResult (e.g., an injection set?).
+/// \returns  \c true if the expression \p E can be evaluated, \c false
+///           otherwise.
+///
+// FIXME: We probably want to trap declarative effects so that we can apply
+// them as declarations after execution. That would require a modification to
+// EvalResult (e.g., an injection set?).
 bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, Expr *E) {
-  // Associate the call expression with the declaration. 
+  // Associate the call expression with the declaration.
   CD->setCallExpr(E);
 
   // Don't evaluate the call if this declaration appears within a metaclass.
@@ -1556,18 +1546,19 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, Expr *E) {
   Expr::EvalResult Eval;
   Eval.Diag = &Notes;
   Eval.Injections = &Injections;
+
   bool Result = E->EvaluateAsRValue(Eval, Context);
   if (!Result) {
-    // If the only error is that we didn't initialize a (void) value, that's 
+    // If the only error is that we didn't initialize a (void) value, that's
     // actually okay. APValue doesn't know how to do this anyway.
     //
-    // FIXME: We should probably have a top-level EvaluateAsVoid function that
+    // FIXME: We should probably have a top-level EvaluateAsVoid() function that
     // handles this case.
-    if (!Notes.empty() && 
+    if (!Notes.empty() &&
         Notes[0].second.getDiagID() != diag::note_constexpr_uninitialized) {
       // FIXME: These source locations are wrong.
-      Diag(CD->getLocStart(), diag::err_expr_not_ice) 
-        << CD->getSourceRange() << LangOpts.CPlusPlus;
+      Diag(CD->getLocStart(), diag::err_expr_not_ice)
+          << CD->getSourceRange() << LangOpts.CPlusPlus;
       for (const PartialDiagnosticAt &Note : Notes)
         Diag(Note.first, Note.second);
       return false;

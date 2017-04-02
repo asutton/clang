@@ -1502,6 +1502,9 @@ bool Parser::isForRangeIdentifier() {
 ///             statement
 /// [OBJC2] 'for' '(' declaration 'in' expr ')' statement
 /// [OBJC2] 'for' '(' expr 'in' expr ')' statement
+/// [Meta]  'for' '...'
+///             '(' for-range-declaration ':' 'for-range-initializer ')'
+///             statement
 ///
 /// [C++] for-init-statement:
 /// [C++]   expression-statement
@@ -1512,20 +1515,15 @@ bool Parser::isForRangeIdentifier() {
 /// [C++0x] for-range-initializer:
 /// [C++0x]   expression
 /// [C++0x]   braced-init-list            [TODO]
-///
-/// [Meta]  'for' '...' 
-///              '(' for-range-declaration ':' 'for-range-initializer ')'
-///              statement
 StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   assert(Tok.is(tok::kw_for) && "Not a for stmt!");
   SourceLocation ForLoc = ConsumeToken();  // eat the 'for'.
 
   // [Meta]: Check 'for ...' or 'for constexpr.'
-  //
   // TODO: What does 'for... co_await' mean?
   SourceLocation EllipsisLoc;
-  if (getLangOpts().CPlusPlus1z 
-      && (Tok.is(tok::ellipsis) || Tok.is(tok::kw_constexpr)))
+  if (getLangOpts().CPlusPlus1z &&
+      (Tok.is(tok::ellipsis) || Tok.is(tok::kw_constexpr)))
     EllipsisLoc = ConsumeToken();
 
   SourceLocation CoawaitLoc;
@@ -1756,13 +1754,13 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
     if (EllipsisLoc.isInvalid())
       ForRangeStmt = Actions.ActOnCXXForRangeStmt(
           getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
-          ForRangeInit.ColonLoc, CorrectedRange.get(),
-          T.getCloseLocation(), Sema::BFRK_Build);
+          ForRangeInit.ColonLoc, CorrectedRange.get(), T.getCloseLocation(),
+          Sema::BFRK_Build);
     else
       ForRangeStmt = Actions.ActOnCXXExpansionStmt(
           getCurScope(), ForLoc, EllipsisLoc, FirstPart.get(),
-          ForRangeInit.ColonLoc, CorrectedRange.get(),
-          T.getCloseLocation(), Sema::BFRK_Build);
+          ForRangeInit.ColonLoc, CorrectedRange.get(), T.getCloseLocation(),
+          Sema::BFRK_Build);
 
   // Similarly, we need to do the semantic analysis for a for-range
   // statement immediately in order to close over temporaries correctly.
@@ -1819,8 +1817,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   if (ForRange) {
     if (EllipsisLoc.isInvalid())
       return Actions.FinishCXXForRangeStmt(ForRangeStmt.get(), Body.get());
-    else
-      return Actions.FinishCXXExpansionStmt(ForRangeStmt.get(), Body.get());
+    return Actions.FinishCXXExpansionStmt(ForRangeStmt.get(), Body.get());
   }
 
   return Actions.ActOnForStmt(ForLoc, T.getOpenLocation(), FirstPart.get(),

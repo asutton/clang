@@ -12,25 +12,25 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/Sema/SemaInternal.h"
 #include "TreeTransform.h"
 #include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclVisitor.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/Sema/SemaInternal.h"
 
 using namespace clang;
 using namespace sema;
 
-/// Injects declarations from a metaclass definition into another class,
+/// Injects declarations from a C++ metaclass definition into another class,
 /// by replacing all references to the metaclass type with that of the
 /// target type.
 ///
-/// FIXME: To improve diagnostics, we'll probably want to record the source
-/// of every injection. We might actually do this using a separate lexical
-/// declaration context vs. semantic context and an extra flag that determines
-/// how that should be interpreted.
+// FIXME: To improve diagnostics, we'll probably want to record the source
+// of every injection. We might actually do this using a separate lexical
+// declaration context vs. semantic context and an extra flag that determines
+// how that should be interpreted.
 class MetaclassInjector : public TreeTransform<MetaclassInjector> {
   using BaseType = TreeTransform<MetaclassInjector>;
 
@@ -41,16 +41,16 @@ class MetaclassInjector : public TreeTransform<MetaclassInjector> {
   CXXRecordDecl *Dest;
 
 public:
-  MetaclassInjector(Sema& SemaRef, CXXRecordDecl *S, CXXRecordDecl *D)
-    : TreeTransform<MetaclassInjector>(SemaRef), Source(S), Dest(D) {
-      // Explicitly re-map the the source as the destination.
-      transformedLocalDecl(Source, Dest);
-    }
+  MetaclassInjector(Sema &SemaRef, CXXRecordDecl *S, CXXRecordDecl *D)
+      : TreeTransform<MetaclassInjector>(SemaRef), Source(S), Dest(D) {
+    // Explicitly re-map the the source as the destination.
+    transformedLocalDecl(Source, Dest);
+  }
 
   // Always rebuild nodes; we're effectively copying from one AST to another.
   bool AlwaysRebuild() const { return true; }
 
-  bool TransformTemplateArgument(const TemplateArgumentLoc &Input, 
+  bool TransformTemplateArgument(const TemplateArgumentLoc &Input,
                                  TemplateArgumentLoc &Output, bool Uneval);
 
   QualType TransformType(QualType T);
@@ -72,24 +72,22 @@ public:
   void TransformFunctionDefinition(FunctionDecl *D, FunctionDecl *R);
 };
 
-
-// For some reason, the default does not expect integer template arguments.
-// So we override that behavior here.
-//
+/// For some reason, the default does not expect integer template arguments.
+/// So we override that behavior here.
+///
 // FIXME: This might be a hack because the non-type template argument for
 // a reflection expression (i.e., the type of $x) is not formed correctly
 // in SemaReflect.cpp.
-bool MetaclassInjector::
-TransformTemplateArgument(const TemplateArgumentLoc &Input,
-                          TemplateArgumentLoc &Output, bool Uneval) {
+bool MetaclassInjector::TransformTemplateArgument(
+    const TemplateArgumentLoc &Input, TemplateArgumentLoc &Output,
+    bool Uneval) {
   const TemplateArgument &Arg = Input.getArgument();
   if (Arg.getKind() == TemplateArgument::Integral) {
     Output = Input;
     return false;
   }
-  return TreeTransform<MetaclassInjector>::TransformTemplateArgument(Input,
-                                                                     Output,
-                                                                     Uneval);
+  return TreeTransform<MetaclassInjector>::TransformTemplateArgument(
+      Input, Output, Uneval);
 }
 
 QualType MetaclassInjector::TransformType(QualType T) {
@@ -119,10 +117,12 @@ Decl *MetaclassInjector::TransformDecl(Decl *D) {
   return TransformDecl(D->getLocation(), D);
 }
 
-/// Returns true if the given declaration is not a candidate for 
-/// transformation. This is true for any declaration that is not directly
-/// contained within the metaclass, either directly as a member or indirectly
-/// as e.g., a local variable in a member function.
+/// Returns \c true if the given declaration is not a candidate for
+/// transformation.
+///
+/// This is \c true for any declaration that is not directly contained within
+/// the metaclass, either directly as a member or indirectly (e.g., a local
+/// variable in a member function).
 static inline bool ShouldNotTransform(Decl *D, DeclContext *Cxt) {
   DeclContext *DC = D->getDeclContext();
   while (DC) {
@@ -133,8 +133,8 @@ static inline bool ShouldNotTransform(Decl *D, DeclContext *Cxt) {
   return DC == nullptr;
 }
 
-/// Look to see if the declaration has been locally transformed. If so,
-/// return that. Otherwise, explicitly rebuild the declaration.
+/// See if the declaration has been locally transformed. If so, return that.
+/// Otherwise, explicitly rebuild the declaration.
 Decl *MetaclassInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   if (!D)
     return nullptr;
@@ -142,12 +142,13 @@ Decl *MetaclassInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   if (ShouldNotTransform(D, Source))
     return D;
 
-  llvm::DenseMap<Decl *, Decl *>::iterator Known
-    = TransformedLocalDecls.find(D);
+  llvm::DenseMap<Decl *, Decl *>::iterator Known =
+      TransformedLocalDecls.find(D);
+
   if (Known != TransformedLocalDecls.end())
     return Known->second;
 
-  /// FIXME: It might be a better idea to use a DeclVisitor here.
+  // FIXME: It might be a better idea to use a DeclVisitor here.
   switch (D->getKind()) {
     default:
       llvm_unreachable("Injection not implemented");
@@ -172,14 +173,13 @@ Decl *MetaclassInjector::TransformDecl(SourceLocation Loc, Decl *D) {
 
 Decl *MetaclassInjector::TransformVarDecl(VarDecl *D) {
   TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
-  VarDecl *R = VarDecl::Create(SemaRef.Context, SemaRef.CurContext,  
-                               D->getLocation(), D->getLocation(), 
-                               D->getIdentifier(), TypeInfo->getType(), 
-                               TypeInfo, D->getStorageClass());
+  VarDecl *R = VarDecl::Create(
+      SemaRef.Context, SemaRef.CurContext, D->getLocation(), D->getLocation(),
+      D->getIdentifier(), TypeInfo->getType(), TypeInfo, D->getStorageClass());
   transformedLocalDecl(D, R);
 
   // FIXME: Other attributes to translate?
-  
+
   SemaRef.CurContext->addDecl(R);
 
   // Transform the initializer.
@@ -203,14 +203,14 @@ Decl *MetaclassInjector::TransformVarDecl(VarDecl *D) {
         Init = TransformInitializer(D->getInit(),
                                     D->getInitStyle() == VarDecl::CallInit);
       }
+
       if (!Init.isInvalid()) {
         if (Init.get())
           SemaRef.AddInitializerToDecl(R, Init.get(), D->isDirectInit());
         else
           SemaRef.ActOnUninitializedDecl(R);
-      } else {
+      } else
         R->setInvalidDecl();
-      }
     }
   }
 
@@ -222,11 +222,11 @@ Decl *MetaclassInjector::TransformParmVarDecl(ParmVarDecl *D) {
   TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
   auto *R = SemaRef.CheckParameter(SemaRef.Context.getTranslationUnitDecl(),
                                    D->getLocation(), D->getLocation(),
-                                   D->getIdentifier(), TypeInfo->getType(), 
+                                   D->getIdentifier(), TypeInfo->getType(),
                                    TypeInfo, D->getStorageClass());
   transformedLocalDecl(D, R);
 
-  // FIXME: Are there any attributes we need to set?  
+  // FIXME: Are there any attributes we need to set?
   // FIXME: Transform the default argument also.
 
   return R;
@@ -234,18 +234,12 @@ Decl *MetaclassInjector::TransformParmVarDecl(ParmVarDecl *D) {
 
 /// Translate static methods inside of a class.
 Decl *MetaclassInjector::TransformFunctionDecl(FunctionDecl *D) {
-  DeclarationNameInfo NameInfo = 
-    TransformDeclarationNameInfo(D->getNameInfo());
+  DeclarationNameInfo NameInfo = TransformDeclarationNameInfo(D->getNameInfo());
   TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
-  FunctionDecl *R = FunctionDecl::Create(SemaRef.Context, SemaRef.CurContext, 
-                                         D->getLocation(), 
-                                         NameInfo.getLoc(), 
-                                         NameInfo.getName(),
-                                         TypeInfo->getType(), TypeInfo,
-                                         D->getStorageClass(),
-                                         D->isInlineSpecified(),
-                                         D->hasWrittenPrototype(),
-                                         D->isConstexpr());
+  FunctionDecl *R = FunctionDecl::Create(
+      SemaRef.Context, SemaRef.CurContext, D->getLocation(), NameInfo.getLoc(),
+      NameInfo.getName(), TypeInfo->getType(), TypeInfo, D->getStorageClass(),
+      D->isInlineSpecified(), D->hasWrittenPrototype(), D->isConstexpr());
   transformedLocalDecl(D, R);
 
   TransformFunctionParameters(D, R);
@@ -254,7 +248,7 @@ Decl *MetaclassInjector::TransformFunctionDecl(FunctionDecl *D) {
   R->setAccess(D->getAccess()); // FIXME: Is this right?
   if (D->isDeletedAsWritten())
     SemaRef.SetDeclDeleted(R, R->getLocation());
-  
+
   // FIXME: Make sure that we aren't overriding an existing declaration.
   SemaRef.CurContext->addDecl(R);
 
@@ -263,8 +257,7 @@ Decl *MetaclassInjector::TransformFunctionDecl(FunctionDecl *D) {
 }
 
 Decl *MetaclassInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
-  DeclarationNameInfo NameInfo = 
-    TransformDeclarationNameInfo(D->getNameInfo());
+  DeclarationNameInfo NameInfo = TransformDeclarationNameInfo(D->getNameInfo());
 
   // FIXME: The exception specification is not being translated correctly
   // for destructors (probably others).
@@ -274,24 +267,20 @@ Decl *MetaclassInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
   CXXRecordDecl *CurClass = cast<CXXRecordDecl>(SemaRef.CurContext);
   CXXMethodDecl *R;
   if (auto *Ctor = dyn_cast<CXXConstructorDecl>(D))
-    R = CXXConstructorDecl::Create(SemaRef.Context, CurClass, 
-                                   D->getLocation(), NameInfo, 
-                                   TypeInfo->getType(), TypeInfo,
+    R = CXXConstructorDecl::Create(SemaRef.Context, CurClass, D->getLocation(),
+                                   NameInfo, TypeInfo->getType(), TypeInfo,
                                    Ctor->isExplicitSpecified(),
-                                   Ctor->isInlineSpecified(), 
+                                   Ctor->isInlineSpecified(),
                                    /*isImplicitlyDeclared=*/false,
-                                   Ctor->isConstexpr(),
-                                   InheritedConstructor());
+                                   Ctor->isConstexpr(), InheritedConstructor());
   else if (isa<CXXDestructorDecl>(D))
-    R = CXXDestructorDecl::Create(SemaRef.Context, CurClass, 
-                                  D->getLocation(), NameInfo, 
-                                  TypeInfo->getType(), TypeInfo, 
-                                  D->isInlineSpecified(), 
+    R = CXXDestructorDecl::Create(SemaRef.Context, CurClass, D->getLocation(),
+                                  NameInfo, TypeInfo->getType(), TypeInfo,
+                                  D->isInlineSpecified(),
                                   /*isImplicitlyDeclared=*/false);
   else
-    R = CXXMethodDecl::Create(SemaRef.Context, CurClass, 
-                              D->getLocStart(), NameInfo, 
-                              TypeInfo->getType(), TypeInfo,
+    R = CXXMethodDecl::Create(SemaRef.Context, CurClass, D->getLocStart(),
+                              NameInfo, TypeInfo->getType(), TypeInfo,
                               D->getStorageClass(), D->isInlineSpecified(),
                               D->isConstexpr(), D->getLocEnd());
   transformedLocalDecl(D, R);
@@ -316,28 +305,26 @@ Decl *MetaclassInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
   return R;
 }
 
-Decl * MetaclassInjector::TransformCXXConstructorDecl(CXXConstructorDecl *D) {
+Decl *MetaclassInjector::TransformCXXConstructorDecl(CXXConstructorDecl *D) {
   return TransformCXXMethodDecl(D);
 }
 
-Decl * MetaclassInjector::TransformCXXDestructorDecl(CXXDestructorDecl *D) {
+Decl *MetaclassInjector::TransformCXXDestructorDecl(CXXDestructorDecl *D) {
   return TransformCXXMethodDecl(D);
 }
 
 Decl *MetaclassInjector::TransformFieldDecl(FieldDecl *D) {
   TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
-  FieldDecl *R = FieldDecl::Create(SemaRef.Context, SemaRef.CurContext, 
-                                   D->getLocation(), D->getLocation(), 
-                                   D->getIdentifier(), 
-                                   TypeInfo->getType(), TypeInfo,
-                                   /*Bitwidth*/nullptr, D->isMutable(), 
-                                   D->getInClassInitStyle());
+  FieldDecl *R = FieldDecl::Create(
+      SemaRef.Context, SemaRef.CurContext, D->getLocation(), D->getLocation(),
+      D->getIdentifier(), TypeInfo->getType(), TypeInfo,
+      /*Bitwidth*/ nullptr, D->isMutable(), D->getInClassInitStyle());
 
   transformedLocalDecl(D, R);
-  
+
   // FIXME: What other properties do we need to copy?
   R->setAccess(D->getAccess()); // FIXME: Is this right?
-  
+
   SemaRef.CurContext->addDecl(R);
 
   // FIXME: Transform the initializer, if present.
@@ -359,29 +346,28 @@ Decl *MetaclassInjector::TransformConstexprDecl(ConstexprDecl *D) {
   return R;
 }
 
-// Transform each parameter in turn.
+/// Transform each parameter of a function.
 void MetaclassInjector::TransformFunctionParameters(FunctionDecl *D,
                                                     FunctionDecl *R) {
   llvm::SmallVector<ParmVarDecl *, 4> Params;
-  for (auto Iter = D->param_begin(); Iter != D->param_end(); ++Iter) {
-    ParmVarDecl *P = cast<ParmVarDecl>(TransformDecl(*Iter));
+  for (auto I = D->param_begin(), E = D->param_end(); I != E; ++I) {
+    ParmVarDecl *P = cast<ParmVarDecl>(TransformDecl(*I));
     P->setOwningFunction(R);
     Params.push_back(P);
   }
   R->setParams(Params);
 }
 
-// Transform the body of the function.
-void MetaclassInjector::TransformFunctionDefinition(FunctionDecl *D, 
+/// Transform the body of a function.
+void MetaclassInjector::TransformFunctionDefinition(FunctionDecl *D,
                                                     FunctionDecl *R) {
   // Transform the method definition.
   if (Stmt *S = D->getBody()) {
-    // Set up the semantic context needed to translate the function. We don't 
-    // use PushDeclContext because we don't have a scope.
+    // Set up the semantic context needed to translate the function. We don't
+    // use PushDeclContext() because we don't have a scope.
     EnterExpressionEvaluationContext EvalContext(SemaRef,
                                                  Sema::PotentiallyEvaluated);
     SemaRef.ActOnStartOfFunctionDef(nullptr, R);
-
     Sema::ContextRAII SavedContext(SemaRef, R);
     StmtResult Body = TransformStmt(S);
     if (Body.isInvalid()) {
@@ -390,22 +376,20 @@ void MetaclassInjector::TransformFunctionDefinition(FunctionDecl *D,
       return;
     }
     SemaRef.ActOnFinishFunctionBody(R, Body.get());
-    SavedContext.pop();
   }
 }
 
-/// Copy, by way of transforming, the members of the given metaclass into
-/// the target class. 
+/// Copy, by way of transforming, the members of the given C++ metaclass into
+/// the target class.
 ///
-/// The Fields parameter is used to store injected fields for subsequent 
-/// analysis by ActOnFields.
+/// The \p Fields parameter is used to store injected fields for subsequent
+/// analysis by ActOnFields().
 ///
 /// Note that this is always called within the scope of the receiving class,
-/// as if the declarations were being written in place.
+/// as if the declarations were being written in-place.
 void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
-                                  SmallVectorImpl<Decl *> &Fields)
-{
-  // llvm::outs() << "INJECT MEMBERS\n";
+                                  SmallVectorImpl<Decl *> &Fields) {
+  // llvm::errs() << "INJECT MEMBERS\n";
   // Meta->dump();
 
   // Make the receiving class the top-level context.
@@ -419,7 +403,7 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
       if (RD->isInjectedClassName())
         continue;
     }
-    
+
     // Inject the declaration into the class. The injection site is the
     // closing brace of the class body.
     MetaclassInjector Inject(*this, Def, Class);
@@ -428,36 +412,38 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
         Fields.push_back(R);
     }
   }
-  // llvm::outs() << "RESULTING CLASS\n";
+  // llvm::errs() << "RESULTING CLASS\n";
   // Class->dump();
 }
 
-/// Apply one injection. Returns true if no error is encountered.
+/// Apply one injection.
+///
+/// \returns  \c true if no errors are encountered.
 bool Sema::InjectCode(Stmt *Injection) {
   switch (Injection->getStmtClass()) {
-    case Stmt::ReflectionTraitExprClass: {
-      ReflectionTraitExpr *E = cast<ReflectionTraitExpr>(Injection);
-      switch (E->getTrait()) {
-        case BRT_ModifyAccess:
-          return ModifyDeclarationAccess(E);
-        case BRT_ModifyVirtual:
-          return ModifyDeclarationVirtual(E);
-        default:
-          llvm_unreachable("Invalid reflection trait");
-      }
-    }
+  case Stmt::ReflectionTraitExprClass: {
+    ReflectionTraitExpr *E = cast<ReflectionTraitExpr>(Injection);
+    switch (E->getTrait()) {
+    case BRT_ModifyAccess:
+      return ModifyDeclarationAccess(E);
+    case BRT_ModifyVirtual:
+      return ModifyDeclarationVirtual(E);
     default:
-      break;
+      llvm_unreachable("Invalid reflection trait");
+    }
   }
-  llvm_unreachable("Invalid injection");
+  default:
+    llvm_unreachable("Invalid injection");
+  }
 }
 
 /// Inject a sequence of source code fragments or modification requests
-/// into the current AST. Returns false if an error is encountered.
-bool Sema::InjectCode(SmallVectorImpl<Stmt *>& Injections) {
+/// into the current AST.
+///
+/// \returns  \c true if no errors are encountered, \c false otherwise.
+bool Sema::InjectCode(SmallVectorImpl<Stmt *> &Injections) {
   for (Stmt *S : Injections)
     if (!InjectCode(S))
       return false;
-    return true;
+  return true;
 }
-

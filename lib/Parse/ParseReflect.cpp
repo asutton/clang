@@ -97,9 +97,10 @@ static unsigned ReflectionTraitArity(tok::TokenKind kind) {
 ///
 /// \verbatim
 ///   primary-expression:
-///     reflection-trait '(' expression-list ')'
+///     unary-reflection-trait '(' expression ')'
+///     binary-reflection-trait '(' expression ',' expression ')'
 ///
-///   reflection-trait:
+///   unary-reflection-trait:
 ///     '__reflect_name'
 ///     '__reflect_qualified_name'
 ///     '__reflect_type'
@@ -108,11 +109,15 @@ static unsigned ReflectionTraitArity(tok::TokenKind kind) {
 ///     '__reflect_pointer'
 ///     '__reflect_value'
 ///     '__reflect_num_parameters'
-///     '__reflect_parameter'
 ///     '__reflect_declaration_context'
 ///     '__reflect_lexical_context'
 ///     '__reflect_num_members'
+///
+///   binary-reflection-trait:
+///     '__reflect_parameter'
 ///     '__reflect_member'
+///     '__modify_access'
+///     '__modify_virtual'
 /// \endverbatim
 ExprResult Parser::ParseReflectionTrait() {
   tok::TokenKind Kind = Tok.getKind();
@@ -150,13 +155,12 @@ ExprResult Parser::ParseReflectionTrait() {
 /// Parse a C++ metaclass definition.
 ///
 /// \verbatim
+///   metaclass-name:
+///     identifier
+///
 ///   metaclass-definition:
-///     '$class' identifier '{' member-specification[opt] '}'
+///     '$class' metaclass-name '{' member-specification[opt] '}'
 /// \endverbatim
-/// 
-// FIXME: [PIM] Actually define the grammar for this thing. Note that
-// returning nullptr will allow parsing to continue after the tokens
-// have been consumed.
 Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
   assert(Tok.is(tok::dollar));
   SourceLocation DLoc = ConsumeToken();
@@ -228,17 +232,20 @@ void Parser::AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass) {
   PP.AnnotateCachedTokens(Tok);
 }
 
-/// Parse a constexpr declaration.
+/// Parse a constexpr-declaration.
 ///
+/// \verbatim
 ///   constexpr-declaration:
 ///     'constexpr' compound-statement
+/// \endverbatim
 Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
   assert(Tok.is(tok::kw_constexpr));
+
   SourceLocation ConstexprLoc = ConsumeToken();
-  
+
   int ScopeFlags;
-  DeclResult D = 
-    Actions.ActOnStartConstexprDeclaration(ConstexprLoc, ScopeFlags);
+  DeclResult D =
+      Actions.ActOnStartConstexprDeclaration(ConstexprLoc, ScopeFlags);
 
   // Enter function scope as if we're parsing a function body.
   // FIXME: Handle parse errors gracefully.
@@ -247,8 +254,8 @@ Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
   StmtResult Body = ParseCompoundStatement();
   BodyScope.Exit();
   if (Body.isInvalid())
-    return DeclGroupPtrTy();
-  
+    return nullptr;
+
   D = Actions.ActOnFinishConstexprDeclaration(D.get(), Body.get());
   return Actions.ConvertDeclToDeclGroup(D.get());
 }

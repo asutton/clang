@@ -2547,10 +2547,11 @@ private:
                                   UnqualifiedId &Result);
 
   //===--------------------------------------------------------------------===//
-  // C++ Reflection
+  // C++ Reflection [Meta]
 
   ExprResult ParseReflectExpression();
   ExprResult ParseReflectionTrait();
+
   DeclGroupPtrTy ParseMetaclassDefinition();
   void AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass);
 

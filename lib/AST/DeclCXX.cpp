@@ -2458,12 +2458,12 @@ SourceRange MetaclassDecl::getSourceRange() const {
 
 void ConstexprDecl::anchor() {}
 
-ConstexprDecl *ConstexprDecl::Create(ASTContext& Cxt, DeclContext *DC, 
+ConstexprDecl *ConstexprDecl::Create(ASTContext &Cxt, DeclContext *DC,
                                      SourceLocation CL, FunctionDecl *Fn) {
   return new (Cxt, DC) ConstexprDecl(DC, CL, Fn);
 }
 
-ConstexprDecl *ConstexprDecl::Create(ASTContext& Cxt, DeclContext *DC, 
+ConstexprDecl *ConstexprDecl::Create(ASTContext &Cxt, DeclContext *DC,
                                      SourceLocation CL, CXXRecordDecl *Class) {
   return new (Cxt, DC) ConstexprDecl(DC, CL, Class);
 }
@@ -2485,24 +2485,21 @@ CXXMethodDecl *ConstexprDecl::getClosureCallOperator() const {
 }
 
 Stmt *ConstexprDecl::getBody() const {
-  if (hasFunctionRepresentation()) {
+  if (hasFunctionRepresentation())
     return getFunctionDecl()->getBody();
-  } else {
-    CXXRecordDecl *Class = getClosureDecl();
-    DeclarationName Name = 
+  CXXRecordDecl *Class = getClosureDecl();
+  DeclarationName Name =
       getASTContext().DeclarationNames.getCXXOperatorName(OO_Call);
-    DeclContext::lookup_result Calls = Class->lookup(Name);
-    if (Calls.empty())
-      return nullptr;
-    return cast<CXXMethodDecl>(Calls.front())->getBody();
-  }
+  DeclContext::lookup_result Calls = Class->lookup(Name);
+  if (Calls.empty())
+    return nullptr;
+  return cast<CXXMethodDecl>(Calls.front())->getBody();
 }
 
 SourceRange ConstexprDecl::getSourceRange() const {
   // FIXME: This is wrong.
   return Decl::getSourceRange();
 }
-
 
 static const char *getAccessName(AccessSpecifier AS) {
   switch (AS) {

@@ -155,7 +155,7 @@ def CoroutineSuspendExpr : DStmt<Expr, 1>;
 def CoawaitExpr : DStmt<CoroutineSuspendExpr>;
 def CoyieldExpr : DStmt<CoroutineSuspendExpr>;
 
-// [PIM] C++ Reflection Expressions
+// [Meta] C++ Reflection Expressions
 def ReflectionExpr : DStmt<Expr>;
 def ReflectionTraitExpr : DStmt<Expr>;
 

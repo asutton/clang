@@ -619,6 +619,8 @@ class CXXRecordDecl : public RecordDecl {
   llvm::PointerUnion<ClassTemplateDecl*, MemberSpecializationInfo*>
     TemplateOrInstantiation;
 
+  /// \brief If this is a class prototype, the C++ metaclass declaration that is
+  /// associated with this class.
   MetaclassDecl *Metaclass;
 
   friend class DeclContext;
@@ -3669,7 +3671,7 @@ public:
 ///
 /// For example:
 /// \code
-/// $class Ifoo { ... }
+/// $class Ifoo { /* ... */ }
 /// \endcode
 class MetaclassDecl : public NamedDecl, public DeclContext {
   void anchor() override;
@@ -3750,17 +3752,19 @@ public:
   friend class ASTDeclReader;
 };
 
-/// \brief Represents a constexpr-declaration: a sequence of statements 
-/// evaluated at compile time. For example:
+/// \brief Represents a C++ constexpr-declaration.
 ///
-/// \code{.cpp}
+/// A constexpr-declaration contains a sequence of statements that are evaluated
+/// at compile-time. For example:
+///
+/// \code
 /// constexpr {
 ///   // statements
 /// }
 /// \endcode
 ///
 /// When the constexpr-declaration appears in namespace or class scope, this
-/// class contains a constexpr void function that contains the parsed body
+/// class contains a \c constexpr \c void function that contains the parsed body
 /// of the declaration.
 class ConstexprDecl : public Decl {
   virtual void anchor();
@@ -3771,29 +3775,28 @@ class ConstexprDecl : public Decl {
   /// The de-sugared call expression.
   Expr *Call;
 
-  ConstexprDecl()
-    : Decl(Constexpr, nullptr, SourceLocation()), Def() { }
+  ConstexprDecl() : Decl(Constexpr, nullptr, SourceLocation()), Def() {}
 
   ConstexprDecl(DeclContext *DC, SourceLocation CL, FunctionDecl *Fn)
-    : Decl(Constexpr, DC, CL), Def(Fn), Call(nullptr) { }
+      : Decl(Constexpr, DC, CL), Def(Fn), Call(nullptr) {}
 
   ConstexprDecl(DeclContext *DC, SourceLocation CL, CXXRecordDecl *Class)
-    : Decl(Constexpr, DC, CL), Def(Class), Call(nullptr) { }
+      : Decl(Constexpr, DC, CL), Def(Class), Call(nullptr) {}
 
 public:
-  static ConstexprDecl *Create(ASTContext& CXT, DeclContext *DC, 
+  static ConstexprDecl *Create(ASTContext &CXT, DeclContext *DC,
                                SourceLocation CL, FunctionDecl *Fn);
-  static ConstexprDecl *Create(ASTContext& CXT, DeclContext *DC, 
+  static ConstexprDecl *Create(ASTContext &CXT, DeclContext *DC,
                                SourceLocation CL, CXXRecordDecl *Closure);
   static ConstexprDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
-  /// \brief Returns true if this is represented as a function.
+  /// \brief Returns \c true if this is represented as a function.
   bool hasFunctionRepresentation() const { return Def.is<FunctionDecl *>(); }
 
-  /// \brief Returns true if this is represented as a lambda expression.
+  /// \brief Returns \c true if this is represented as a lambda expression.
   bool hasLambdaRepresentation() const { return !hasFunctionRepresentation(); }
 
-  /// \brief Returns the function representation of the declaration. 
+  /// \brief Returns the function representation of the declaration.
   FunctionDecl *getFunctionDecl() const;
 
   /// \brief Returns the closure declaration for the lambda expression.

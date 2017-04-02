@@ -13810,28 +13810,30 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
     Consumer.HandleTagDeclDefinition(Tag);
 
   // FIXME: Remove this... it's too late.
-  // // Lastly... apply the metaclass, if it exists.
-  // if (CXXRecordDecl *Old = dyn_cast<CXXRecordDecl>(Tag)) {
-  //   if (MetaclassDecl *MC = Old->getMetaclass()) {
-  //     CXXRecordDecl *New = EvaluateMetaclass(MC, Old);
+#if 0
+  // Lastly... apply the metaclass, if it exists.
+  if (CXXRecordDecl *Old = dyn_cast<CXXRecordDecl>(Tag)) {
+    if (MetaclassDecl *MC = Old->getMetaclass()) {
+      CXXRecordDecl *New = EvaluateMetaclass(MC, Old);
 
-  //     // TODO: This is not efficient. Removing declarations from a DC is a
-  //     // linear in the number of declarations in the DC. It would be more
-  //     // efficient to simply swap the values of the old and new classes.
+      // TODO: This is not efficient. Removing declarations from a DC is a
+      // linear in the number of declarations in the DC. It would be more
+      // efficient to simply swap the values of the old and new classes.
 
-  //     // Replace the old declaration with the new declaration in its context.
-  //     DeclContext *SemaDC = Old->getDeclContext();
-  //     DeclContext *LexDC = Old->getDeclContext();
-  //     SemaDC->removeDecl(Old);
-  //     if (SemaDC != LexDC)
-  //       LexDC->removeDecl(Old);
-  //     SemaDC->addDecl(New);
+      // Replace the old declaration with the new declaration in its context.
+      DeclContext *SemaDC = Old->getDeclContext();
+      DeclContext *LexDC = Old->getDeclContext();
+      SemaDC->removeDecl(Old);
+      if (SemaDC != LexDC)
+        LexDC->removeDecl(Old);
+      SemaDC->addDecl(New);
 
-  //     // Replace the old declaration
-  //     IdResolver.RemoveDecl(Old);
-  //     IdResolver.AddDecl(New);
-  //   }
-  // }
+      // Replace the old declaration
+      IdResolver.RemoveDecl(Old);
+      IdResolver.AddDecl(New);
+    }
+  }
+#endif
 }
 
 void Sema::ActOnObjCContainerFinishDefinition() {

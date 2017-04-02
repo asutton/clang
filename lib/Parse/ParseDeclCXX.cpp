@@ -1301,6 +1301,7 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
 ///         'class'
 ///         'struct'
 ///         'union'
+/// [Meta]  nested-name-specifier[opt] metaclass-name
 ///
 ///       elaborated-type-specifier: [C++ dcl.type.elab]
 ///         class-key ::[opt] nested-name-specifier[opt] identifier
@@ -2511,7 +2512,7 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
                                  UsingLoc, DeclEnd, AS);
   }
 
-  // constexpr-decl
+  // constexpr-declaration
   if (Tok.is(tok::kw_constexpr) && NextToken().is(tok::l_brace))
     return ParseConstexprDeclaration();
 
