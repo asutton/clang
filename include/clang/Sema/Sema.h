@@ -8248,6 +8248,10 @@ public:
   ExprResult ActOnReflectionTrait(SourceLocation KWLoc, ReflectionTrait Trait,
                                   ArrayRef<Expr *> Args,
                                   SourceLocation RParenLoc);
+  
+  bool ModifyDeclarationAccess(ReflectionTraitExpr *E);
+  bool ModifyDeclarationVirtual(ReflectionTraitExpr *E);
+  
   Decl *ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
                        IdentifierInfo *II);
   void ActOnMetaclassStartDefinition(Scope *S, Decl *MD,

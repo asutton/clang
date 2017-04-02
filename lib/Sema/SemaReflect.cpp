@@ -411,6 +411,31 @@ IsModificationTrait(ReflectionTrait RTK) {
   return RTK >= BRT_ModifyAccess;
 }
 
+static bool CheckReflectionArgs(Sema& SemaRef, ArrayRef<Expr *> Args, 
+                                SmallVectorImpl<llvm::APSInt>& Vals) {
+  // Ensure that each operand has integral type.
+  for (unsigned i = 0; i < Args.size(); ++i) {
+    Expr *E = Args[i];
+    if (!E->getType()->isIntegerType()) {
+      SemaRef.Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
+      return false;
+    }
+  }
+
+  // Evaluate all of the operands ahead of time. Note that trait arity is 
+  // checked at parse time.
+  Vals.resize(Args.size());
+  for (unsigned i = 0; i < Args.size(); ++i) {
+    Expr *E = Args[i];
+    // FIXME: Emit the right diagnostics.
+    if (!E->EvaluateAsInt(Vals[i], SemaRef.Context)) {
+      SemaRef.Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
+      return false;
+    }
+  }
+  return true;
+}
+
 ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
                                       ReflectionTrait Kind,
                                       ArrayRef<Expr *> Args,
@@ -427,33 +452,17 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
     }
   }
 
-  // Modifications are preserved until constexpr evaluation.
-  // Note that these expressions have type void.
+  // Modifications are preserved until constexpr evaluation. These expressions 
+  // have type void.
   if (IsModificationTrait(Kind)) {
     return new (Context) ReflectionTraitExpr(Context, Kind, Context.VoidTy, 
                                              Args, APValue(), KWLoc, RParenLoc);
   }
 
-  // Ensure that each operand has integral type.
-  for (unsigned i = 0; i < Args.size(); ++i) {
-    Expr *E = Args[i];
-    if (!E->getType()->isIntegerType()) {
-      Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
-      return ExprError();
-    }
-  }
-
-  // Evaluate all of the operands ahead of time. Note that trait arity is 
-  // checked at parse time.
+  // Get the integer values from the trait arguments.
   SmallVector<llvm::APSInt, 2> Vals;
-  Vals.resize(Args.size());
-  for (unsigned i = 0; i < Args.size(); ++i) {
-    Expr *E = Args[i];
-    if (!E->EvaluateAsInt(Vals[i], Context)) {
-      Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
-      return ExprError();
-    }
-  }
+  if (!CheckReflectionArgs(*this, Args, Vals))
+    return ExprError();
 
   // FIXME: Verify that this is actually a reflected node.
   std::pair<ReflectionKind, void *> Info =
@@ -639,7 +648,7 @@ static LinkageTrait getLinkage(NamedDecl *D) {
 }
 
 enum AccessTrait : unsigned {
-  AccessGlobal,
+  AccessNone,
   AccessPublic,
   AccessPrivate,
   AccessProtected
@@ -655,7 +664,7 @@ static AccessTrait getAccess(Decl *D) {
   case AS_protected:
     return AccessProtected;
   case AS_none:
-    return AccessGlobal;
+    return AccessNone;
   }
 }
 
@@ -1138,6 +1147,94 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_supported);
   return ExprError();
 }
+
+bool Sema::ModifyDeclarationAccess(ReflectionTraitExpr *E) {
+  llvm::ArrayRef<Expr *> Args(E->getArgs(), E->getNumArgs());
+
+  SmallVector<llvm::APSInt, 2> Vals;
+  CheckReflectionArgs(*this, Args, Vals);
+
+  // FIXME: Verify that this is actually a reflected node.
+  auto Info = ExplodeOpaqueValue(Vals[0].getExtValue());
+  if (Info.first != RK_Decl) {
+    Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
+    return false;
+  }
+  Decl *D = (Decl *)Info.second;
+
+  // FIXME: Emit an appropriate diagnostic. Should be something like:
+  // "cannot modify the access of a non-class member."
+  //
+  // FIXME: What about friend declarations? 
+  if (!D->getDeclContext()->isRecord()) {
+    Diag(E->getLocStart(), diag::err_not_implemented);
+    return false;
+  }
+
+  switch (Vals[1].getExtValue()) {
+    case AccessNone:
+      // FIXME: Emit an appropriate diagnostic. Or should this be an error?
+      Diag(E->getLocStart(), diag::err_not_implemented);
+      return false;
+    case AccessPublic:
+      D->setAccess(AS_public);
+      break;
+    case AccessPrivate:
+      D->setAccess(AS_private);
+      break;
+    case AccessProtected:
+      D->setAccess(AS_protected);
+      break;
+  }
+
+  return true;
+}
+
+bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
+  llvm::ArrayRef<Expr *> Args(E->getArgs(), E->getNumArgs());
+
+  SmallVector<llvm::APSInt, 2> Vals;
+  CheckReflectionArgs(*this, Args, Vals);
+
+  // FIXME: Verify that this is actually a reflected node.
+  auto Info = ExplodeOpaqueValue(Vals[0].getExtValue());
+  if (Info.first != RK_Decl) {
+    Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
+    return false;
+  }
+  Decl *D = (Decl *)Info.second;
+
+  // FIXME: Emit an appropriate diagnostic.
+  if (!D->getDeclContext()->isRecord()) {
+    Diag(E->getLocStart(), diag::err_not_implemented);
+    return false;
+  }
+
+  CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(D);
+  if (!D) {
+    // FIXME: "only member functions can be made virtual"
+    Diag(E->getLocStart(), diag::err_not_implemented);
+    return false;
+  }
+  if (isa<CXXConstructorDecl>(Method)) {
+    // FIXME: "constructors cannot be made virtual."
+    Diag(E->getLocStart(), diag::err_not_implemented);
+    return false;    
+  }
+
+  // FIXME: We need to update the class to make indicate that it's polymorphic 
+  // or abstract.
+  bool Pure = Vals[1].getExtValue();
+  Method->setVirtualAsWritten(true);
+  // FIXME: Use CheckPureMethod.
+  //
+  // FIXME: Don't mark a method pure if it has a definition.
+  if (Pure)
+    Method->setPure(true);
+
+  return true;
+}
+
 
 Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
                            IdentifierInfo *II) {

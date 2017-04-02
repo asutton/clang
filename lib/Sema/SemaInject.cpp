@@ -69,6 +69,10 @@ public:
 
 // For some reason, the default does not expect integer template arguments.
 // So we override that behavior here.
+//
+// FIXME: This might be a hack because the non-type template argument for
+// a reflection expression (i.e., the type of $x) is not formed correctly
+// in SemaReflect.cpp.
 bool MetaclassInjector::
 TransformTemplateArgument(const TemplateArgumentLoc &Input,
                           TemplateArgumentLoc &Output, bool Uneval) {
@@ -105,6 +109,9 @@ static inline bool ShouldNotTransform(Decl *D, DeclContext *Cxt) {
 /// Look to see if the declaration has been locally transformed. If so,
 /// return that. Otherwise, explicitly rebuild the declaration.
 Decl *MetaclassInjector::TransformDecl(SourceLocation Loc, Decl *D) {
+  if (!D)
+    return nullptr;
+
   if (ShouldNotTransform(D, Source))
     return D;
 
@@ -134,17 +141,6 @@ Decl *MetaclassInjector::TransformDecl(SourceLocation Loc, Decl *D) {
       return TransformFieldDecl(cast<FieldDecl>(D));
     case Decl::Constexpr:
       return TransformConstexprDecl(cast<ConstexprDecl>(D));
-
-    case Decl::CXXRecord: 
-    case Decl::ClassTemplate: {
-      // FIXME: What other 
-      // If the class is not enclosed by the metaclass, then we shouldn't
-      // modify it.
-      CXXRecordDecl *Class = cast<CXXRecordDecl>(D);
-      if (!Source->Encloses(Class))
-        return D;
-      llvm_unreachable("Class injection not implemented");
-    }
   }
 }
 
@@ -161,17 +157,34 @@ Decl *MetaclassInjector::TransformVarDecl(VarDecl *D) {
   SemaRef.CurContext->addDecl(R);
 
   // Transform the initializer.
-  // FIXME: Look at Sema::InstantiateVariableInitializer to see how this
-  // should be done.
   if (D->getInit()) {
-    VarDecl::InitializationStyle InitStyle = D->getInitStyle();
-    ExprResult Init = TransformInitializer(D->getInit(),
-                                           InitStyle == VarDecl::CallInit);
-    if (Init.isInvalid()) {
-      R->setInvalidDecl();
-    } else {
-      R->setInitStyle(InitStyle);
-      R->setInit(Init.get());
+    // Propagate the inline flag.
+    if (D->isInlineSpecified())
+      R->setInlineSpecified();
+    else if (D->isInline())
+      R->setImplicitlyInline();
+
+    if (D->getInit()) {
+      if (R->isStaticDataMember() && !D->isOutOfLine())
+        SemaRef.PushExpressionEvaluationContext(Sema::ConstantEvaluated, D);
+      else
+        SemaRef.PushExpressionEvaluationContext(Sema::PotentiallyEvaluated, D);
+
+      // Transform the initializer.
+      ExprResult Init;
+      {
+        Sema::ContextRAII SwitchContext(SemaRef, R->getDeclContext());
+        Init = TransformInitializer(D->getInit(),
+                                    D->getInitStyle() == VarDecl::CallInit);
+      }
+      if (!Init.isInvalid()) {
+        if (Init.get())
+          SemaRef.AddInitializerToDecl(R, Init.get(), D->isDirectInit());
+        else
+          SemaRef.ActOnUninitializedDecl(R);
+      } else {
+        R->setInvalidDecl();
+      }
     }
   }
 
@@ -366,8 +379,8 @@ void MetaclassInjector::TransformFunctionDefinition(FunctionDecl *D,
 void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                                   SmallVectorImpl<Decl *> &Fields)
 {
-  llvm::outs() << "INJECT MEMBERS\n";
-  Meta->dump();
+  // llvm::outs() << "INJECT MEMBERS\n";
+  // Meta->dump();
 
   // Make the receiving class the top-level context.
   Sema::ContextRAII SavedContext(*this, Class);
@@ -389,23 +402,9 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
         Fields.push_back(R);
     }
   }
-  llvm::outs() << "RESULTING CLASS\n";
-  Class->dump();
+  // llvm::outs() << "RESULTING CLASS\n";
+  // Class->dump();
 }
-
-// Try to apply a request to modify access.
-static bool InjectAccessModification(Sema& SemaRef, ReflectionTraitExpr *E) {
-  llvm::outs() << "ACCESS\n";
-  E->dump();
-  return true;
-}
-
-// Try to apply a request to make a member function virtual or non-virtual.
-static bool InjectVirtualModification(Sema& SemaRef, ReflectionTraitExpr *E) {
-  llvm::outs() << "VIRTUAL\n";
-  E->dump();
-  return true;
-} 
 
 /// Apply one injection. Returns true if no error is encountered.
 bool Sema::InjectCode(Stmt *Injection) {
@@ -414,9 +413,9 @@ bool Sema::InjectCode(Stmt *Injection) {
       ReflectionTraitExpr *E = cast<ReflectionTraitExpr>(Injection);
       switch (E->getTrait()) {
         case BRT_ModifyAccess:
-          return InjectAccessModification(*this, E);
+          return ModifyDeclarationAccess(E);
         case BRT_ModifyVirtual:
-          return InjectVirtualModification(*this, E);
+          return ModifyDeclarationVirtual(E);
         default:
           llvm_unreachable("Invalid reflection trait");
       }
