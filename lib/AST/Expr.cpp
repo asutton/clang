@@ -2920,6 +2920,7 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case ObjCAvailabilityCheckExprClass:
   case CXXUuidofExprClass:
   case OpaqueValueExprClass:
+  case CompilerErrorExprClass:
   case ReflectionExprClass:
   case ReflectionTraitExprClass:
     // These never have a side-effect.
@@ -3960,6 +3961,19 @@ unsigned AtomicExpr::getNumSubExprs(AtomicOp Op) {
     return 6;
   }
   llvm_unreachable("unknown atomic op");
+}
+
+CompilerErrorExpr *CompilerErrorExpr::Create(const ASTContext &C, QualType Type,
+                                             Expr *Message,
+                                             SourceLocation BuiltinLoc,
+                                             SourceLocation RParenLoc) {
+  assert(Type->isVoidType() && "Invalid type for CompilerErrorExpr");
+  return new (C) CompilerErrorExpr(Type, Message, BuiltinLoc, RParenLoc);
+}
+
+CompilerErrorExpr *CompilerErrorExpr::CreateEmpty(const ASTContext &C,
+                                                  EmptyShell Empty) {
+  return new (C) CompilerErrorExpr(Empty);
 }
 
 QualType OMPArraySectionExpr::getBaseOriginalType(const Expr *Base) {

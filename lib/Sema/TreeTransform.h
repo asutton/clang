@@ -1384,6 +1384,15 @@ public:
 
   // [Meta]
 
+  /// \brief Build a new \c __compiler_error expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCompilerErrorExpr(Expr *Message, SourceLocation BuiltinLoc,
+                                      SourceLocation RParenLoc) {
+    return getSema().ActOnCompilerErrorExpr(Message, BuiltinLoc, RParenLoc);
+  }
+
   /// \brief Build a new reflection expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
@@ -6930,6 +6939,18 @@ TreeTransform<Derived>::TransformCoyieldExpr(CoyieldExpr *E) {
 }
 
 // [Meta]
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCompilerErrorExpr(CompilerErrorExpr *E) {
+  ExprResult Message = getDerived().TransformExpr(E->getMessage());
+  if (Message.isInvalid())
+    return ExprError();
+  // Always rebuild so that __compiler_error diagnostics can be emitted within
+  // template instantiations.
+  return getDerived().RebuildCompilerErrorExpr(
+      Message.get(), E->getBuiltinLoc(), E->getRParenLoc());
+}
 
 template <typename Derived>
 ExprResult TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {

@@ -1341,6 +1341,11 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return Result;
   }
 
+  // [PIM] primary-expression: '__compiler_error' '(' constant-expression ')'
+  case tok::kw___compiler_error:
+    Res = ParseCompilerErrorExpression();
+    break;
+
   case tok::dollar:  // [Meta] '$' [id-expression | type-name | namespace-name]
     Res = ParseReflectExpression();
     break;
@@ -3028,4 +3033,27 @@ ExprResult Parser::ParseAvailabilityCheckExpr(SourceLocation BeginLoc) {
 
   return Actions.ActOnObjCAvailabilityCheckExpr(AvailSpecs, BeginLoc,
                                                 Parens.getCloseLocation());
+}
+
+ExprResult Parser::ParseCompilerErrorExpression() {
+  assert(Tok.is(tok::kw___compiler_error) && "Not '__compiler_error'");
+
+  SourceLocation BuiltinLoc = ConsumeToken();
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "__compiler_error"))
+    return ExprError();
+
+  ExprResult MessageExpr = ParseConstantExpression();
+
+  if (MessageExpr.isInvalid()) {
+    SkipUntil(tok::r_paren, StopAtSemi);
+    return ExprError();
+  }
+
+  if (T.consumeClose())
+    return ExprError();
+
+  return Actions.ActOnCompilerErrorExpr(MessageExpr.get(), BuiltinLoc,
+                                        T.getCloseLocation());
 }

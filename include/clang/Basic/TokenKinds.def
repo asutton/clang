@@ -507,6 +507,7 @@ KEYWORD(__array_extent              , KEYCXX)
 // [Meta] Extensions for C++ Reflection
 //
 // TODO: Put these in a KEYREFLECTION category.
+KEYWORD(__compiler_error            , KEYALL)
 REFLECTION_TRAIT_1(__reflect_name, ReflectName)
 REFLECTION_TRAIT_1(__reflect_qualified_name, ReflectQualifiedName)
 REFLECTION_TRAIT_1(__reflect_type, ReflectType)

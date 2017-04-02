@@ -9784,6 +9784,11 @@ public:
     }
   }
 
+  bool VisitCompilerErrorExpr(const CompilerErrorExpr *E) {
+    // Allow the use of __compiler_error within constant expressions.
+    return true;
+  }
+
   // Try adding the injection for future processing.
   bool RegisterInjection(const Expr *E) {
     if (Info.EvalStatus.Injections) {
@@ -10242,6 +10247,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CXXFoldExprClass:
   case Expr::CoawaitExprClass:
   case Expr::CoyieldExprClass:
+  case Expr::CompilerErrorExprClass:
     return ICEDiag(IK_NotICE, E->getLocStart());
 
   case Expr::InitListExprClass: {

@@ -7766,6 +7766,10 @@ def err_os_log_argument_too_big : Error<
 def warn_os_log_format_narg : Error<
  "os_log() '%%n' format specifier is not allowed">, DefaultError;
 
+// __compiler_error checking
+def err_compiler_error_message_not_string_constant : Error<
+  "__compiler_error message is not a string constant">;
+
 // Statements.
 def err_continue_not_in_loop : Error<
   "'continue' statement not in loop statement">;
@@ -8834,6 +8838,10 @@ def err_malformed_std_current_exception : Error<
   "'std::current_exception' must be a function">;
 def err_coroutine_promise_return_ill_formed : Error<
   "%0 declares both 'return_value' and 'return_void'">;
+}
+
+let CategoryName = "User-Defined Issue" in {
+def err_compiler_error : Error<"%0">;
 }
 
 // [Meta] C++ reflection and code generation

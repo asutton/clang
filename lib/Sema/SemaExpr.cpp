@@ -15453,3 +15453,99 @@ ExprResult Sema::ActOnObjCAvailabilityCheckExpr(
   return new (Context)
       ObjCAvailabilityCheckExpr(Version, AtLoc, RParen, Context.BoolTy);
 }
+
+/// Handle a call to \c __compiler_error.
+ExprResult Sema::ActOnCompilerErrorExpr(Expr *MessageExpr,
+                                        SourceLocation BuiltinLoc,
+                                        SourceLocation RParenLoc) {
+  if (DiagnoseUnexpandedParameterPack(MessageExpr))
+    return ExprError();
+
+  return BuildCompilerErrorExpr(MessageExpr, BuiltinLoc, RParenLoc);
+}
+
+/// Build a \c __compiler_error expression.
+ExprResult Sema::BuildCompilerErrorExpr(Expr *MessageExpr,
+                                        SourceLocation BuiltinLoc,
+                                        SourceLocation RParenLoc) {
+  assert(MessageExpr != nullptr);
+
+  ExprResult Converted = DefaultFunctionArrayLvalueConversion(MessageExpr);
+  if (Converted.isInvalid())
+    return ExprError();
+  MessageExpr = Converted.get();
+
+  if (!MessageExpr->isTypeDependent()) {
+    QualType Type = MessageExpr->getType(), CharType;
+
+    if (Type->isArrayType())
+      CharType = Context.getAsArrayType(Type)->getElementType();
+    else if (Type->isPointerType())
+      CharType = Type->getPointeeType();
+    if (CharType.isNull() || !CharType->isAnyCharacterType() ||
+        !CharType.isConstant(Context)) {
+      Diag(MessageExpr->getLocStart(),
+           diag::err_compiler_error_message_not_string_constant)
+          << MessageExpr->getSourceRange();
+      return ExprError();
+    }
+
+    if (!MessageExpr->isValueDependent()) {
+      // The string argument should be a compile-time constant.
+      Expr::EvalResult Result;
+      SmallVector<PartialDiagnosticAt, 8> Notes;
+      Result.Diag = &Notes;
+
+      bool Folded = MessageExpr->EvaluateAsRValue(Result, Context) &&
+                    Result.Val.isLValue() && !Result.HasSideEffects;
+
+      if (!Folded || !Notes.empty()) {
+        Diag(MessageExpr->getLocStart(),
+             diag::err_compiler_error_message_not_string_constant)
+            << MessageExpr->getSourceRange();
+        for (const PartialDiagnosticAt &Note : Notes)
+          Diag(Note.first, Note.second);
+        return ExprError();
+      }
+
+      if (!CurContext->isDependentContext() && isEvaluatableContext(*this)) {
+        const StringLiteral *Message = nullptr;
+
+        if (const ValueDecl *D =
+                Result.Val.getLValueBase().dyn_cast<const ValueDecl *>()) {
+          if (const VarDecl *VD = dyn_cast<VarDecl>(D)) {
+            assert(!isa<ParmVarDecl>(VD) &&
+                   "Evaluating a ParmVarDecl? Don't be absurd...");
+            APValue *Value = VD->evaluateValue(Notes);
+            if (Value && Value->isLValue())
+              Result.Val = *Value;
+          }
+        }
+        if (const Expr *E =
+                Result.Val.getLValueBase().dyn_cast<const Expr *>()) {
+          // FIXME: Add support for other expressions (e.g. PredefinedExpr).
+          if (isa<StringLiteral>(E) && Result.Val.getLValueOffset().isZero())
+            Message = cast<StringLiteral>(E);
+        }
+
+        if (!Message) {
+          Diag(MessageExpr->getLocStart(),
+               diag::err_compiler_error_message_not_string_constant)
+              << MessageExpr->getSourceRange();
+          for (const PartialDiagnosticAt &Note : Notes)
+            Diag(Note.first, Note.second);
+          return ExprError();
+        }
+
+        // Emit a diagnostic that contains the message.
+        SmallString<256> MsgBuffer;
+        llvm::raw_svector_ostream Msg(MsgBuffer);
+        Message->printPretty(Msg, nullptr, getPrintingPolicy());
+        Diag(BuiltinLoc, diag::err_compiler_error) << Msg.str();
+      }
+    }
+  }
+
+  return CompilerErrorExpr::Create(Context, Context.VoidTy, MessageExpr,
+                                   BuiltinLoc, RParenLoc);
+}

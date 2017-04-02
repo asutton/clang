@@ -2549,6 +2549,8 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ Reflection [Meta]
 
+  ExprResult ParseCompilerErrorExpression();
+
   ExprResult ParseReflectExpression();
   ExprResult ParseReflectionTrait();
 

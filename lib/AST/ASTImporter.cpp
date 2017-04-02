@@ -279,6 +279,7 @@ namespace clang {
     Expr *VisitCXXDefaultInitExpr(CXXDefaultInitExpr *E);
     Expr *VisitCXXNamedCastExpr(CXXNamedCastExpr *E);
     Expr *VisitSubstNonTypeTemplateParmExpr(SubstNonTypeTemplateParmExpr *E);
+    Expr *VisitCompilerErrorExpr(CompilerErrorExpr *E);
 
 
     template<typename IIter, typename OIter>
@@ -6858,6 +6859,21 @@ Expr *ASTNodeImporter::VisitSubstNonTypeTemplateParmExpr(
   return new (Importer.getToContext()) SubstNonTypeTemplateParmExpr(
         T, E->getValueKind(), Importer.Import(E->getExprLoc()), Param,
         Replacement);
+}
+
+Expr *ASTNodeImporter::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
+  QualType T = Importer.Import(E->getType());
+  if (T.isNull())
+    return nullptr;
+
+  Expr *FromMsg = E->getMessage();
+  Expr *ToMsg = Importer.Import(FromMsg);
+  if (!ToMsg && FromMsg)
+    return nullptr;
+
+  return CompilerErrorExpr::Create(Importer.getToContext(), T, ToMsg,
+                                   Importer.Import(E->getBuiltinLoc()),
+                                   Importer.Import(E->getRParenLoc()));
 }
 
 ASTImporter::ASTImporter(ASTContext &ToContext, FileManager &ToFileManager,
