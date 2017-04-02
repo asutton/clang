@@ -89,21 +89,20 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec &SS,
   if (!D)
     return ExprError();
 
-
   // If the declaration is a template parameter, defer until instantiation.
   //
   // FIXME: This needs to be adapted for non-type and template template
   // parameters also. Most likely, we need to allow ReflectExprs to contain
   // declarations in addition to expressions and types.
   if (TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
-    QualType T = Context.getTypeDeclType(TD); // The reflected type
-    QualType R = T; // The result type of the expression
+    QualType T = Context.getTypeDeclType(TD); // The reflected type.
+    QualType R = T; // The result type of the expression.
 
-    // If this refers to a metaclass specifier, then pretend that it's 
+    // If this refers to a metaclass specifier, then pretend that it's
     // dependent so we don't substitute too early.
     //
-    // FIXME: This is a hack. It would be better if we always returned an 
-    // ReflectionExpr and then packed that will all of the evaluation 
+    // FIXME: This is a hack. It would be better if we always returned an
+    // ReflectionExpr and then packed that will all of the evaluation
     // information needed for later.
     //
     // FIXME: This even hackier since we're adjusting the qualified type to
@@ -205,7 +204,7 @@ static char const *GetReflectionClass(Decl *D) {
 /// \brief Return an expression whose type reflects the given node.
 ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
   assert(!isa<MetaclassDecl>(D) && "Reflection of a metaclass");
-  
+
   // References to a metaclass should refer to the underlying class.
   // FIXME: Handle this above.
   if (auto *MC = dyn_cast<MetaclassDecl>(D))
@@ -475,7 +474,7 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
     }
   }
 
-  // Modifications are preserved until constexpr evaluation. These expressions 
+  // Modifications are preserved until constexpr evaluation. These expressions
   // have type void.
   if (IsModificationTrait(Kind))
     return new (Context) ReflectionTraitExpr(Context, Kind, Context.VoidTy,
@@ -727,7 +726,7 @@ struct VariableTraits {
 };
 
 static VariableTraits getVariableTraits(VarDecl *D) {
-  VariableTraits T{};
+  VariableTraits T = VariableTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
   T.Storage = getStorage(D);
@@ -746,7 +745,7 @@ struct FieldTraits {
 
 /// Get the traits for a non-static member of a class or union.
 static FieldTraits getFieldTraits(FieldDecl *D) {
-  FieldTraits T{};
+  FieldTraits T = FieldTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
   T.Mutable = D->isMutable();
@@ -773,7 +772,7 @@ static bool getNothrow(ASTContext &C, FunctionDecl *D) {
 }
 
 static FunctionTraits getFunctionTraits(ASTContext &C, FunctionDecl *D) {
-  FunctionTraits T{};
+  FunctionTraits T = FunctionTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
   T.Constexpr = D->isConstexpr();
@@ -803,7 +802,7 @@ struct MethodTraits {
 };
 
 static MethodTraits getMethodTraits(ASTContext &C, CXXConstructorDecl *D) {
-  MethodTraits T{};
+  MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
   T.Constexpr = D->isConstexpr();
@@ -817,7 +816,7 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXConstructorDecl *D) {
 }
 
 static MethodTraits getMethodTraits(ASTContext &C, CXXDestructorDecl *D) {
-  MethodTraits T{};
+  MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
   T.Virtual = D->isVirtual();
@@ -834,7 +833,7 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXDestructorDecl *D) {
 }
 
 static MethodTraits getMethodTraits(ASTContext &C, CXXConversionDecl *D) {
-  MethodTraits T{};
+  MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
   T.Constexpr = D->isConstexpr();
@@ -851,7 +850,7 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXConversionDecl *D) {
 }
 
 static MethodTraits getMethodTraits(ASTContext &C, CXXMethodDecl *D) {
-  MethodTraits T{};
+  MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
   T.Constexpr = D->isConstexpr();
@@ -872,7 +871,7 @@ struct ValueTraits {
 };
 
 static ValueTraits getValueTraits(EnumConstantDecl *D) {
-  ValueTraits T{};
+  ValueTraits T = ValueTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
   return T;
@@ -885,7 +884,7 @@ struct NamespaceTraits {
 };
 
 static NamespaceTraits getNamespaceTraits(NamespaceDecl *D) {
-  NamespaceTraits T{};
+  NamespaceTraits T = NamespaceTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
   T.Inline = D->isInline();
@@ -904,7 +903,7 @@ struct ClassTraits {
 };
 
 static ClassTraits getClassTraits(CXXRecordDecl *D) {
-  ClassTraits T{};
+  ClassTraits T = ClassTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
   T.Complete = D->getDefinition() != nullptr;
@@ -925,7 +924,7 @@ struct EnumTraits {
 };
 
 static EnumTraits getEnumTraits(EnumDecl *D) {
-  EnumTraits T{};
+  EnumTraits T = EnumTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
   T.Scoped = D->isScoped();
@@ -937,7 +936,7 @@ static EnumTraits getEnumTraits(EnumDecl *D) {
 template <typename Traits>
 static inline std::uint32_t LaunderTraits(Traits S) {
   static_assert(sizeof(std::uint32_t) == sizeof(Traits), "Size mismatch");
-  unsigned ret{};
+  unsigned ret = 0;
   std::memcpy(&ret, &S, sizeof(S));
   return ret;
 }
@@ -1170,7 +1169,7 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   return ExprError();
 }
 
-/// Modify the access declarations, changing 
+/// Modify the access specifier of a given declaration.
 bool Sema::ModifyDeclarationAccess(ReflectionTraitExpr *E) {
   llvm::ArrayRef<Expr *> Args(E->getArgs(), E->getNumArgs());
   SmallVector<llvm::APSInt, 2> Vals;
@@ -1185,7 +1184,7 @@ bool Sema::ModifyDeclarationAccess(ReflectionTraitExpr *E) {
   }
   Decl *D = (Decl *)Info.second;
 
-  // FIXME: What about friend declarations? 
+  // FIXME: What about friend declarations?
   DeclContext *Owner = D->getDeclContext();
   if (!Owner->isRecord()) {
     Diag(E->getLocStart(), diag::err_modifies_mem_spec_of_non_member) << 0;
@@ -1193,25 +1192,25 @@ bool Sema::ModifyDeclarationAccess(ReflectionTraitExpr *E) {
   }
 
   switch (Vals[1].getExtValue()) {
-    case AccessPublic:
-      D->setAccess(AS_public);
-      break;
-    case AccessPrivate:
-      D->setAccess(AS_private);
-      break;
-    case AccessProtected:
-      D->setAccess(AS_protected);
-      break;
-    default:
-      Diag(E->getLocStart(), diag::err_invalid_access_specifier);
-      return false;
+  case AccessPublic:
+    D->setAccess(AS_public);
+    break;
+  case AccessPrivate:
+    D->setAccess(AS_private);
+    break;
+  case AccessProtected:
+    D->setAccess(AS_protected);
+    break;
+  default:
+    Diag(E->getLocStart(), diag::err_invalid_access_specifier);
+    return false;
   }
 
   Owner->updateDecl(D);
-
   return true;
 }
 
+/// Modify the virtual specifier of a given declaration.
 bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
   llvm::ArrayRef<Expr *> Args(E->getArgs(), E->getNumArgs());
   SmallVector<llvm::APSInt, 2> Vals;
@@ -1241,7 +1240,7 @@ bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
   }
   if (isa<CXXConstructorDecl>(Method)) {
     Diag(E->getLocStart(), diag::err_constructor_cannot_be) << "virtual";
-    return false;    
+    return false;
   }
 
   // All requests make methods virtual.
@@ -1250,14 +1249,13 @@ bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
   // But it's only pure when the 2nd operand is non-zero.
   if (Vals[1].getExtValue()) {
     if (Method->isDefined() && !isa<CXXDestructorDecl>(Method)) {
-      Diag (E->getLocStart(), diag::err_pure_function_with_definition);
+      Diag(E->getLocStart(), diag::err_pure_function_with_definition);
       return false;
     }
     CheckPureMethod(Method, Method->getSourceRange());
   }
 
   Owner->updateDecl(D);
-
   return true;
 }
 
@@ -1451,7 +1449,6 @@ DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc,
     llvm_unreachable("constexpr declaration in unsupported context");
 
   CurContext->addHiddenDecl(CD);
-
   return CD;
 }
 

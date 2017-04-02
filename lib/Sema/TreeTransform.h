@@ -6938,12 +6938,11 @@ ExprResult TreeTransform<Derived>::TransformReflectionExpr(ReflectionExpr *E) {
     if (Expr.isInvalid())
       return ExprError();
     return getDerived().RebuildReflectionExpr(E->getOperatorLoc(), Expr.get());
-  } else {
-    TypeSourceInfo *TSI = getDerived().TransformType(E->getTypeOperand());
-    if (!TSI) 
-      return ExprError();
-    return getDerived().RebuildReflectionExpr(E->getOperatorLoc(), TSI);
   }
+  TypeSourceInfo *TSI = getDerived().TransformType(E->getTypeOperand());
+  if (!TSI)
+    return ExprError();
+  return getDerived().RebuildReflectionExpr(E->getOperatorLoc(), TSI);
 }
 
 template <typename Derived>

@@ -1664,8 +1664,8 @@ public:
   /// @brief Checks whether a declaration is in this context.
   bool containsDecl(Decl *D) const;
 
-  /// @brief Updates the declaration D after a modification made after the
-  /// declaration was previously added to this context. 
+  /// \brief Updates the declaration \p D after a modification made after the
+  /// declaration was previously added to this context.
   void updateDecl(Decl *D);
 
   typedef DeclContextLookupResult lookup_result;

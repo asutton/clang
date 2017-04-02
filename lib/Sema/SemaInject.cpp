@@ -103,8 +103,7 @@ TypeSourceInfo *MetaclassInjector::TransformType(TypeSourceInfo *TSI) {
     QualType Ret = SemaRef.Context.getRecordType(Dest);
     return SemaRef.Context.getTrivialTypeSourceInfo(Ret);
   }
-  else
-    return BaseType::TransformType(TSI);
+  return BaseType::TransformType(TSI);
 }
 
 QualType MetaclassInjector::TransformType(TypeLocBuilder &TLB, TypeLoc TL) {
@@ -150,24 +149,24 @@ Decl *MetaclassInjector::TransformDecl(SourceLocation Loc, Decl *D) {
 
   // FIXME: It might be a better idea to use a DeclVisitor here.
   switch (D->getKind()) {
-    default:
-      llvm_unreachable("Injection not implemented");
-    case Decl::Var:
-      return TransformVarDecl(cast<VarDecl>(D));
-    case Decl::ParmVar:
-      return TransformParmVarDecl(cast<ParmVarDecl>(D));
-    case Decl::Function:
-      return TransformFunctionDecl(cast<FunctionDecl>(D));
-    case Decl::CXXMethod:
-      return TransformCXXMethodDecl(cast<CXXMethodDecl>(D));
-    case Decl::CXXConstructor:
-      return TransformCXXConstructorDecl(cast<CXXConstructorDecl>(D));
-    case Decl::CXXDestructor:
-      return TransformCXXDestructorDecl(cast<CXXDestructorDecl>(D));
-    case Decl::Field:
-      return TransformFieldDecl(cast<FieldDecl>(D));
-    case Decl::Constexpr:
-      return TransformConstexprDecl(cast<ConstexprDecl>(D));
+  default:
+    llvm_unreachable("Injection not implemented");
+  case Decl::Var:
+    return TransformVarDecl(cast<VarDecl>(D));
+  case Decl::ParmVar:
+    return TransformParmVarDecl(cast<ParmVarDecl>(D));
+  case Decl::Function:
+    return TransformFunctionDecl(cast<FunctionDecl>(D));
+  case Decl::CXXMethod:
+    return TransformCXXMethodDecl(cast<CXXMethodDecl>(D));
+  case Decl::CXXConstructor:
+    return TransformCXXConstructorDecl(cast<CXXConstructorDecl>(D));
+  case Decl::CXXDestructor:
+    return TransformCXXDestructorDecl(cast<CXXDestructorDecl>(D));
+  case Decl::Field:
+    return TransformFieldDecl(cast<FieldDecl>(D));
+  case Decl::Constexpr:
+    return TransformConstexprDecl(cast<ConstexprDecl>(D));
   }
 }
 

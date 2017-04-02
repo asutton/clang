@@ -2947,11 +2947,11 @@ StmtResult Sema::FinishCXXForRangeStmt(Stmt *S, Stmt *B) {
 
 /// Finish a tuple expansion by instantiating the loop body for each element
 /// of the tuple.
-StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S, 
+StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
                                              Stmt *B) {
   SourceLocation Loc = S->getColonLoc();
 
-  // The loop body is the pre-instantiated versions of the composed loop body.
+  // The loop body is the pre-instantiated version of the composed loop body.
   S->setBody(B);
 
   // If the range initializer is dependent, then we can't deduce the tuple
@@ -2961,31 +2961,27 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
 
   // Create a new compound statement that binds the loop variable with the
   // parsed body. This is what we're going to instantiate.
-  Stmt *VarAndBody[] {S->getLoopVarStmt(), B};
-  Stmt *Body = new (Context) CompoundStmt(Context, VarAndBody, 
-                                          SourceLocation(),
-                                          SourceLocation());
+  Stmt *VarAndBody[] = {S->getLoopVarStmt(), B};
+  Stmt *Body = new (Context)
+      CompoundStmt(Context, VarAndBody, SourceLocation(), SourceLocation());
 
   // Return an empty statement (not an error) if the size is 0.
   if (S->getSize() == 0)
     return StmtResult();
 
   // Instantiate the loop body for each element of the tuple.
-  llvm::SmallVector<Stmt*, 8> Stmts;
+  llvm::SmallVector<Stmt *, 8> Stmts;
   for (std::size_t I = 0; I < S->getSize(); ++I) {
-    IntegerLiteral *E = IntegerLiteral::Create(Context, 
-                                               llvm::APSInt::getUnsigned(I),
-                                               Context.getSizeType(),
-                                               Loc);
-    TemplateArgument Args[] {
-      TemplateArgument(Context, llvm::APSInt(E->getValue(), true), E->getType())
-    };
+    IntegerLiteral *E = IntegerLiteral::Create(
+        Context, llvm::APSInt::getUnsigned(I), Context.getSizeType(), Loc);
+    TemplateArgument Args[] = {TemplateArgument(
+        Context, llvm::APSInt(E->getValue(), true), E->getType())};
     TemplateArgumentList TempArgs(TemplateArgumentList::OnStack, Args);
     MultiLevelTemplateArgumentList MultiArgs(TempArgs);
 
     // We need a local instantiation scope for this.
     LocalInstantiationScope Locals(*this);
-    InstantiatingTemplate Inst(*this, B->getLocStart(), S, Args, 
+    InstantiatingTemplate Inst(*this, B->getLocStart(), S, Args,
                                B->getSourceRange());
     StmtResult Instantiation = SubstForTupleBody(Body, MultiArgs);
     if (Instantiation.isInvalid())
