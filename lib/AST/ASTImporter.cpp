@@ -169,6 +169,7 @@ namespace clang {
     Decl *VisitObjCCategoryDecl(ObjCCategoryDecl *D);
     Decl *VisitObjCProtocolDecl(ObjCProtocolDecl *D);
     Decl *VisitLinkageSpecDecl(LinkageSpecDecl *D);
+    Decl *VisitConstexprDecl(ConstexprDecl *D);
 
     ObjCTypeParamList *ImportObjCTypeParamList(ObjCTypeParamList *list);
     Decl *VisitObjCInterfaceDecl(ObjCInterfaceDecl *D);
@@ -4231,6 +4232,51 @@ Decl *ASTNodeImporter::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
   Importer.Imported(D, ToLinkageSpec);
 
   return ToLinkageSpec;
+}
+
+Decl *ASTNodeImporter::VisitConstexprDecl(ConstexprDecl *D) {
+  // Import the context of this declaration.
+  DeclContext *DC = Importer.ImportContext(D->getDeclContext());
+  if (!DC)
+    return nullptr;
+
+  DeclContext *LexicalDC = DC;
+
+  // Import the location of this declaration.
+  SourceLocation ConstexprLoc = Importer.Import(D->getLocation());
+
+  ConstexprDecl *ToD;
+
+  // Import the underlying representation.
+  if (D->hasFunctionRepresentation()) {
+    FunctionDecl *ToFunctionRepresentation =
+        cast_or_null<FunctionDecl>(Importer.Import(D->getFunctionDecl()));
+    if (!ToFunctionRepresentation)
+      return nullptr;
+    ToD = ConstexprDecl::Create(Importer.getToContext(), DC, ConstexprLoc,
+                                ToFunctionRepresentation);
+  } else {
+    CXXRecordDecl *ToLambdaRepresentation =
+        cast_or_null<CXXRecordDecl>(Importer.Import(D->getClosureDecl()));
+    if (!ToLambdaRepresentation)
+      return nullptr;
+    ToD = ConstexprDecl::Create(Importer.getToContext(), DC, ConstexprLoc,
+                                ToLambdaRepresentation);
+  }
+
+  // Import the call expression that evaluates this declaration, if set.
+  CallExpr *FromCall = D->getCallExpr();
+  CallExpr *ToCall = cast_or_null<CallExpr>(Importer.Import(FromCall));
+  if (!ToCall && FromCall)
+    return nullptr;
+  ToD->setCallExpr(ToCall);
+
+  ToD->setLexicalDeclContext(LexicalDC);
+  LexicalDC->addDeclInternal(ToD);
+
+  Importer.Imported(D, ToD);
+
+  return ToD;
 }
 
 bool ASTNodeImporter::ImportDefinition(ObjCInterfaceDecl *From, 

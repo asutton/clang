@@ -332,6 +332,7 @@ namespace clang {
     void VisitBlockDecl(BlockDecl *BD);
     void VisitCapturedDecl(CapturedDecl *CD);
     void VisitEmptyDecl(EmptyDecl *D);
+    void VisitConstexprDecl(ConstexprDecl *D);
 
     std::pair<uint64_t, uint64_t> VisitDeclContext(DeclContext *DC);
 
@@ -2264,6 +2265,15 @@ void ASTDeclReader::VisitEmptyDecl(EmptyDecl *D) {
   VisitDecl(D);
 }
 
+void ASTDeclReader::VisitConstexprDecl(ConstexprDecl *D) {
+  VisitDecl(D);
+  if (Record.readInt()) // hasFunctionRepresentation
+    D->Representation = ReadDeclAs<FunctionDecl>();
+  else
+    D->Representation = ReadDeclAs<CXXRecordDecl>();
+  D->Call = cast_or_null<CallExpr>(Record.readExpr());
+}
+
 std::pair<uint64_t, uint64_t>
 ASTDeclReader::VisitDeclContext(DeclContext *DC) {
   uint64_t LexicalOffset = ReadLocalOffset();
@@ -3561,6 +3571,9 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
     break;
   case DECL_METACLASS:
     D = MetaclassDecl::CreateDeserialized(Context, ID);
+    break;
+  case DECL_CONSTEXPR:
+    D = ConstexprDecl::CreateDeserialized(Context, ID);
     break;
   }
 

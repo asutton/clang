@@ -3769,51 +3769,69 @@ public:
 class ConstexprDecl : public Decl {
   virtual void anchor();
 
-  /// \brief The de-sugared form of the declaration.
-  llvm::PointerUnion<FunctionDecl *, CXXRecordDecl *> Def;
+  /// The de-sugared form of the declaration.
+  llvm::PointerUnion<FunctionDecl *, CXXRecordDecl *> Representation;
 
   /// The de-sugared call expression.
-  Expr *Call;
+  CallExpr *Call;
 
-  ConstexprDecl() : Decl(Constexpr, nullptr, SourceLocation()), Def() {}
+  ConstexprDecl(DeclContext *DC, SourceLocation ConstexprLoc)
+      : Decl(Constexpr, DC, ConstexprLoc), Representation(), Call(nullptr) {}
 
-  ConstexprDecl(DeclContext *DC, SourceLocation CL, FunctionDecl *Fn)
-      : Decl(Constexpr, DC, CL), Def(Fn), Call(nullptr) {}
+  ConstexprDecl(DeclContext *DC, SourceLocation ConstexprLoc, FunctionDecl *Fn)
+      : Decl(Constexpr, DC, ConstexprLoc), Representation(Fn), Call(nullptr) {}
 
-  ConstexprDecl(DeclContext *DC, SourceLocation CL, CXXRecordDecl *Class)
-      : Decl(Constexpr, DC, CL), Def(Class), Call(nullptr) {}
+  ConstexprDecl(DeclContext *DC, SourceLocation ConstexprLoc,
+                CXXRecordDecl *Class)
+      : Decl(Constexpr, DC, ConstexprLoc), Representation(Class),
+        Call(nullptr) {}
 
 public:
   static ConstexprDecl *Create(ASTContext &CXT, DeclContext *DC,
-                               SourceLocation CL, FunctionDecl *Fn);
+                               SourceLocation ConstexprLoc, FunctionDecl *Fn);
   static ConstexprDecl *Create(ASTContext &CXT, DeclContext *DC,
-                               SourceLocation CL, CXXRecordDecl *Closure);
+                               SourceLocation ConstexprLoc,
+                               CXXRecordDecl *Closure);
   static ConstexprDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   /// \brief Returns \c true if this is represented as a function.
-  bool hasFunctionRepresentation() const { return Def.is<FunctionDecl *>(); }
+  bool hasFunctionRepresentation() const {
+    return Representation.is<FunctionDecl *>();
+  }
 
   /// \brief Returns \c true if this is represented as a lambda expression.
-  bool hasLambdaRepresentation() const { return !hasFunctionRepresentation(); }
+  bool hasLambdaRepresentation() const {
+    return Representation.is<CXXRecordDecl *>();
+  }
 
   /// \brief Returns the function representation of the declaration.
-  FunctionDecl *getFunctionDecl() const;
+  FunctionDecl *getFunctionDecl() const {
+    return Representation.get<FunctionDecl *>();
+  }
 
   /// \brief Returns the closure declaration for the lambda expression.
-  CXXRecordDecl *getClosureDecl() const;
+  CXXRecordDecl *getClosureDecl() const {
+    return Representation.get<CXXRecordDecl *>();
+  }
 
   /// \brief Returns the call operator of the closure.
-  CXXMethodDecl *getClosureCallOperator() const;
+  CXXMethodDecl *getClosureCallOperator() const {
+    assert(hasLambdaRepresentation() &&
+           "constexpr declaration is not represented by a lambda expression");
+    return getClosureDecl()->getLambdaCallOperator();
+  }
 
-  /// \brief Returns the body of the constexpr-declaration. This is only valid
-  /// after the definition has been completed.
+  /// \brief Returns \c true if the constexpr-declaration has a body.
+  bool hasBody() const override;
+
+  /// \brief Returns the body of the constexpr-declaration.
   Stmt *getBody() const override;
 
   /// Returns the expression that evaluates the constexpr-declaration.
-  Expr *getCallExpr() const { return Call; }
+  CallExpr *getCallExpr() const { return Call; }
 
   /// Sets the expression that evaluates the constexpr-declaration.
-  void setCallExpr(Expr *E) { Call = E; }
+  void setCallExpr(CallExpr *E) { Call = E; }
 
   SourceRange getSourceRange() const override;
 

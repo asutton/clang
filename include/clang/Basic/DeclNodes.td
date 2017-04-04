@@ -72,7 +72,6 @@ def Named : Decl<1>;
   def UsingShadow : DDecl<Named>;
     def ConstructorUsingShadow : DDecl<UsingShadow>;
   def Metaclass : DDecl<Named>, DeclContext;
-  def Constexpr : Decl;
   def ObjCMethod : DDecl<Named>, DeclContext;
   def ObjCContainer : DDecl<Named, 1>, DeclContext;
     def ObjCCategory : DDecl<ObjCContainer>;
@@ -97,4 +96,4 @@ def ClassScopeFunctionSpecialization : Decl;
 def Import : Decl;
 def OMPThreadPrivate : Decl;
 def Empty : Decl;
-
+def Constexpr : Decl;

@@ -1198,7 +1198,9 @@ namespace clang {
       /// \brief An OMPDeclareReductionDecl record.
       DECL_OMP_DECLARE_REDUCTION,
       /// \brief A MetaclassDecl record.
-      DECL_METACLASS
+      DECL_METACLASS,
+      /// \brief A ConstexprDecl record.
+      DECL_CONSTEXPR
     };
 
     /// \brief Record codes for each kind of statement or expression.

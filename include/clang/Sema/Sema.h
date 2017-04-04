@@ -8281,7 +8281,7 @@ public:
 
   bool EvaluateConstexprDeclaration(ConstexprDecl *CD, FunctionDecl *D);
   bool EvaluateConstexprDeclaration(ConstexprDecl *CD, LambdaExpr *E);
-  bool EvaluateConstexprDeclCall(ConstexprDecl *CD, Expr *E);
+  bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

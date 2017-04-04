@@ -2459,46 +2459,44 @@ SourceRange MetaclassDecl::getSourceRange() const {
 void ConstexprDecl::anchor() {}
 
 ConstexprDecl *ConstexprDecl::Create(ASTContext &Cxt, DeclContext *DC,
-                                     SourceLocation CL, FunctionDecl *Fn) {
-  return new (Cxt, DC) ConstexprDecl(DC, CL, Fn);
+                                     SourceLocation ConstexprLoc,
+                                     FunctionDecl *Fn) {
+  return new (Cxt, DC) ConstexprDecl(DC, ConstexprLoc, Fn);
 }
 
 ConstexprDecl *ConstexprDecl::Create(ASTContext &Cxt, DeclContext *DC,
-                                     SourceLocation CL, CXXRecordDecl *Class) {
-  return new (Cxt, DC) ConstexprDecl(DC, CL, Class);
+                                     SourceLocation ConstexprLoc,
+                                     CXXRecordDecl *Class) {
+  return new (Cxt, DC) ConstexprDecl(DC, ConstexprLoc, Class);
 }
 
 ConstexprDecl *ConstexprDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) ConstexprDecl();
+  return new (C, ID) ConstexprDecl(nullptr, SourceLocation());
 }
 
-FunctionDecl *ConstexprDecl::getFunctionDecl() const {
-  return Def.get<FunctionDecl *>();
-}
-
-CXXRecordDecl *ConstexprDecl::getClosureDecl() const {
-  return Def.get<CXXRecordDecl *>();
-}
-
-CXXMethodDecl *ConstexprDecl::getClosureCallOperator() const {
-  return getClosureDecl()->getLambdaCallOperator();
+bool ConstexprDecl::hasBody() const {
+  if (Representation.isNull())
+    return false;
+  const FunctionDecl *FD = hasFunctionRepresentation()
+                               ? getFunctionDecl()
+                               : getClosureCallOperator();
+  return FD->hasBody();
 }
 
 Stmt *ConstexprDecl::getBody() const {
-  if (hasFunctionRepresentation())
-    return getFunctionDecl()->getBody();
-  CXXRecordDecl *Class = getClosureDecl();
-  DeclarationName Name =
-      getASTContext().DeclarationNames.getCXXOperatorName(OO_Call);
-  DeclContext::lookup_result Calls = Class->lookup(Name);
-  if (Calls.empty())
+  if (Representation.isNull())
     return nullptr;
-  return cast<CXXMethodDecl>(Calls.front())->getBody();
+  const FunctionDecl *FD = hasFunctionRepresentation()
+                               ? getFunctionDecl()
+                               : getClosureCallOperator();
+  return FD->getBody();
 }
 
 SourceRange ConstexprDecl::getSourceRange() const {
-  // FIXME: This is wrong.
-  return Decl::getSourceRange();
+  SourceLocation RangeEnd = getLocation();
+  if (Stmt *Body = getBody())
+    RangeEnd = Body->getLocEnd();
+  return SourceRange(getLocation(), RangeEnd);
 }
 
 static const char *getAccessName(AccessSpecifier AS) {

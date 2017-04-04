@@ -75,8 +75,8 @@ namespace {
     void VisitNamespaceAliasDecl(NamespaceAliasDecl *D);
     void VisitCXXRecordDecl(CXXRecordDecl *D);
     void VisitMetaclassDecl(MetaclassDecl *D);
-    void VisitConstexprDecl(ConstexprDecl *D);
     void VisitLinkageSpecDecl(LinkageSpecDecl *D);
+    void VisitConstexprDecl(ConstexprDecl *D);
     void VisitTemplateDecl(const TemplateDecl *D);
     void VisitFunctionTemplateDecl(FunctionTemplateDecl *D);
     void VisitClassTemplateDecl(ClassTemplateDecl *D);
@@ -365,8 +365,8 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
         Terminator = ";";
     } else if (isa<NamespaceDecl>(*D) ||
                isa<MetaclassDecl>(*D) ||
-               isa<ConstexprDecl>(*D) ||
                isa<LinkageSpecDecl>(*D) ||
+               isa<ConstexprDecl>(*D) ||
                isa<ObjCImplementationDecl>(*D) ||
                isa<ObjCInterfaceDecl>(*D) ||
                isa<ObjCProtocolDecl>(*D) ||
@@ -387,7 +387,8 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
         ((isa<FunctionDecl>(*D) &&
           cast<FunctionDecl>(*D)->doesThisDeclarationHaveABody()) ||
          (isa<FunctionTemplateDecl>(*D) &&
-          cast<FunctionTemplateDecl>(*D)->getTemplatedDecl()->doesThisDeclarationHaveABody())))
+          cast<FunctionTemplateDecl>(*D)->getTemplatedDecl()->doesThisDeclarationHaveABody()) ||
+         isa<ConstexprDecl>(*D)))
       ; // StmtPrinter already added '\n' after CompoundStmt.
     else
       Out << "\n";
@@ -955,13 +956,6 @@ void DeclPrinter::VisitMetaclassDecl(MetaclassDecl *D) {
   }
 }
 
-void DeclPrinter::VisitConstexprDecl(ConstexprDecl *D) {
-  if (!Policy.SuppressSpecifiers && D->isModulePrivate())
-    Out << "__module_private__ ";
-  Out << "constexpr { ... }";
-  // FIXME: Implement me.
-}
-
 void DeclPrinter::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
   const char *l;
   if (D->getLanguage() == LinkageSpecDecl::lang_c)
@@ -979,6 +973,18 @@ void DeclPrinter::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
     Indent() << "}";
   } else
     Visit(*D->decls_begin());
+}
+
+void DeclPrinter::VisitConstexprDecl(ConstexprDecl *D) {
+  Out << "constexpr";
+
+  if (Policy.TerseOutput) {
+    Out << " {}";
+  } else {
+    Out << ' ';
+    if (D->getBody())
+      D->getBody()->printPretty(Out, nullptr, Policy, Indentation);
+  }
 }
 
 void DeclPrinter::printTemplateParameters(const TemplateParameterList *Params) {

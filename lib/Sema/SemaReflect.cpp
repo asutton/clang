@@ -1497,7 +1497,7 @@ bool Sema::EvaluateConstexprDeclaration(ConstexprDecl *CD, FunctionDecl *D) {
   QualType PtrTy = Context.getPointerType(Ty);
   ImplicitCastExpr *Cast = ImplicitCastExpr::Create(
       Context, PtrTy, CK_FunctionToPointerDecay, Ref, nullptr, VK_RValue);
-  Expr *Call =
+  CallExpr *Call =
       new (Context) CallExpr(Context, Cast, ArrayRef<Expr *>(), Context.VoidTy,
                              VK_RValue, SourceLocation());
   return EvaluateConstexprDeclCall(CD, Call);
@@ -1515,7 +1515,7 @@ bool Sema::EvaluateConstexprDeclaration(ConstexprDecl *CD, LambdaExpr *E) {
   QualType PtrTy = Context.getPointerType(MethodTy);
   ImplicitCastExpr *Cast = ImplicitCastExpr::Create(
       Context, PtrTy, CK_FunctionToPointerDecay, Ref, nullptr, VK_RValue);
-  Expr *Call = new (Context) CXXOperatorCallExpr(
+  CallExpr *Call = new (Context) CXXOperatorCallExpr(
       Context, OO_Call, Cast, {E}, Context.VoidTy, VK_RValue, SourceLocation(),
       /*fpContractible=*/false);
   return EvaluateConstexprDeclCall(CD, Call);
@@ -1529,9 +1529,9 @@ bool Sema::EvaluateConstexprDeclaration(ConstexprDecl *CD, LambdaExpr *E) {
 // FIXME: We probably want to trap declarative effects so that we can apply
 // them as declarations after execution. That would require a modification to
 // EvalResult (e.g., an injection set?).
-bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, Expr *E) {
+bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   // Associate the call expression with the declaration.
-  CD->setCallExpr(E);
+  CD->setCallExpr(Call);
 
   // Don't evaluate the call if this declaration appears within a metaclass.
   DeclContext *ParentCxt = CurContext->getParent();
@@ -1544,7 +1544,7 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, Expr *E) {
   Eval.Diag = &Notes;
   Eval.Injections = &Injections;
 
-  bool Result = E->EvaluateAsRValue(Eval, Context);
+  bool Result = Call->EvaluateAsRValue(Eval, Context);
   if (!Result) {
     // If the only error is that we didn't initialize a (void) value, that's
     // actually okay. APValue doesn't know how to do this anyway.
