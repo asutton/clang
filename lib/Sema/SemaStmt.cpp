@@ -2955,15 +2955,17 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
   if (S->getRangeInit()->isTypeDependent())
     return S;
 
+  // Return an empty compound statement.
+  if (S->getSize() == 0) {
+    return new (Context) CompoundStmt(Context, {}, SourceLocation(), 
+                                      SourceLocation());
+  }
+
   // Create a new compound statement that binds the loop variable with the
   // parsed body. This is what we're going to instantiate.
   Stmt *VarAndBody[] = {S->getLoopVarStmt(), B};
-  Stmt *Body = new (Context)
-      CompoundStmt(Context, VarAndBody, SourceLocation(), SourceLocation());
-
-  // Return an empty statement (not an error) if the size is 0.
-  if (S->getSize() == 0)
-    return StmtResult();
+  Stmt *Body = new (Context) CompoundStmt(Context, VarAndBody, 
+                                          SourceLocation(), SourceLocation());
 
   // Instantiate the loop body for each element of the tuple.
   llvm::SmallVector<Stmt *, 8> Stmts;
