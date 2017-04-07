@@ -9881,6 +9881,14 @@ static bool Evaluate(APValue &Result, EvalInfo &Info, const Expr *E) {
     if (!EvaluateAtomic(E, Result, Info))
       return false;
   } else if (Info.getLangOpts().CPlusPlus11) {
+
+    // FIXME: This is a total hack. This almost certainly implies that we're
+    // potentially evaluating an expression involving a metaclass, which we've
+    // poisoned with having dependent type. This is not evaluable, but it
+    // is not an error, either.
+    if (T->isDependentType() && Info.checkingPotentialConstantExpression())
+      return false;
+
     Info.FFDiag(E, diag::note_constexpr_nonliteral) << E->getType();
     return false;
   } else {
