@@ -2551,13 +2551,8 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   TempArgs.addArgument(ArgLoc);
   QualType SpecType = SemaRef.CheckTemplateIdType(TempName, Loc, TempArgs);
 
-  // Try to complete the type, but do so as if in a SFINAE context so
-  // non-tuples don't give compiler errors.
-  {
-    Sema::SFINAETrap Trap(SemaRef);
-    if (SemaRef.RequireCompleteType(Loc, SpecType, diag::err_incomplete_type))
-      return false;
-  }
+  if (SemaRef.RequireCompleteType(Loc, SpecType, diag::err_incomplete_type))
+    return false;
   CXXRecordDecl *Spec = SpecType->getAsCXXRecordDecl();
 
   // Lookup the the '::value' member in the specifier.
@@ -2566,7 +2561,7 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   SemaRef.LookupQualifiedName(ValueLookup, Spec);
   VarDecl *Value = ValueLookup.getAsSingle<VarDecl>();
   if (!Value) {
-    llvm::errs() << "NO VALUE\n";
+    SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;    
     return false;
   }
 
@@ -2574,6 +2569,7 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   ExprResult Ref =
       SemaRef.BuildDeclRefExpr(Value, Value->getType(), VK_LValue, Loc);
   if (!Ref.get()->EvaluateAsInt(Size, SemaRef.Context)) {
+    // FIXME: This is probably not the right error.
     SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;
     return false;
   }
