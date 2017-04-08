@@ -203,14 +203,12 @@ class Parser : public CodeCompletionHandler {
   /// should not be set directly.
   bool InMessageExpression;
 
-  /// \brief When true, we are parsing the operand of a reflection. When
+  /// \brief When non-zero, we are parsing the operand of a reflection. When
   /// parsing an expression operand, this will treat it as if it were the
   /// operand of an unary '&' expression.
   /// 
   /// Note that these can nest.
-  ///
-  // TODO: Manage this with an RAII class.
-  int ReflectionExpressionDepth;
+  unsigned ReflectionExpressionDepth;
 
   /// The "depth" of the template parameters currently being parsed.
   unsigned TemplateParameterDepth;
@@ -2554,8 +2552,10 @@ private:
 
   ExprResult ParseCompilerErrorExpression();
 
-  DeclGroupPtrTy ParseMetaclassDefinition();
   void AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass);
+  DeclGroupPtrTy ParseMetaclassDefinition();
+  TypeResult ParseMetaclassBaseSpecifier(SourceLocation &BaseLoc,
+                                         SourceLocation &EndLocation);
 
   DeclGroupPtrTy ParseConstexprDeclaration();
 

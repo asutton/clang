@@ -946,13 +946,40 @@ void DeclPrinter::VisitMetaclassDecl(MetaclassDecl *D) {
   if (D->getIdentifier())
     Out << ' ' << *D;
 
-  // Print the metaclass definition.
-  if (Policy.TerseOutput) {
-    Out << " {}";
-  } else {
-    Out << " {\n";
-    VisitDeclContext(D->getDefinition());
-    Indent() << "}";
+  CXXRecordDecl *Definition = D->getDefinition();
+
+  if (Definition->isCompleteDefinition()) {
+    // Print the base classes.
+    if (Definition->getNumBases()) {
+      Out << " : ";
+      for (CXXRecordDecl::base_class_iterator Base = Definition->bases_begin(),
+           BaseEnd = Definition->bases_end(); Base != BaseEnd; ++Base) {
+        if (Base != Definition->bases_begin())
+          Out << ", ";
+
+        if (Base->isVirtual())
+          Out << "virtual ";
+
+        AccessSpecifier AS = Base->getAccessSpecifierAsWritten();
+        if (AS != AS_none) {
+          Print(AS);
+          Out << " ";
+        }
+        Out << Base->getType().getAsString(Policy);
+
+        if (Base->isPackExpansion())
+          Out << "...";
+      }
+    }
+
+    // Print the metaclass definition.
+    if (Policy.TerseOutput) {
+      Out << " {}";
+    } else {
+      Out << " {\n";
+      VisitDeclContext(Definition);
+      Indent() << "}";
+    }
   }
 }
 

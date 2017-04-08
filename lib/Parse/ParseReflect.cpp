@@ -152,64 +152,6 @@ ExprResult Parser::ParseReflectionTrait() {
   return Actions.ActOnReflectionTrait(Loc, Trait, Args, EndLoc);
 }
 
-/// Parse a C++ metaclass definition.
-///
-/// \verbatim
-///   metaclass-name:
-///     identifier
-///
-///   metaclass-definition:
-///     '$class' metaclass-name '{' member-specification[opt] '}'
-/// \endverbatim
-Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
-  assert(Tok.is(tok::dollar));
-  SourceLocation DLoc = ConsumeToken();
-  // For now, pretend we are defining a class that was declared with the
-  // 'struct' class-key.
-  DeclSpec::TST TagType = DeclSpec::TST_struct;
-  assert(Tok.is(tok::kw_class)); // TODO: Support for '$struct' and '$union'?
-  ConsumeToken();
-
-  // TODO: Parse attributes?
-  ParsedAttributesWithRange attrs(AttrFactory);
-  SourceLocation AttrFixItLoc = Tok.getLocation();
-
-  // Parse the metaclass name.
-  assert(Tok.is(tok::identifier));
-  IdentifierInfo *II = Tok.getIdentifierInfo();
-  SourceLocation IdLoc = ConsumeToken();
-
-  if (Tok.isNot(tok::l_brace)) {
-    Diag(Tok, diag::err_expected) << tok::l_brace;
-    return nullptr;
-  }
-
-  Decl *Metaclass = Actions.ActOnMetaclass(getCurScope(), DLoc, IdLoc, II);
-  CXXRecordDecl *MetaclassDef = nullptr;
-
-  // Enter a scope for the metaclass.
-  ParseScope MetaclassScope(this, Scope::DeclScope);
-
-  Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass,
-                                        MetaclassDef);
-
-  PrettyDeclStackTraceEntry CrashInfo(Actions, Metaclass, DLoc,
-                                      "parsing metaclass body");
-
-  // Parse the body of the metaclass.
-  ParseCXXMemberSpecification(DLoc, AttrFixItLoc, attrs, TagType, MetaclassDef);
-
-  if (MetaclassDef->isInvalidDecl()) {
-    Actions.ActOnMetaclassDefinitionError(getCurScope(), Metaclass);
-    return nullptr;
-  }
-
-  Actions.ActOnMetaclassFinishDefinition(getCurScope(), Metaclass,
-                                         MetaclassDef->getBraceRange());
-
-  return Actions.ConvertDeclToDeclGroup(Metaclass);
-}
-
 /// \brief Replace the current identifier token (and possibly the C++ scope
 /// specifier that precedes it) with a C++ metaclass-name annotation token.
 ///
@@ -230,6 +172,128 @@ void Parser::AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass) {
 
   // Update any cached tokens.
   PP.AnnotateCachedTokens(Tok);
+}
+
+/// Parse a C++ metaclass definition.
+///
+/// \verbatim
+///   metaclass-name:
+///     identifier
+///
+///   metaclass-definition:
+///     metaclass-head '{' member-specification[opt] '}'
+///
+///   metaclass-head:
+///     '$class' metaclass-name metaclass-base-clause[opt]
+/// \endverbatim
+Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
+  assert(Tok.is(tok::dollar));
+  SourceLocation DLoc = ConsumeToken();
+  // For now, pretend we are defining a class that was declared with the
+  // 'struct' class-key.
+  DeclSpec::TST TagType = DeclSpec::TST_struct;
+  assert(Tok.is(tok::kw_class)); // TODO: Support for '$struct' and '$union'?
+  ConsumeToken();
+
+  // TODO: Parse attributes?
+  ParsedAttributesWithRange attrs(AttrFactory);
+  SourceLocation AttrFixItLoc = Tok.getLocation();
+
+  // Parse the metaclass name.
+  assert(Tok.is(tok::identifier));
+  IdentifierInfo *II = Tok.getIdentifierInfo();
+  SourceLocation IdLoc = ConsumeToken();
+
+  if (Tok.isNot(tok::colon) && Tok.isNot(tok::l_brace)) {
+    Diag(Tok, diag::err_expected_either) << tok::colon << tok::l_brace;
+    return nullptr;
+  }
+
+  Decl *Metaclass = Actions.ActOnMetaclass(getCurScope(), DLoc, IdLoc, II);
+  CXXRecordDecl *MetaclassDef = nullptr;
+
+  // Enter a scope for the metaclass.
+  ParseScope MetaclassScope(this, Scope::DeclScope);
+
+  Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass, MetaclassDef);
+
+  PrettyDeclStackTraceEntry CrashInfo(Actions, Metaclass, DLoc,
+                                      "parsing metaclass body");
+
+  // Parse the body of the metaclass.
+  ParseCXXMemberSpecification(DLoc, AttrFixItLoc, attrs, TagType, MetaclassDef);
+
+  if (MetaclassDef->isInvalidDecl()) {
+    Actions.ActOnMetaclassDefinitionError(getCurScope(), Metaclass);
+    return nullptr;
+  }
+
+  Actions.ActOnMetaclassFinishDefinition(getCurScope(), Metaclass,
+                                         MetaclassDef->getBraceRange());
+
+  return Actions.ConvertDeclToDeclGroup(Metaclass);
+}
+
+/// Parse a C++ metaclass-base-specifier.
+///
+/// Note that we only check that the result names a type; semantic analysis will
+/// need to verify that the type names a class. The result is either a type or
+/// null, depending on whether a type name was found.
+///
+/// \verbatim
+///   metaclass-base-clause:
+///     ':' metaclass-base-specifier-list
+///
+///   metaclass-base-specifier-list:
+///     metaclass-base-specifier
+///     metaclass-base-specifier ',' metaclass-base-specifier
+///
+///   metaclass-base-specifier:
+///     nested-name-specifier[opt] metaclass-name
+/// \endverbatim
+TypeResult Parser::ParseMetaclassBaseSpecifier(SourceLocation &BaseLoc,
+                                               SourceLocation &EndLocation) {
+  // Parse optional nested-name-specifier.
+  CXXScopeSpec SS;
+  ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false);
+
+  BaseLoc = Tok.getLocation();
+
+  if (Tok.isNot(tok::identifier)) {
+    Diag(Tok, diag::err_expected_class_name);
+    return true;
+  }
+
+  IdentifierInfo *Id = Tok.getIdentifierInfo();
+  SourceLocation IdLoc = ConsumeToken();
+
+  // We have an identifier; check whether it is actually is a metaclass.
+  IdentifierInfo *CorrectedII = nullptr;
+  ParsedType Type =
+      Actions.getMetaclassName(*Id, IdLoc, getCurScope(), &SS,
+                               /*NonTrivialTypeSourceInfo=*/true, &CorrectedII);
+
+  if (!Type) {
+    Diag(IdLoc, diag::err_expected_class_name);
+    return true;
+  }
+
+  // Consume the identifier.
+  EndLocation = IdLoc;
+
+  // Fake up a Declarator to use with ActOnTypeName.
+  DeclSpec DS(AttrFactory);
+  DS.SetRangeStart(IdLoc);
+  DS.SetRangeEnd(EndLocation);
+  DS.getTypeSpecScope() = SS;
+
+  const char *PrevSpec = nullptr;
+  unsigned DiagID;
+  DS.SetTypeSpecType(TST_typename, IdLoc, PrevSpec, DiagID, Type,
+                     Actions.getASTContext().getPrintingPolicy());
+
+  Declarator DeclaratorInfo(DS, Declarator::TypeNameContext);
+  return Actions.ActOnTypeName(getCurScope(), DeclaratorInfo);
 }
 
 /// Parse a constexpr-declaration.

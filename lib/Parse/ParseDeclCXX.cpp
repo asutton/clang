@@ -1987,6 +1987,8 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
 ///         attribute-specifier-seq[opt] access-specifier 'virtual'[opt]
 ///                 base-type-specifier
 BaseResult Parser::ParseBaseSpecifier(Decl *ClassDecl) {
+  const bool IsMetaclassBaseSpecifier = getCurScope()->isMetaclassScope();
+
   bool IsVirtual = false;
   SourceLocation StartLoc = Tok.getLocation();
 
@@ -2021,19 +2023,21 @@ BaseResult Parser::ParseBaseSpecifier(Decl *ClassDecl) {
 
   CheckMisplacedCXX11Attribute(Attributes, StartLoc);
 
-  // Parse the class-name.
+  // Parse the class-name or metaclass-name.
 
   // HACK: MSVC doesn't consider _Atomic to be a keyword and its STL
   // implementation for VS2013 uses _Atomic as an identifier for one of the
   // classes in <atomic>.  Treat '_Atomic' to be an identifier when we are
   // parsing the class-name for a base specifier.
-  if (getLangOpts().MSVCCompat && Tok.is(tok::kw__Atomic) &&
-      NextToken().is(tok::less))
+  if (!IsMetaclassBaseSpecifier && getLangOpts().MSVCCompat &&
+      Tok.is(tok::kw__Atomic) && NextToken().is(tok::less))
     Tok.setKind(tok::identifier);
 
   SourceLocation EndLocation;
   SourceLocation BaseLoc;
-  TypeResult BaseType = ParseBaseTypeSpecifier(BaseLoc, EndLocation);
+  TypeResult BaseType = IsMetaclassBaseSpecifier
+                            ? ParseMetaclassBaseSpecifier(BaseLoc, EndLocation)
+                            : ParseBaseTypeSpecifier(BaseLoc, EndLocation);
   if (BaseType.isInvalid())
     return true;
 
@@ -2041,7 +2045,8 @@ BaseResult Parser::ParseBaseSpecifier(Decl *ClassDecl) {
   // actually part of the base-specifier-list grammar productions, but we
   // parse it here for convenience.
   SourceLocation EllipsisLoc;
-  TryConsumeToken(tok::ellipsis, EllipsisLoc);
+  if (!IsMetaclassBaseSpecifier)
+    TryConsumeToken(tok::ellipsis, EllipsisLoc);
 
   // Find the complete source range for the base-specifier.
   SourceRange Range(StartLoc, EndLocation);
@@ -3106,8 +3111,15 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
     }
   }
 
+  unsigned ScopeFlags = Scope::ClassScope | Scope::DeclScope;
+
+  // Determine whether this is the definition of a metaclass.
+  if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(TagDecl))
+    if (RD->isMetaclassDefinition())
+      ScopeFlags |= Scope::MetaclassScope;
+
   // Enter a scope for the class.
-  ParseScope ClassScope(this, Scope::ClassScope|Scope::DeclScope);
+  ParseScope ClassScope(this, ScopeFlags);
 
   // Note that we are parsing a new (potentially-nested) class definition.
   ParsingClassDefinition ParsingDef(*this, TagDecl, NonNestedClass,
