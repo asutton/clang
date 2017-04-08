@@ -8266,6 +8266,7 @@ public:
   void ActOnMetaclassFinishDefinition(Scope *S, Decl *MD,
                                       SourceRange BraceRange);
   void ActOnMetaclassDefinitionError(Scope *S, Decl *MD);
+
   bool isMetaclassName(Scope *S, CXXScopeSpec *SS, const IdentifierInfo &Name,
                        SourceLocation NameLoc, Decl **Metaclass = nullptr);
 

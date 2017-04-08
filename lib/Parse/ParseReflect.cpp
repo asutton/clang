@@ -152,6 +152,28 @@ ExprResult Parser::ParseReflectionTrait() {
   return Actions.ActOnReflectionTrait(Loc, Trait, Args, EndLoc);
 }
 
+/// \brief Replace the current identifier token (and possibly the C++ scope
+/// specifier that precedes it) with a C++ metaclass-name annotation token.
+///
+/// \param SS         If non-null, the C++ scope specifier that qualifies the
+///                   metaclass-name and was extracted from the preceding scope
+///                   annotation token.
+/// \param Metaclass  The C++ metaclass declaration that corresponds to the
+///                   metaclass-name.
+void Parser::AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass) {
+  assert(Tok.is(tok::identifier));
+
+  // Replace the current token with an annotation token.
+  Tok.setKind(tok::annot_metaclass);
+  Tok.setAnnotationValue(Metaclass);
+  Tok.setAnnotationEndLoc(Tok.getLocation());
+  if (SS && SS->isNotEmpty()) // C++ qualified metaclass-name.
+    Tok.setLocation(SS->getBeginLoc());
+
+  // Update any cached tokens.
+  PP.AnnotateCachedTokens(Tok);
+}
+
 /// Parse a C++ metaclass definition.
 ///
 /// \verbatim
@@ -190,8 +212,7 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
   // Enter a scope for the metaclass.
   ParseScope MetaclassScope(this, Scope::DeclScope);
 
-  Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass,
-                                        MetaclassDef);
+  Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass, MetaclassDef);
 
   PrettyDeclStackTraceEntry CrashInfo(Actions, Metaclass, DLoc,
                                       "parsing metaclass body");
@@ -208,28 +229,6 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
                                          MetaclassDef->getBraceRange());
 
   return Actions.ConvertDeclToDeclGroup(Metaclass);
-}
-
-/// \brief Replace the current identifier token (and possibly the C++ scope
-/// specifier that precedes it) with a C++ metaclass-name annotation token.
-///
-/// \param SS         If non-null, the C++ scope specifier that qualifies the
-///                   metaclass-name and was extracted from the preceding scope
-///                   annotation token.
-/// \param Metaclass  The C++ metaclass declaration that corresponds to the
-///                   metaclass-name.
-void Parser::AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass) {
-  assert(Tok.is(tok::identifier));
-
-  // Replace the current token with an annotation token.
-  Tok.setKind(tok::annot_metaclass);
-  Tok.setAnnotationValue(Metaclass);
-  Tok.setAnnotationEndLoc(Tok.getLocation());
-  if (SS && SS->isNotEmpty()) // C++ qualified metaclass-name.
-    Tok.setLocation(SS->getBeginLoc());
-
-  // Update any cached tokens.
-  PP.AnnotateCachedTokens(Tok);
 }
 
 /// Parse a constexpr-declaration.

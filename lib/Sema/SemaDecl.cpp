@@ -14515,24 +14515,22 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
 
   RecordDecl *Record = dyn_cast<RecordDecl>(EnclosingDecl);
 
-  {
-    // If this record is part of a metaclass, we'll mark it complete but
-    // actually skip all of the member processing below. 
-    //
-    // FIXME: This seems fragile.
-    DeclContext *Parent = Record->getParent();
-    if (MetaclassDecl *Meta = dyn_cast<MetaclassDecl>(Parent)) {
-      Record->completeDefinition();
-      return;
-    }
+  // If this record is part of a metaclass, we'll mark it complete but
+  // actually skip all of the member processing below. 
+  //
+  // FIXME: This seems fragile.
+  if (isa<MetaclassDecl>(Record->getParent())) {
+    Record->completeDefinition();
+    return;
+  }
 
-    // If the record subscribes to a metaclass, then we need to inject and
-    // apply those declarations prior to analysis.
-    if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record))
-      if (MetaclassDecl *Meta = Class->getMetaclass()) {
-        SmallVector<Decl *, 32> InjectedFields;
-        InjectMetaclassMembers(Meta, Class, InjectedFields);
-      }
+  // If the record subscribes to a metaclass, then we need to inject and
+  // apply those declarations prior to analysis.
+  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
+    if (MetaclassDecl *Metaclass = Class->getMetaclass()) {
+      SmallVector<Decl *, 32> InjectedFields;
+      InjectMetaclassMembers(Metaclass, Class, InjectedFields);
+    }
   }
 
   // Start counting up the number of named members; make sure to include
