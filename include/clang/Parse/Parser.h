@@ -2554,6 +2554,8 @@ private:
 
   void AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass);
   DeclGroupPtrTy ParseMetaclassDefinition();
+  TypeResult ParseMetaclassBaseSpecifier(SourceLocation &BaseLoc,
+                                         SourceLocation &EndLocation);
 
   DeclGroupPtrTy ParseConstexprDeclaration();
 

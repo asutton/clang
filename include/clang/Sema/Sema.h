@@ -8269,6 +8269,10 @@ public:
 
   bool isMetaclassName(Scope *S, CXXScopeSpec *SS, const IdentifierInfo &Name,
                        SourceLocation NameLoc, Decl **Metaclass = nullptr);
+  ParsedType getMetaclassName(const IdentifierInfo &II, SourceLocation NameLoc,
+                              Scope *S, CXXScopeSpec *SS = nullptr,
+                              bool WantNontrivialTypeSourceInfo = false,
+                              IdentifierInfo **CorrectedII = nullptr);
 
   void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                               SmallVectorImpl<Decl *> &Fields);

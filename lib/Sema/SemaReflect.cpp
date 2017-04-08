@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "TypeLocBuilder.h"
 #include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/Lex/Preprocessor.h"
@@ -1340,6 +1341,31 @@ void Sema::ActOnMetaclassDefinitionError(Scope *S, Decl *MD) {
   PopDeclContext();
 }
 
+namespace {
+
+class MetaclassNameValidatorCCC : public CorrectionCandidateCallback {
+public:
+  explicit MetaclassNameValidatorCCC(bool AllowInvalid)
+      : AllowInvalidDecl(AllowInvalid) {
+    WantExpressionKeywords = false;
+    WantCXXNamedCasts = false;
+    WantRemainingKeywords = false;
+  }
+
+  bool ValidateCandidate(const TypoCorrection &candidate) override {
+    if (NamedDecl *ND = candidate.getCorrectionDecl()) {
+      bool IsMetaclass = isa<MetaclassDecl>(ND);
+      return IsMetaclass && (AllowInvalidDecl || !ND->isInvalidDecl());
+    }
+    return false;
+  }
+
+private:
+  bool AllowInvalidDecl;
+};
+
+} // end anonymous namespace
+
 /// Determine whether the given identifier is the name of a C++ metaclass.
 ///
 /// \param S                  The scope from which unqualified metaclass name
@@ -1374,6 +1400,198 @@ bool Sema::isMetaclassName(Scope *S, CXXScopeSpec *SS,
   if (Metaclass)
     *Metaclass = MD;
   return true;
+}
+
+/// \brief If the identifier refers to a metaclass name within this scope,
+/// return the declaration of that type.
+///
+/// This routine performs ordinary name lookup of the identifier \p II
+/// within the given scope, with optional C++ scope specifier \p SS, to
+/// determine whether the name refers to a metaclass. If so, returns an
+/// opaque pointer (actually a QualType) corresponding to that
+/// type. Otherwise, returns \c NULL.
+///
+/// \note This function extracts the type from a MetaclassDecl's underlying
+///       CXXRecordDecl representation and is used to provide a ParsedType
+///       object to Parser::ParseBaseSpecifier() when parsing metaclass base
+///       specifiers. Should MetaclassDecl ever become a subclass of RecordDecl
+///       or CXXRecordDecl, this function will hopefully no longer be necessary.
+///
+/// \see  Sema::getTypeName()
+ParsedType Sema::getMetaclassName(const IdentifierInfo &II,
+                                  SourceLocation NameLoc, Scope *S,
+                                  CXXScopeSpec *SS,
+                                  bool WantNontrivialTypeSourceInfo,
+                                  IdentifierInfo **CorrectedII) {
+  // Determine where we will perform name lookup.
+  DeclContext *LookupCtx = nullptr;
+  if (SS && SS->isNotEmpty()) {
+    LookupCtx = computeDeclContext(*SS, false);
+
+    if (!LookupCtx) {
+      if (isDependentScopeSpecifier(*SS)) {
+        // FIXME: Update this section if metaclasses are ever allowed to be
+        // members of a dependent context.
+
+        // C++ [temp.res]p3:
+        //   A qualified-id that refers to a type and in which the
+        //   nested-name-specifier depends on a template-parameter (14.6.2)
+        //   shall be prefixed by the keyword typename to indicate that the
+        //   qualified-id denotes a type, forming an
+        //   elaborated-type-specifier (7.1.5.3).
+        //
+        // We therefore do not perform any name lookup if the result would
+        // refer to a member of an unknown specialization.
+
+        // We know from the grammar that this name refers to a type,
+        // so build a dependent node to describe the type.
+        if (WantNontrivialTypeSourceInfo)
+          return ActOnTypenameType(S, SourceLocation(), *SS, II, NameLoc).get();
+
+        NestedNameSpecifierLoc QualifierLoc = SS->getWithLocInContext(Context);
+        QualType T = CheckTypenameType(ETK_None, SourceLocation(), QualifierLoc,
+                                       II, NameLoc);
+        return ParsedType::make(T);
+      }
+
+      return nullptr;
+    }
+
+    if (!LookupCtx->isDependentContext() &&
+        RequireCompleteDeclContext(*SS, LookupCtx))
+      return nullptr;
+  }
+
+  LookupResult Result(*this, &II, NameLoc, LookupOrdinaryName);
+  if (LookupCtx) {
+    // Perform "qualified" name lookup into the declaration context we
+    // computed, which is either the type of the base of a member access
+    // expression or the declaration context associated with a prior
+    // nested-name-specifier.
+    LookupQualifiedName(Result, LookupCtx);
+  } else {
+    // Perform unqualified name lookup.
+    LookupName(Result, S);
+  }
+
+  NamedDecl *IIDecl = nullptr;
+  switch (Result.getResultKind()) {
+  case LookupResult::NotFound:
+  case LookupResult::NotFoundInCurrentInstantiation:
+    if (CorrectedII) {
+      TypoCorrection Correction =
+          CorrectTypo(Result.getLookupNameInfo(), LookupOrdinaryName, S, SS,
+                      llvm::make_unique<MetaclassNameValidatorCCC>(true),
+                      CTK_ErrorRecovery);
+      IdentifierInfo *NewII = Correction.getCorrectionAsIdentifierInfo();
+      NestedNameSpecifier *NNS = Correction.getCorrectionSpecifier();
+      CXXScopeSpec NewSS, *NewSSPtr = SS;
+      if (SS && NNS) {
+        NewSS.MakeTrivial(Context, NNS, SourceRange(NameLoc));
+        NewSSPtr = &NewSS;
+      }
+      if (Correction && (NNS || NewII != &II)) {
+        ParsedType Ty = getMetaclassName(*NewII, NameLoc, S, NewSSPtr,
+                                         WantNontrivialTypeSourceInfo);
+        if (Ty) {
+          diagnoseTypo(Correction,
+                       PDiag(diag::err_unknown_type_or_class_name_suggest)
+                           << Result.getLookupName() << /*class*/1);
+          if (SS && NNS)
+            SS->MakeTrivial(Context, NNS, SourceRange(NameLoc));
+          *CorrectedII = NewII;
+          return Ty;
+        }
+      }
+    }
+  // If typo correction failed or was not performed, fall through
+  case LookupResult::FoundOverloaded:
+  case LookupResult::FoundUnresolvedValue:
+    Result.suppressDiagnostics();
+    return nullptr;
+
+  case LookupResult::Ambiguous:
+    // Recover from metaclass-hiding ambiguities by hiding the metaclass.  We'll
+    // do the lookup again when looking for an object, and we can
+    // diagnose the error then.  If we don't do this, then the error
+    // about hiding the metaclass will be immediately followed by an error
+    // that only makes sense if the identifier was treated like a metaclass.
+    // FIXME: Should we really suppress diagnostics here?
+    if (Result.getAmbiguityKind() == LookupResult::AmbiguousTagHiding) {
+      Result.suppressDiagnostics();
+      return nullptr;
+    }
+
+    // Look to see if we have a metaclass anywhere in the list of results.
+    for (LookupResult::iterator Res = Result.begin(), ResEnd = Result.end();
+         Res != ResEnd; ++Res) {
+      if (isa<MetaclassDecl>(*Res)) {
+        if (!IIDecl ||
+            (*Res)->getLocation().getRawEncoding() <
+                IIDecl->getLocation().getRawEncoding())
+          IIDecl = *Res;
+      }
+    }
+
+    if (!IIDecl) {
+      // None of the entities we found is a metaclass, so there is no way
+      // to even assume that the result is a metaclass. In this case, don't
+      // complain about the ambiguity. The parser will either try to
+      // perform this lookup again (e.g., as an object name), which
+      // will produce the ambiguity, or will complain that it expected
+      // a metaclass name.
+      Result.suppressDiagnostics();
+      return nullptr;
+    }
+
+    // We found a metaclass within the ambiguous lookup; diagnose the
+    // ambiguity and then return that metaclass. This might be the right
+    // answer, or it might not be, but it suppresses any attempt to
+    // perform the name lookup again.
+    break;
+
+  case LookupResult::Found:
+    IIDecl = Result.getFoundDecl();
+    break;
+  }
+
+  assert(IIDecl && "Didn't find decl");
+
+  QualType T;
+  if (MetaclassDecl *MD = dyn_cast<MetaclassDecl>(IIDecl)) {
+    // Get the underlying class that contains the metaclass' definition.
+    TypeDecl *TD = MD->getDefinition();
+
+    DiagnoseUseOfDecl(IIDecl, NameLoc);
+
+    T = Context.getTypeDeclType(TD);
+    // MarkAnyDeclReferenced(TD->getLocation(), TD, /*OdrUse=*/false);
+  }
+
+  if (T.isNull()) {
+    // If it's not plausibly a type, suppress diagnostics.
+    Result.suppressDiagnostics();
+    return nullptr;
+  }
+
+  // FIXME: Is this necessary?
+  if (SS && SS->isNotEmpty()) {
+    if (WantNontrivialTypeSourceInfo) {
+      // Construct a type with type-source information.
+      TypeLocBuilder Builder;
+      Builder.pushTypeSpec(T).setNameLoc(NameLoc);
+
+      T = getElaboratedType(ETK_None, *SS, T);
+      ElaboratedTypeLoc ElabTL = Builder.push<ElaboratedTypeLoc>(T);
+      ElabTL.setElaboratedKeywordLoc(SourceLocation());
+      ElabTL.setQualifierLoc(SS->getWithLocInContext(Context));
+      return CreateParsedType(T, Builder.getTypeSourceInfo(Context, T));
+    } else {
+      T = getElaboratedType(ETK_None, *SS, T);
+    }
+  }
+
+  return ParsedType::make(T);
 }
 
 /// Returns \c true if a constexpr-declaration in declaration context \p C would
