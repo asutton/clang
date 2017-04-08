@@ -1357,9 +1357,15 @@ bool Sema::isMetaclassName(Scope *S, CXXScopeSpec *SS,
                            const IdentifierInfo &Name, SourceLocation NameLoc,
                            Decl **Metaclass) {
   // FIXME: What kind of lookup should be performed for metaclass names?
-  LookupResult R(*this, &Name, NameLoc, LookupOrdinaryName, ForRedeclaration);
+  LookupResult R(*this, &Name, NameLoc, LookupOrdinaryName);
   // TODO: Check for metaclass template specializations.
   LookupParsedName(R, S, SS);
+
+  if (R.isAmbiguous()) {
+    // FIXME: Diagnose an ambiguity if we find at least one declaration.
+    R.suppressDiagnostics();
+    return false;
+  }
 
   MetaclassDecl *MD = R.getAsSingle<MetaclassDecl>();
 
