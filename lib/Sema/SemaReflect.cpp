@@ -319,40 +319,40 @@ ExprResult Sema::BuildTypeReflection(SourceLocation Loc, QualType QT) {
   return InitSeq.Perform(*this, Entity, Kind, Args);
 }
 
-/// \brief Returns the cpp3k namespace if a suitable header has been included.
+/// \brief Returns the cppx namespace if a suitable header has been included.
 /// If not, a diagnostic is emitted, and \c nullptr is returned.
 ///
 // TODO: We should probably cache this the same way that we do
 // with typeid (see CXXTypeInfoDecl in Sema.h).
-NamespaceDecl *Sema::RequireCpp3kNamespace(SourceLocation Loc) {
-  IdentifierInfo *Cpp3kII = &PP.getIdentifierTable().get("cpp3k");
-  LookupResult R(*this, Cpp3kII, Loc, LookupNamespaceName);
+NamespaceDecl *Sema::RequireCppxNamespace(SourceLocation Loc) {
+  IdentifierInfo *CppxII = &PP.getIdentifierTable().get("cppx");
+  LookupResult R(*this, CppxII, Loc, LookupNamespaceName);
   LookupQualifiedName(R, Context.getTranslationUnitDecl());
   if (!R.isSingleResult()) {
     Diag(Loc, diag::err_need_header_before_dollar);
     return nullptr;
   }
-  NamespaceDecl *Cpp3k = R.getAsSingle<NamespaceDecl>();
-  assert(Cpp3k && "cpp3k is not a namespace");
-  return Cpp3k;
+  NamespaceDecl *Cppx = R.getAsSingle<NamespaceDecl>();
+  assert(Cppx && "cppx is not a namespace");
+  return Cppx;
 }
 
-/// \brief Same as RequireCpp3kNamespace, but requires cpp3k::meta.
-NamespaceDecl *Sema::RequireCpp3kMetaNamespace(SourceLocation Loc) {
-  NamespaceDecl *Cpp3k = RequireCpp3kNamespace(Loc);
-  if (!Cpp3k)
+/// \brief Same as RequireCppxNamespace, but requires cppx::meta.
+NamespaceDecl *Sema::RequireCppxMetaNamespace(SourceLocation Loc) {
+  NamespaceDecl *Cppx = RequireCppxNamespace(Loc);
+  if (!Cppx)
     return nullptr;
 
-  // Get the cpp3k::meta namespace.
+  // Get the cppx::meta namespace.
   IdentifierInfo *MetaII = &PP.getIdentifierTable().get("meta");
   LookupResult R(*this, MetaII, Loc, LookupNamespaceName);
-  LookupQualifiedName(R, Cpp3k);
+  LookupQualifiedName(R, Cppx);
   if (!R.isSingleResult()) {
     Diag(Loc, diag::err_need_header_before_dollar);
     return nullptr;
   }
   NamespaceDecl *Meta = R.getAsSingle<NamespaceDecl>();
-  assert(Meta && "cpp3k::meta is not a namespace");
+  assert(Meta && "cppx::meta is not a namespace");
   return Meta;
 }
 
@@ -365,7 +365,7 @@ NamespaceDecl *Sema::RequireCpp3kMetaNamespace(SourceLocation Loc) {
 // for appropriate arguments in the reflection traits.
 ClassTemplateDecl *Sema::RequireReflectionType(SourceLocation Loc,
                                                char const *Name) {
-  NamespaceDecl *Meta = RequireCpp3kMetaNamespace(Loc);
+  NamespaceDecl *Meta = RequireCppxMetaNamespace(Loc);
   if (!Meta)
     return nullptr;
 

@@ -8240,8 +8240,8 @@ public:
   ExprResult BuildDeclReflection(SourceLocation Loc, Decl *D);
   ExprResult BuildTypeReflection(SourceLocation Loc, QualType T);
 
-  NamespaceDecl *RequireCpp3kNamespace(SourceLocation Loc);
-  NamespaceDecl *RequireCpp3kMetaNamespace(SourceLocation Loc);
+  NamespaceDecl *RequireCppxNamespace(SourceLocation Loc);
+  NamespaceDecl *RequireCppxMetaNamespace(SourceLocation Loc);
   ClassTemplateDecl *RequireReflectionType(SourceLocation Loc,
                                            char const *Name);
 
