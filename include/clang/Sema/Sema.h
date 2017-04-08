@@ -8288,6 +8288,11 @@ public:
   bool EvaluateConstexprDeclaration(ConstexprDecl *CD, LambdaExpr *E);
   bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
 
+  StmtResult ActOnCXXInjectionStmt(SourceLocation Arrow, 
+                                   SourceLocation LB,
+                                   SourceLocation RB, 
+                                   ArrayRef<Token> TokArray);
+
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
   //

@@ -1698,14 +1698,14 @@ DeclResult Sema::ActOnFinishConstexprDeclaration(Decl *D, Stmt *S) {
     FunctionDecl *Fn = CD->getFunctionDecl();
     ActOnFinishFunctionBody(Fn, S);
     if (!EvaluateConstexprDeclaration(CD, Fn))
-      return true;
+      return DeclResult(true);
   } else {
     LambdaScopeInfo *LSI = cast<LambdaScopeInfo>(FunctionScopes.back());
     ActOnFinishFunctionBody(LSI->CallOperator, S);
     LambdaExpr *Lambda = cast<LambdaExpr>(
         BuildLambdaExpr(CD->getLocStart(), S->getLocEnd(), LSI).get());
     if (!EvaluateConstexprDeclaration(CD, Lambda))
-      return true;
+      return DeclResult(true);
   }
   return CD;
 }

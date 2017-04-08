@@ -14,6 +14,7 @@
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclTemplate.h"
+#include "clang/Lex/Token.h"
 
 using namespace clang;
 
@@ -162,4 +163,13 @@ CoroutineBodyStmt::CoroutineBodyStmt(CoroutineBodyStmt::CtorArgs const &Args)
   SubStmts[CoroutineBodyStmt::ReturnValue] = Args.ReturnValue;
   std::copy(Args.ParamMoves.begin(), Args.ParamMoves.end(),
             const_cast<Stmt **>(getParamMoves().data()));
+}
+
+CXXInjectionStmt::CXXInjectionStmt(ASTContext& Cxt, SourceLocation Arrow, 
+                                   SourceLocation LB, SourceLocation RB, 
+                                   ArrayRef<Token> TokArray)
+  : Stmt(CXXInjectionStmtClass), ArrowLoc(Arrow), LBraceLoc(LB), RBraceLoc(RB), 
+    NumToks(TokArray.size()), Toks(new (Cxt) Token[NumToks])
+{
+  std::copy(TokArray.begin(), TokArray.end(), Toks);
 }

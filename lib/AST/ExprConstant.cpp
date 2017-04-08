@@ -4043,6 +4043,20 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     llvm_unreachable("Pack expansion not implemented");
   }
 
+  case Stmt::CXXInjectionStmtClass: {
+    if (Info.checkingPotentialConstantExpression())
+      return ESR_Succeeded;
+
+    // Register the injection as an effect.
+    if (Info.EvalStatus.Injections) {
+      Info.EvalStatus.Injections->push_back(const_cast<Stmt *>(S));
+      return ESR_Succeeded;
+    }
+    Info.CCEDiag(S->getLocStart(), 
+                 diag::note_injection_outside_constexpr_decl);
+    return ESR_Failed;
+  }
+
   case Stmt::SwitchStmtClass:
     return EvaluateSwitch(Result, Info, cast<SwitchStmt>(S));
 
@@ -9790,7 +9804,7 @@ public:
       Info.EvalStatus.Injections->push_back(const_cast<Expr *>(E));
       return true;
     }
-    return Error(E, diag::note_decl_modification_outside_constexpr_decl);
+    return Error(E, diag::note_modification_outside_constexpr_decl);
   }
 
   // Queue up modification traits as injections.

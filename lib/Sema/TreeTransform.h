@@ -7363,6 +7363,12 @@ TreeTransform<Derived>::TransformCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
 
 template<typename Derived>
 StmtResult
+TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
+  return S;
+}
+
+template<typename Derived>
+StmtResult
 TreeTransform<Derived>::TransformMSDependentExistsStmt(
                                                     MSDependentExistsStmt *S) {
   // Transform the nested-name-specifier, if any.

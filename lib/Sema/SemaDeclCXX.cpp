@@ -1871,6 +1871,10 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
         return false;
     return true;
 
+  case Stmt::CXXInjectionStmtClass:
+    // - injections
+    return true;
+
   case Stmt::SwitchStmtClass:
   case Stmt::CaseStmtClass:
   case Stmt::DefaultStmtClass:

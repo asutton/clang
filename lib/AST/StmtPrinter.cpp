@@ -351,6 +351,12 @@ void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
     OS << "\n";
 }
 
+void StmtPrinter::VisitCXXInjectionStmt(CXXInjectionStmt *Node) {
+  // FIXME: Print tokens.
+  Indent() << "-> { ... }";
+}
+
+
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
   Indent();
   if (Node->isIfExists())

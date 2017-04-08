@@ -420,6 +420,12 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
 /// \returns  \c true if no errors are encountered.
 bool Sema::InjectCode(Stmt *Injection) {
   switch (Injection->getStmtClass()) {
+  case Stmt::CXXInjectionStmtClass:
+    // FIXME: Do something with the injection. We need to pass tokens back
+    // to the parser, or set a late parsing callback like Sema does with
+    // late parsed templates.
+    break;
+  
   case Stmt::ReflectionTraitExprClass: {
     ReflectionTraitExpr *E = cast<ReflectionTraitExpr>(Injection);
     switch (E->getTrait()) {
@@ -431,9 +437,12 @@ bool Sema::InjectCode(Stmt *Injection) {
       llvm_unreachable("Invalid reflection trait");
     }
   }
+  
   default:
     llvm_unreachable("Invalid injection");
   }
+
+  return true;
 }
 
 /// Inject a sequence of source code fragments or modification requests
@@ -445,4 +454,14 @@ bool Sema::InjectCode(SmallVectorImpl<Stmt *> &Injections) {
     if (!InjectCode(S))
       return false;
   return true;
+}
+
+/// Returns a new injection statement. These things are pretty opaque; there's
+/// practically no checking we can do until they are injected.
+StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Arrow,
+                                       SourceLocation LB,
+                                       SourceLocation RB,
+                                       ArrayRef<Token> TokArray)
+{
+  return new (Context) CXXInjectionStmt(Context, Arrow, LB, RB, TokArray);
 }

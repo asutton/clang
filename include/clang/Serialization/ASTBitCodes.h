@@ -1401,6 +1401,8 @@ namespace clang {
       STMT_CXX_TUPLE_EXPANSION,
       /// \brief A CXXPackExpansion record.
       STMT_CXX_PACK_EXPANSION,
+      /// \brief A CXXInjection record.
+      STMT_CXX_INJECTION,
 
       /// \brief A CXXOperatorCallExpr record.
       EXPR_CXX_OPERATOR_CALL,

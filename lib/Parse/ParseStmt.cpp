@@ -66,6 +66,7 @@ StmtResult Parser::ParseStatement(SourceLocation *TrailingElseLoc,
 /// [OBC]   objc-synchronized-statement
 /// [GNU]   asm-statement
 /// [OMP]   openmp-construct             [TODO]
+/// [Meta]  injection-statement
 ///
 ///       labeled-statement:
 ///         identifier ':' statement
@@ -269,6 +270,9 @@ Retry:
     Res = ParseReturnStatement();
     SemiError = "co_return";
     break;
+
+  case tok::arrow: // [Meta] '-> { tokens }'
+    return ParseCXXInjectionStmt();
 
   case tok::kw_asm: {
     ProhibitAttributes(Attrs);

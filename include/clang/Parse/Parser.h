@@ -2559,6 +2559,8 @@ private:
 
   DeclGroupPtrTy ParseConstexprDeclaration();
 
+  StmtResult ParseCXXInjectionStmt();
+
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
   /// Parse clauses for '#pragma omp declare simd'.

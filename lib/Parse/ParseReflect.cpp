@@ -323,3 +323,29 @@ Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
   D = Actions.ActOnFinishConstexprDeclaration(D.get(), Body.get());
   return Actions.ConvertDeclToDeclGroup(D.get());
 }
+
+/// injection-statement:
+///   '->' '{' token-list '}'
+///
+/// FIXME: Allow '-> token-list ;' for non-nested injections?
+StmtResult Parser::ParseCXXInjectionStmt()
+{
+  assert(Tok.is(tok::arrow));
+  SourceLocation ArrowLoc = ConsumeToken();
+
+  BalancedDelimiterTracker Braces(*this, tok::l_brace);
+  if (Braces.expectAndConsume())
+    return StmtError();
+
+  // Consume all of the tokens up to but not including the closing brace.
+  CachedTokens Toks; 
+  ConsumeAndStoreUntil(tok::r_brace, Toks, false, false);
+
+  if (Braces.consumeClose())
+    return StmtError();
+
+  return Actions.ActOnCXXInjectionStmt(ArrowLoc, 
+                                       Braces.getOpenLocation(),
+                                       Braces.getCloseLocation(),
+                                       Toks);
+}

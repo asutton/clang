@@ -624,6 +624,45 @@ public:
   }
 };
 
+/// A C++ injection statement of the form '-> { tokens }'
+///
+class CXXInjectionStmt : public Stmt {
+  SourceLocation ArrowLoc;
+  SourceLocation LBraceLoc;
+  SourceLocation RBraceLoc;
+  unsigned NumToks;
+  Token* Toks;
+
+public:
+  CXXInjectionStmt(ASTContext& Cxt, SourceLocation Arrow, SourceLocation LB, 
+                   SourceLocation RB, ArrayRef<Token> Toks);
+
+  explicit CXXInjectionStmt(EmptyShell Empty) 
+    : Stmt(CXXInjectionStmtClass, Empty), ArrowLoc(), LBraceLoc(), RBraceLoc(),
+      NumToks(0), Toks(nullptr) {}
+
+  SourceLocation getArrowLoc() const { return ArrowLoc; }
+  SourceLocation getLBraceLoc() const { return LBraceLoc; }
+  SourceLocation getRBraceLoc() const { return RBraceLoc; }
+
+  /// \brief Returns the unparsed tokens of the injection.
+  ArrayRef<Token> getTokens() const { return ArrayRef<Token>(Toks, NumToks); }
+
+  SourceLocation getLocStart() const LLVM_READONLY { return ArrowLoc; }
+  SourceLocation getLocEnd() const LLVM_READONLY { return RBraceLoc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXInjectionStmtClass;
+  }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  friend class ASTStmtReader;
+  friend class ASTStmtWriter;
+};
+
 }  // end namespace clang
 
 #endif
