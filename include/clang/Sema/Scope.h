@@ -124,6 +124,10 @@ public:
 
     /// We are currently in the filter expression of an SEH except block.
     SEHFilterScope = 0x200000,
+
+    /// \brief The scope of a C++ metaclass definition.
+    /// Always has ClassScope set as well.
+    MetaclassScope = 0x400000
   };
 private:
   /// The parent scope for this scope.  This is null for the translation-unit
@@ -325,6 +329,11 @@ public:
   /// isClassScope - Return true if this scope is a class/struct/union scope.
   bool isClassScope() const {
     return (getFlags() & Scope::ClassScope);
+  }
+
+  /// Return \c true if this scope is a C++ metaclass scope.
+  bool isMetaclassScope() const {
+    return (getFlags() & Scope::MetaclassScope);
   }
 
   /// isInCXXInlineMethodScope - Return true if this scope is a C++ inline

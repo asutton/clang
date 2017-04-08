@@ -3106,8 +3106,15 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
     }
   }
 
+  unsigned ScopeFlags = Scope::ClassScope | Scope::DeclScope;
+
+  // Determine whether this is the definition of a metaclass.
+  if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(TagDecl))
+    if (RD->isMetaclassDefinition())
+      ScopeFlags |= Scope::MetaclassScope;
+
   // Enter a scope for the class.
-  ParseScope ClassScope(this, Scope::ClassScope|Scope::DeclScope);
+  ParseScope ClassScope(this, ScopeFlags);
 
   // Note that we are parsing a new (potentially-nested) class definition.
   ParsingClassDefinition ParsingDef(*this, TagDecl, NonNestedClass,
