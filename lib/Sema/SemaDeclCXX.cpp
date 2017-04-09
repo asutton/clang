@@ -1728,6 +1728,10 @@ static bool CheckConstexprDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
         Cxx1yLoc = DS->getLocStart();
       continue;
 
+    case Decl::Constexpr:
+      // Constexpr declarations are allowed.
+      continue;
+
     default:
       SemaRef.Diag(DS->getLocStart(), diag::err_constexpr_body_invalid_stmt)
         << isa<CXXConstructorDecl>(Dcl);

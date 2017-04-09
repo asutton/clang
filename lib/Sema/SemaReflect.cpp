@@ -1703,7 +1703,7 @@ DeclResult Sema::ActOnFinishConstexprDeclaration(Decl *D, Stmt *S) {
     LambdaScopeInfo *LSI = cast<LambdaScopeInfo>(FunctionScopes.back());
     ActOnFinishFunctionBody(LSI->CallOperator, S);
     LambdaExpr *Lambda = cast<LambdaExpr>(
-        BuildLambdaExpr(CD->getLocStart(), S->getLocEnd(), LSI).get());
+        BuildLambdaExpr(CD->getLocation(), S->getLocEnd(), LSI).get());
     if (!EvaluateConstexprDeclaration(CD, Lambda))
       return DeclResult(true);
   }
