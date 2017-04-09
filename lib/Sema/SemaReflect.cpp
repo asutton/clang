@@ -1759,7 +1759,7 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
 
   // Don't evaluate the call if this declaration appears within a metaclass.
   DeclContext *ParentCxt = CurContext->getParent();
-  if (isa<MetaclassDecl>(ParentCxt))
+  if (ParentCxt && isa<MetaclassDecl>(ParentCxt))
     return true;
 
   SmallVector<PartialDiagnosticAt, 8> Notes;

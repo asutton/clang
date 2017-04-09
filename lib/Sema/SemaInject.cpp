@@ -420,11 +420,16 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
 /// \returns  \c true if no errors are encountered.
 bool Sema::InjectCode(Stmt *Injection) {
   switch (Injection->getStmtClass()) {
-  case Stmt::CXXInjectionStmtClass:
-    // FIXME: Do something with the injection. We need to pass tokens back
-    // to the parser, or set a late parsing callback like Sema does with
-    // late parsed templates.
+  case Stmt::CXXInjectionStmtClass: {
+    if (CurContext->isFileContext())
+      NamespaceInjectionParser(InjectionParser, Injection);
+    else if (CurContext->isRecord())
+      ClassInjectionParser(InjectionParser, Injection);
+    else
+      BlockInjectionParser(InjectionParser, Injection);
+
     break;
+  }
   
   case Stmt::ReflectionTraitExprClass: {
     ReflectionTraitExpr *E = cast<ReflectionTraitExpr>(Injection);
@@ -465,3 +470,12 @@ StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Arrow,
 {
   return new (Context) CXXInjectionStmt(Context, Arrow, LB, RB, TokArray);
 }
+
+/// Returns the tokens for the injection statement S.
+ArrayRef<Token>
+Sema::GetTokensToInject(Stmt *S)
+{
+  assert(isa<CXXInjectionStmt>(S));
+  return cast<CXXInjectionStmt>(S)->getTokens();
+}
+

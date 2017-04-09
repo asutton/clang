@@ -8293,6 +8293,31 @@ public:
                                    SourceLocation RB, 
                                    ArrayRef<Token> TokArray);
 
+  ArrayRef<Token> GetTokensToInject(Stmt *S);
+
+  // Source code injection requires that we parse the tokens of an injection
+  // statement based on the context in which the injections are processed.
+  // There is one parsing callback function for each such context.
+  //
+  // Each callback takes a pointer to the (opaque) parser and the injection
+  // statement containing the tokens to be parsed.
+
+  /// The cached parser object, used as the first argument to parsing callbacks.
+  ///
+  /// FIXME: This is the same as the OpaqueParser for late template parsing.
+  /// There's some duplication that could be cleaned up.
+  void *InjectionParser;
+
+  using NamespaceInjenctionParserCB = void(void*, Stmt*);
+  NamespaceInjenctionParserCB *NamespaceInjectionParser;  
+
+  using ClassInjenctionParserCB = void(void*, Stmt*);
+  ClassInjenctionParserCB *ClassInjectionParser;
+
+  using BlockInjenctionParserCB = void(void*, Stmt*);
+  BlockInjenctionParserCB *BlockInjectionParser;
+
+
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
   //

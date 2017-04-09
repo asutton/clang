@@ -2561,6 +2561,14 @@ private:
 
   StmtResult ParseCXXInjectionStmt();
 
+  void ParseInjectedNamespaceMember(Stmt *Injection);
+  void ParseInjectedClassMember(Stmt *Injection);
+  void ParseInjectedStatement(Stmt *Injection);
+
+  static void InjectedNamespaceMemberCB(void *OpaqueParser, Stmt *Injection);
+  static void InjectedClassMemberCB(void *OpaqueParser, Stmt *Injection);
+  static void InjectedStatementCB(void *OpaqueParser, Stmt *Injection);
+
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
   /// Parse clauses for '#pragma omp declare simd'.
