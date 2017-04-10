@@ -44,52 +44,74 @@ StmtResult Parser::ParseCXXInjectionStmt()
                                        Toks);
 }
 
-void
-Parser::ParseInjectedNamespaceMember(Stmt *S)
+// Enter the injected tokens in to the stream. Add to that the current
+// token so that we replay it after the injected tokens.
+void Parser::InjectTokens(Stmt *S, CachedTokens& Toks)
 {
-  ArrayRef<Token> Toks = Actions.GetTokensToInject(S);
+  // Build the list of tokens to inject.
+  ArrayRef<Token> InjectedToks = Actions.GetTokensToInject(S);
+  Toks.resize(InjectedToks.size() + 1);
+  auto Iter = std::copy(InjectedToks.begin(), InjectedToks.end(), Toks.begin());
+  *Iter = Tok;
+
+  // Inject the tokens and consume the current token.
   PP.EnterTokenStream(Toks, true);
+  ConsumeAnyToken();
+
+  // Sanity check.
+  assert(Tok.is(Toks.front().getKind()));
+}
+
+void Parser::ParseInjectedNamespaceMember(Stmt *S)
+{
+  CachedTokens Toks;
+  InjectTokens(S, Toks);
 
   SourceLocation End;
   ParsedAttributesWithRange Attrs(AttrFactory);
   DeclGroupPtrTy Decls = ParseDeclaration(Declarator::FileContext, End, Attrs);
   (void)Decls;
+  
+  // FIXME: These are causing linker errors.
+
+  // DeclGroupRef DG = Decls.get();
+  // for (auto I = DG.begin(); I != DG.end(); ++I)
+  //   (*I)->dump();
 }
 
-void
-Parser::ParseInjectedClassMember(Stmt *S)
+void Parser::ParseInjectedClassMember(Stmt *S)
 {
-  ArrayRef<Token> Toks = Actions.GetTokensToInject(S);
-  PP.EnterTokenStream(Toks, true);
+  CachedTokens Toks;
+  InjectTokens(S, Toks);
 
-  // for (const Token& tok : Toks)
-  //   PP.DumpToken(tok);
-  // llvm::errs() << "\n";
-
-
-  // FIXME: This is entirely wrong. Lots of stuff to fix here.
+  // FIXME: This is entirely wrong. Lots of stuff to fix here:
+  //
   // 1. Get the current access specifier.
   // 2. Actually allow attributes to be parsed.
   // 3. Get information about the class if it's a template.
-  DeclGroupPtrTy Decls = 
-    ParseCXXClassMemberDeclaration(AS_public, /*AccessAttrs=*/nullptr, 
-                                   ParsedTemplateInfo(), 
-                                   /*TemplateDiags=*/nullptr);
-  (void)Decls;
+  //
+  // Note that we don't actually have to do anything with the resulting
+  // class. Members are automatically registered in the current class when
+  // parsed.
+  ParseCXXClassMemberDeclaration(AS_public, /*AccessAttrs=*/nullptr, 
+                                 ParsedTemplateInfo(), 
+                                 /*TemplateDiags=*/nullptr);
 }
 
-void
-Parser::ParseInjectedStatement(Stmt *S)
+void Parser::ParseInjectedStatement(Stmt *S)
 {
-  ArrayRef<Token> Toks = Actions.GetTokensToInject(S);
-  PP.EnterTokenStream(Toks, true);
+  CachedTokens Toks;
+  InjectTokens(S, Toks);
 
   StmtResult R = ParseStatement();
+
+  // FIXME: How do we actually insert this statement?
+  // R.get()->dump();
+
   (void)R;
 }
 
-void
-Parser::InjectedNamespaceMemberCB(void *OpaqueParser, Stmt *Injection)
+void Parser::InjectedNamespaceMemberCB(void *OpaqueParser, Stmt *Injection)
 {
   Parser* P = reinterpret_cast<Parser*>(OpaqueParser);
   return P->ParseInjectedNamespaceMember(Injection);
@@ -102,8 +124,7 @@ Parser::InjectedClassMemberCB(void *OpaqueParser, Stmt *Injection)
   return P->ParseInjectedClassMember(Injection);
 }
 
-void
-Parser::InjectedStatementCB(void *OpaqueParser, Stmt *Injection)
+void Parser::InjectedStatementCB(void *OpaqueParser, Stmt *Injection)
 {
   Parser* P = reinterpret_cast<Parser*>(OpaqueParser);
   return P->ParseInjectedStatement(Injection);

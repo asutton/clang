@@ -2561,6 +2561,7 @@ private:
 
   StmtResult ParseCXXInjectionStmt();
 
+  void InjectTokens(Stmt *Injection, CachedTokens& Toks);
   void ParseInjectedNamespaceMember(Stmt *Injection);
   void ParseInjectedClassMember(Stmt *Injection);
   void ParseInjectedStatement(Stmt *Injection);
