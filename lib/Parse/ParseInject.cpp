@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "RAIIObjectsForParser.h"
+#include "clang/AST/ASTConsumer.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
 #include "clang/Sema/PrettyDeclStackTrace.h"
@@ -67,16 +68,15 @@ void Parser::ParseInjectedNamespaceMember(Stmt *S)
   CachedTokens Toks;
   InjectTokens(S, Toks);
 
-  SourceLocation End;
-  ParsedAttributesWithRange Attrs(AttrFactory);
-  DeclGroupPtrTy Decls = ParseDeclaration(Declarator::FileContext, End, Attrs);
-  (void)Decls;
-  
-  // FIXME: These are causing linker errors.
-
-  // DeclGroupRef DG = Decls.get();
-  // for (auto I = DG.begin(); I != DG.end(); ++I)
-  //   (*I)->dump();
+  // The parsing method depends on context.
+  if (Actions.CurContext->isTranslationUnit()) {
+    DeclGroupPtrTy Decls;
+    ParseTopLevelDecl(Decls);
+    Actions.getASTConsumer().HandleTopLevelDecl(Decls.get());
+  } else {
+    ParsedAttributesWithRange Attrs(AttrFactory);
+    ParseExternalDeclaration(Attrs);
+  }
 }
 
 void Parser::ParseInjectedClassMember(Stmt *S)
