@@ -2570,6 +2570,20 @@ private:
   static void InjectedClassMemberCB(void *OpaqueParser, Stmt *Injection);
   static void InjectedStatementCB(void *OpaqueParser, Stmt *Injection);
 
+  /// This stores a compound-statement that accumulates all statements injected
+  /// during the evaluation of a constexpr-declaration. This must be checked
+  /// at certain times during parsing to detect the insertion of statements
+  /// including:
+  ///
+  ///   - Each statement in a compound statement,
+  ///   - The true and false branches of an if statement,
+  ///   - The body of a switch statement,
+  ///   - And more?
+  ///
+  /// The state of this result can generally be ignored when it is null or
+  /// invalid.
+  StmtResult InjectedStmts;
+
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
   /// Parse clauses for '#pragma omp declare simd'.

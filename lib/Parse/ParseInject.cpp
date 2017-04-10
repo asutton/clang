@@ -103,12 +103,18 @@ void Parser::ParseInjectedStatement(Stmt *S)
   CachedTokens Toks;
   InjectTokens(S, Toks);
 
+  StmtVector Stmts;
+
+  // FIXME: Parse a statement-seq.
   StmtResult R = ParseStatement();
+  if (R.isInvalid())
+    return;
+  Stmts.push_back(R.get());
 
-  // FIXME: How do we actually insert this statement?
-  // R.get()->dump();
-
-  (void)R;
+  // Build a compound statement to store the injected results.
+  InjectedStmts = Actions.ActOnCompoundStmt(S->getLocStart(), 
+                                            S->getLocEnd(),
+                                            Stmts, false);
 }
 
 void Parser::InjectedNamespaceMemberCB(void *OpaqueParser, Stmt *Injection)

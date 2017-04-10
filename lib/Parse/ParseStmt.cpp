@@ -1029,6 +1029,15 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
       }
     }
 
+    // If the parsing of this statement resulted in injections, then add those
+    // to the current block instead of the constexpr-declaration.
+    //
+    // FIXME: Should we *also* add the constexpr-declaration?
+    if (InjectedStmts.isUsable()) {
+      R = InjectedStmts;
+      InjectedStmts = StmtResult();
+    }
+
     if (R.isUsable())
       Stmts.push_back(R.get());
   }
