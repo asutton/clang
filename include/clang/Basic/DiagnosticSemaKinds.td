@@ -8849,7 +8849,7 @@ let CategoryName = "Reflection Issue" in {
 def err_not_implemented : Error<
   "feature not implemented">;
 def err_need_header_before_dollar : Error<
-  "you need to include <cpp3k/meta> before using the '$' operator">;
+  "you need to include <cppx/meta> before using the '$' operator">;
 def err_reflected_overload : Error<
   "reflection of an overloaded name">;
 def err_not_reflection : Error<
