@@ -6,7 +6,6 @@
 #include <cassert>
 #include <cstdint>
 
-
 namespace cppx
 {
 namespace meta
@@ -17,7 +16,7 @@ inline namespace v1
 // -------------------------------------------------------------------------- //
 // Specifiers and traits
 //
-// NOTE: These order and structure of the _info classes needs to be kept in 
+// NOTE: These order and structure of the _info classes needs to be kept in
 // sync with the compiler.
 
 enum linkage_kind : unsigned {
@@ -174,7 +173,6 @@ struct method_traits {
   bool is_trivial : 1; // ctors and dtors
 };
 
-
 // TODO: Accumulate all known type traits for classes.
 struct class_traits {
   constexpr explicit class_traits(unsigned n)
@@ -196,7 +194,6 @@ struct class_traits {
   bool is_empty : 1;
 };
 
-
 struct enum_traits {
   constexpr explicit enum_traits(unsigned n)
     : linkage    (get_linkage(n)), // 0x01 | 0x02
@@ -214,6 +211,5 @@ struct enum_traits {
 } // inline namespace v1
 } // namespace meta
 } // namespace cppx
-
 
 #endif // CPPX_TRAITS_HPP

@@ -1,10 +1,9 @@
-
 #include <cassert>
 #include <iostream>
 
-#include <cpp3k/meta>
+#include <cppx/meta>
 
-namespace meta = cpp3k::meta;
+namespace meta = cppx::meta;
 
 template<typename T>
 struct compare_data_members
@@ -12,7 +11,7 @@ struct compare_data_members
   const T& a;
   const T& b;
   bool& result;
-  
+
   template<meta::reflection_t X>
   void operator()(meta::member_variable<X> member) const
   {
@@ -26,12 +25,12 @@ struct compare_data_members
   // void operator()(T member) const;
 };
 
-// TODO: This should only be defined when no members are references or 
+// TODO: This should only be defined when no members are references or
 // mutable. And what about private members? Obviously, we could write a
 // very nice constraint for when this should be defined.
 //
 // I wonder if we can suppress this definition if there's an existing
-// user-defined customization. Note that the customization would be 
+// user-defined customization. Note that the customization would be
 // more specialized, so no harm, no foul, I suppose.
 template<typename T>
 bool is_equal(const T& a, const T& b)
@@ -54,6 +53,3 @@ int main()
   assert(is_equal(s0, s0));
   assert(!is_equal(s0, s1));
 }
-
-
-

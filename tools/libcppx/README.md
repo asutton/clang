@@ -18,7 +18,7 @@ You don't even need to run `cmake` or `make`. Just copy and use (see below).
 ## Using `cppx`
 
 In order to use `cppx`, you will need a C++ compiler that supports the
-`-freflection` flag --- currently that means a fork of Clang.
+`-freflection` flag—currently that means a fork of Clang.
 
 Simply add `libcppx/include` to your include search path. Header files should
 be included as:

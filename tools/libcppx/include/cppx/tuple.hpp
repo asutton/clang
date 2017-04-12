@@ -16,12 +16,12 @@ inline namespace v1
 // -------------------------------------------------------------------------- //
 // Reflected tuples
 
-// Presents a tuple-like interface for reflection queries. 
+// Presents a tuple-like interface for reflection queries.
 template<typename Ops>
 struct reflected_tuple
 {
-  static constexpr std::size_t size() { 
-    return Ops::size(); 
+  static constexpr std::size_t size() {
+    return Ops::size();
   }
   static constexpr bool empty() {
     return size() == 0;
@@ -30,14 +30,14 @@ struct reflected_tuple
 
 // Returns the Ith element of the reflected tuple.
 template<std::size_t I, typename Ops>
-constexpr auto 
+constexpr auto
 get(reflected_tuple<Ops> const&) -> decltype(Ops::template get<I>()) {
   return Ops::template get<I>();
 }
 
 // Returns the Ith element of the reflected tuple as a constant expression.
 template<std::size_t I, typename Ops>
-constexpr auto 
+constexpr auto
 cget(reflected_tuple<Ops> const&) -> decltype(Ops::template get<I>()) {
   return Ops::template get<I>();
 }
@@ -55,7 +55,7 @@ namespace detail
 // Base case.
 template<std::size_t I,typename T, typename F>
 constexpr std::enable_if_t<I == T::size(), void>
-tuple_for_each_recursive(T const&, F) { 
+tuple_for_each_recursive(T const&, F) {
 }
 
 // Recursive step.
@@ -68,7 +68,6 @@ tuple_for_each_recursive(T const& t, F f) {
 
 } // namespace detail
 
-
 // Driver, for ease of use.
 template<typename T, typename F>
 constexpr void
@@ -76,39 +75,36 @@ tuple_for_each(T const& t, F f) {
   detail::tuple_for_each_recursive<0>(t, f);
 }
 
-
 // Count if
 
 namespace detail
 {
 template<template<typename> typename P>
-struct count_type_if_fn 
+struct count_type_if_fn
 {
   int& n;
 
   // Matching case.
   template<typename T>
-  constexpr std::enable_if_t<P<T>::value> operator()(T const& t) { 
-    ++n; 
+  constexpr std::enable_if_t<P<T>::value> operator()(T const& t) {
+    ++n;
   }
-  
+
   // Non-matching case.
   template<typename T>
   constexpr std::enable_if_t<!P<T>::value> operator()(T const& t) { }
 };
 } // namespace detail
 
-
 // Returns the number of elements in t whose types satisfy a unary type trait.
 template<template<typename> typename P, typename T>
-constexpr int 
+constexpr int
 tuple_count_type_if(T const& t) {
   int n = 0;
   detail::count_type_if_fn<P> f{n};
   tuple_for_each(t, f);
   return n;
 }
-
 
 // -------------------------------------------------------------------------- //
 // Tuple algorithms
@@ -117,14 +113,13 @@ tuple_count_type_if(T const& t) {
 template<typename Ops, template<typename> typename Pred>
 struct filtered_tuple
 {
-  static constexpr std::size_t size() { 
-    return tuple_count_type_if<Pred>(reflected_tuple<Ops>()); 
+  static constexpr std::size_t size() {
+    return tuple_count_type_if<Pred>(reflected_tuple<Ops>());
   }
   static constexpr bool empty() {
     return size() == 0;
   }
 };
-
 
 namespace detail
 {
@@ -134,7 +129,6 @@ namespace detail
 // TODO: This should be equivalent to tuple_element. I don't think I need it.
 template<int N, typename T>
 using constant_element_type_t = decltype(cget<N>(std::declval<T>()));
-
 
 // A helper class for accessing the filtered element of a tuple. The first
 // parameter determines whether the nested type is defined.
@@ -148,15 +142,14 @@ struct safe_element_type
 template<int N, typename T>
 struct safe_element_type<false, N, T>
 {
-  using type = void; 
+  using type = void;
 };
 
 template<int N, typename T>
 using safe_element_type_t = typename safe_element_type<N < T::size(), N, T>::type;
 
-
 template<std::size_t N, template<typename> typename P, typename T>
-constexpr bool is_satisfied() 
+constexpr bool is_satisfied()
 {
   return P<safe_element_type_t<N, T>>::value;
 }
@@ -168,7 +161,7 @@ struct filtered_get
   // the point of use.
   template<std::size_t I, std::size_t J, template<typename> typename P, typename T>
   static constexpr auto get(
-      T const& t, 
+      T const& t,
       std::enable_if_t<I == T::size()>* = 0)
   {
     return;
@@ -177,7 +170,7 @@ struct filtered_get
   // I < N, J == 0 and cget<I>(t) satisfies P. Returns cget<I>(t).
   template<std::size_t I, std::size_t J, template<typename> typename P, typename T>
   static constexpr auto get(
-      T const& t, 
+      T const& t,
       std::enable_if_t<
           I < T::size() && J == 0 && is_satisfied<I, P, T>()
       >* = 0)
@@ -188,7 +181,7 @@ struct filtered_get
   // I < N, J == 0 and cget<I>(t) does not satisfy P. Recurse.
   template<std::size_t I, std::size_t J, template<typename> typename P, typename T>
   static constexpr auto get(
-      T const& t, 
+      T const& t,
       std::enable_if_t<
           I < T::size() && J == 0 && !is_satisfied<I, P, T>()
       >* = 0)
@@ -223,7 +216,7 @@ struct filtered_get
 
 // Returns the Ith element in the filtered tuple.
 template<std::size_t I, typename Ops, template<typename> typename Pred>
-constexpr auto 
+constexpr auto
 get(filtered_tuple<Ops, Pred> const& t)
 {
   return detail::filtered_get::get<0, I, Pred>(reflected_tuple<Ops>());
@@ -231,7 +224,7 @@ get(filtered_tuple<Ops, Pred> const& t)
 
 // Returns the Ith element in the filtered tuple as a constant expression.
 template<std::size_t I, typename Ops, template<typename> typename Pred>
-constexpr auto 
+constexpr auto
 cget(filtered_tuple<Ops, Pred> const&)
 {
   return detail::filtered_get::get<0, I, Pred>(reflected_tuple<Ops>());
@@ -274,4 +267,3 @@ struct tuple_element<I, cppx::meta::filtered_tuple<Ops, Pred>>
 } // namespace std
 
 #endif // CPPX_TUPLE_HPP
-

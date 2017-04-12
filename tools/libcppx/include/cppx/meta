@@ -3,12 +3,8 @@
 #ifndef CPPX_META
 #define CPPX_META
 
-#include "traits.hpp"
-#include "tuple.hpp"
-
-#include <cassert>
-#include <cstdint>
-
+#include <cppx/traits.hpp>
+#include <cppx/tuple.hpp>
 
 namespace cppx
 {
@@ -28,19 +24,19 @@ using reflection_t = std::intptr_t;
 // Reflections for all traits
 template<reflection_t X>
 struct decl {
-  static constexpr decl_traits traits() { 
-    return __reflect_traits(X); 
+  static constexpr decl_traits traits() {
+    return __reflect_traits(X);
   }
 };
 
 // A helper class that provides support for named entities.
 template<reflection_t X>
 struct named : decl<X> {
-  static constexpr char const* name() { 
-    return __reflect_name(X); 
+  static constexpr char const* name() {
+    return __reflect_name(X);
   }
-  static constexpr char const* qualified_name() { 
-    return __reflect_qualified_name(X); 
+  static constexpr char const* qualified_name() {
+    return __reflect_qualified_name(X);
   }
 
   static constexpr auto declaration_context() {
@@ -49,8 +45,8 @@ struct named : decl<X> {
   static constexpr auto lexical_context() {
     return __reflect_declaration_context(X);
   }
-  
-  static constexpr linkage_kind linkage() { 
+
+  static constexpr linkage_kind linkage() {
     return decl<X>::traits().linkage;
   }
   static constexpr bool has_linkage() {
@@ -99,17 +95,17 @@ struct scope
 {
   struct member_info
   {
-    static constexpr std::size_t size() { 
-      return __reflect_num_members(X); 
+    static constexpr std::size_t size() {
+      return __reflect_num_members(X);
     }
     template<std::size_t I>
-    static constexpr auto get() { 
-      return __reflect_member(X, I); 
+    static constexpr auto get() {
+      return __reflect_member(X, I);
     }
   };
 
-  static constexpr reflected_tuple<member_info> members() { 
-    return {}; 
+  static constexpr reflected_tuple<member_info> members() {
+    return {};
   }
 };
 
@@ -223,12 +219,11 @@ struct typed
   static constexpr auto type() {
     return __reflect_type(X);
   }
-  
+
   static constexpr auto type_name() {
     return type().name();
   }
 };
-
 
 template<reflection_t X>
 struct variable : named<X>, typed<X>
@@ -262,19 +257,18 @@ struct variable : named<X>, typed<X>
   }
 };
 
-
 template<reflection_t X>
 struct function : named<X>, typed<X>
 {
   struct parm_info
   {
-    static constexpr std::size_t size() { 
-      return __reflect_num_parameters(X); 
+    static constexpr std::size_t size() {
+      return __reflect_num_parameters(X);
     }
 
     template<std::size_t I>
-    static constexpr auto get() { 
-      return __reflect_parameter(X, I); 
+    static constexpr auto get() {
+      return __reflect_parameter(X, I);
     }
   };
 
@@ -301,8 +295,8 @@ struct function : named<X>, typed<X>
     return traits().is_deleted;
   }
 
-  static constexpr reflected_tuple<parm_info> parameters() { 
-    return {}; 
+  static constexpr reflected_tuple<parm_info> parameters() {
+    return {};
   }
 
   static constexpr auto pointer() {
@@ -388,16 +382,16 @@ struct destructor : polymethod<X>
 // Non-special member functions.
 template<reflection_t X>
 struct member_function : polymethod<X>
-{ 
+{
   static constexpr bool is_constexpr() {
     return polymethod<X>::traits().is_constexpr;
   }
 
-  static constexpr void make_virtual() { 
-    __modify_virtual(X, false); 
+  static constexpr void make_virtual() {
+    __modify_virtual(X, false);
   }
   static constexpr void make_pure_virtual() {
-    __modify_virtual(X, true); 
+    __modify_virtual(X, true);
   }
 };
 
@@ -446,7 +440,6 @@ struct enumerator : named<X>, typed<X>
   }
 };
 
-
 // -------------------------------------------------------------------------- //
 // Tuple traversal/application
 
@@ -455,7 +448,6 @@ constexpr void
 for_each(T const& t, F f) {
   detail::tuple_for_each_recursive<0>(t, f);
 }
-
 
 // -------------------------------------------------------------------------- //
 // Type traits
@@ -467,7 +459,7 @@ struct is_member_variable
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_member_variable<member_variable<X>> 
+struct is_member_variable<member_variable<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
@@ -480,7 +472,7 @@ struct is_member_function
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_member_function<member_function<X>> 
+struct is_member_function<member_function<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
@@ -493,7 +485,7 @@ struct is_constructor
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_constructor<constructor<X>> 
+struct is_constructor<constructor<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
@@ -506,16 +498,14 @@ struct is_destructor
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_destructor<destructor<X>> 
+struct is_destructor<destructor<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
 constexpr bool is_destructor_v = is_destructor<T>::value;
 
-
 } // inline namespace v1
 } // namespace meta
 } // namespace cppx
-
 
 #endif // CPPX_META

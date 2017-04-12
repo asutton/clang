@@ -1,12 +1,11 @@
-
 #include <cstdint>
 #include <iostream>
 #include <iomanip>
 #include <vector>
 
-#include <cpp3k/meta>
+#include <cppx/meta>
 
-namespace meta = cpp3k::meta;
+namespace meta = cppx::meta;
 
 // Pretend to be a hashing algorithm.
 struct hasher
@@ -22,7 +21,6 @@ struct hasher
   }
   std::vector<std::uint8_t> bytes;
 };
-
 
 template<typename H, typename T>
 std::enable_if_t<std::is_integral<T>::value, void>
@@ -40,26 +38,24 @@ hash_append(H& hash, T n)
   hash(&n, sizeof(T));
 }
 
-
 template<typename H, typename T>
 struct hash_append_fn
 {
   H& h;
   T const& t;
-  template<cpp3k::meta::reflection_t X>
-  void operator()(cpp3k::meta::member_variable<X> var) {
+  template<cppx::meta::reflection_t X>
+  void operator()(cppx::meta::member_variable<X> var) {
     hash_append(h, t.*(var.pointer()));
   }
 };
 
-
 template<typename H, typename T>
-std::enable_if_t<std::is_class<T>::value, void> 
+std::enable_if_t<std::is_class<T>::value, void>
 hash_append(H& h, T const& t)
 {
   meta::for_each($T.member_variables(), hash_append_fn<H, T>{h, t});
-  
-  // cpp3k::meta::tuple_for_each($T.member_variables(), [&h](auto const& t) {
+
+  // cppx::meta::tuple_for_each($T.member_variables(), [&h](auto const& t) {
   //   hash_append(h, t);
   // });
 }
@@ -95,6 +91,3 @@ int main()
   std::cout << std::dec;
   std::cout << std::setfill(' ');
 }
-
-
-
