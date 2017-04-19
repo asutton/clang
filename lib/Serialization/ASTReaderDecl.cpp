@@ -1777,6 +1777,8 @@ ASTDeclReader::VisitCXXRecordDeclImpl(CXXRecordDecl *D) {
   }
   }
 
+  D->Metaclass = ReadDeclAs<MetaclassDecl>();
+
   bool WasDefinition = Record.readInt();
   if (WasDefinition)
     ReadCXXRecordDefinition(D, /*Update*/false);

@@ -3087,6 +3087,13 @@ Decl *ASTNodeImporter::VisitRecordDecl(RecordDecl *D) {
   if (!D2) {
     CXXRecordDecl *D2CXX = nullptr;
     if (CXXRecordDecl *DCXX = llvm::dyn_cast<CXXRecordDecl>(D)) {
+      MetaclassDecl *FromMetaclass = DCXX->getMetaclass();
+      MetaclassDecl *ToMetaclass =
+          cast_or_null<MetaclassDecl>(Importer.Import(FromMetaclass));
+      if (!ToMetaclass && FromMetaclass)
+        return nullptr;
+      D2CXX->setMetaclass(ToMetaclass);
+
       if (DCXX->isLambda()) {
         TypeSourceInfo *TInfo = Importer.Import(DCXX->getLambdaTypeInfo());
         D2CXX = CXXRecordDecl::CreateLambda(Importer.getToContext(),
