@@ -11,8 +11,8 @@ set_source_files_properties(${LIBCPPX_HEADERS} PROPERTIES HEADER_FILE_ONLY
   TRUE)
 
 set(LIBCPPX_HEADER_PATTERN
-  PATTERN "meta"
-  PATTERN "*.hpp")
+  PATTERN "*"
+  PATTERN "CMakeLists.txt" EXCLUDE)
 
 # Copy the headers to the build tree if we're building Clang.
 if(LIBCPPX_BUILDING_CLANG)

@@ -1,0 +1,33 @@
+// -*- C++ -*-
+
+#ifndef CPPX_COMPILER
+#define CPPX_COMPILER
+
+
+namespace cppx
+{
+namespace meta
+{
+inline namespace v1
+{
+
+struct compiler_type
+{
+  static constexpr void error(const char* msg) {
+    __compiler_error(msg);
+  }
+
+  static constexpr void require(bool cond, const char* msg) {
+    if (!cond)
+      error(msg);
+  }
+};
+
+constexpr compiler_type compiler;
+
+
+} // inline namespace v1
+} // namespace meta
+} // namespace cppx
+
+#endif // CPPX_META
