@@ -268,8 +268,11 @@ public:
   }
 
   Value *VisitCompilerErrorExpr(CompilerErrorExpr *E) {
-    // Technically, a __compiler_error expression that is evaluated at run-time
-    // is undefined behavior.
+    // A program that evaluates a compiler error should abort exactly like
+    // an assertion does.
+    //
+    // FIXME: Make this abort instead of trapping. Or maybe make the program
+    // ill-formed.
     return CGF.EmitTrapCall(llvm::Intrinsic::trap);
   }
 

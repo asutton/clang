@@ -156,6 +156,7 @@ def note_constexpr_baa_value_insufficient_alignment : Note<
   "%plural{1:byte|:bytes}1">;
 
 // [Meta] Compile-time code generation
+def err_user_defined_error : Error<"%0">;
 def note_modification_outside_constexpr_decl : Error<
   "declaration modification outside of a constexpr-declaration">;
 def note_injection_outside_constexpr_decl : Error<

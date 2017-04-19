@@ -15475,6 +15475,9 @@ ExprResult Sema::BuildCompilerErrorExpr(Expr *MessageExpr,
     return ExprError();
   MessageExpr = Converted.get();
 
+  // FIXME: Make sure that the type is const char* or a compile-time
+  // string literal (which doesn't exist).
+
   if (!MessageExpr->isTypeDependent()) {
     QualType Type = MessageExpr->getType(), CharType;
 
@@ -15489,6 +15492,9 @@ ExprResult Sema::BuildCompilerErrorExpr(Expr *MessageExpr,
           << MessageExpr->getSourceRange();
       return ExprError();
     }
+  }
+
+  #if 0
 
     if (!MessageExpr->isValueDependent()) {
       // The string argument should be a compile-time constant.
@@ -15545,6 +15551,7 @@ ExprResult Sema::BuildCompilerErrorExpr(Expr *MessageExpr,
       }
     }
   }
+  #endif
 
   return CompilerErrorExpr::Create(Context, Context.VoidTy, MessageExpr,
                                    BuiltinLoc, RParenLoc);

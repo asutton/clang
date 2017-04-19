@@ -9819,8 +9819,42 @@ public:
   }
 
   bool VisitCompilerErrorExpr(const CompilerErrorExpr *E) {
-    // Allow the use of __compiler_error within constant expressions.
-    return true;
+    /// This never produces a value.
+    if (Info.checkingPotentialConstantExpression()) {
+      return false;
+    }
+
+    APValue Result;
+    if (!Evaluate(Result, Info, E->getMessage()))
+      return Error(E->getMessage(), diag::note_invalid_subexpr_in_const_expr);
+    if (!Result.isLValue())
+      // TODO: This should never be the case.
+      return Error(E->getMessage(), diag::note_invalid_subexpr_in_const_expr);
+
+    const StringLiteral *Message;
+    APValue::LValueBase Base = Result.getLValueBase();
+    if (Base.is<const Expr *>()) {
+      const Expr * BaseExpr = Base.get<const Expr *>();
+      if (!isa<StringLiteral>(BaseExpr))
+        // FIXME: This should probably never happen.
+        return Error(E->getMessage());
+      Message = cast<StringLiteral>(BaseExpr);
+    } else {
+      const ValueDecl *D = Base.get<const ValueDecl *>();
+      D->dump();
+      return Error(E->getMessage());
+    }
+
+    // Evaluate the message so that we can transform it into a string.
+    SmallString<256> Buf;
+    llvm::raw_svector_ostream OS(Buf);
+    Message->outputString(OS);
+    std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
+
+    // Evaluating a __compiler_error in a constexpr evaluation context
+    // results in compiler error.
+    Info.FFDiag(E, diag::err_user_defined_error) << NonQuote;
+    return false;
   }
 };
 } // end anonymous namespace

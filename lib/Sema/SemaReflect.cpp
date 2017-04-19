@@ -688,6 +688,7 @@ static AccessTrait getAccess(Decl *D) {
   case AS_none:
     return AccessNone;
   }
+  llvm_unreachable("Invalid Access specifier");
 }
 
 /// This gives the storage duration of declared objects, not the storage
@@ -1775,14 +1776,21 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
     //
     // FIXME: We should probably have a top-level EvaluateAsVoid() function that
     // handles this case.
-    if (!Notes.empty() &&
-        Notes[0].second.getDiagID() != diag::note_constexpr_uninitialized) {
-      // FIXME: These source locations are wrong.
-      Diag(CD->getLocStart(), diag::err_expr_not_ice)
-          << CD->getSourceRange() << LangOpts.CPlusPlus;
-      for (const PartialDiagnosticAt &Note : Notes)
-        Diag(Note.first, Note.second);
-      return false;
+    if (!Notes.empty()) {
+      // If we got a compiler error, then just emit that.
+      if (Notes[0].second.getDiagID() == diag::err_user_defined_error) {
+        Diag(CD->getLocStart(), Notes[0].second);
+        return false;
+      }
+
+      if (Notes[0].second.getDiagID() != diag::note_constexpr_uninitialized) {
+        // FIXME: These source locations are wrong.
+        Diag(CD->getLocStart(), diag::err_expr_not_ice)
+            << CD->getSourceRange() << LangOpts.CPlusPlus;
+        for (const PartialDiagnosticAt &Note : Notes)
+          Diag(Note.first, Note.second);
+        return false;
+      }
     }
   }
 
