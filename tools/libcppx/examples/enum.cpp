@@ -17,7 +17,7 @@ struct select_name {
 };
 
 template<typename E> // Enum E
-std::enable_if_t<std::is_enum_v<E>, char const*>
+std::enable_if_t<std::is_enum<E>::value, char const*>
 to_string(E value) {
   char const* name = nullptr;
   meta::for_each($E.members(), select_name<E>{value, name});
