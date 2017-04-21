@@ -2518,7 +2518,8 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
   }
 
   // constexpr-declaration
-  if (Tok.is(tok::kw_constexpr) && NextToken().is(tok::l_brace))
+  if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw_constexpr) &&
+      NextToken().is(tok::l_brace))
     return ParseConstexprDeclaration();
 
   // Hold late-parsed attributes so we can attach a Decl to them later.

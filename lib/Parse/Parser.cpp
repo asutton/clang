@@ -852,7 +852,7 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
     goto dont_know;
 
   case tok::kw_constexpr: // [Meta] constexpr-declaration
-    if (NextToken().is(tok::l_brace))
+    if (getLangOpts().CPlusPlus1z && NextToken().is(tok::l_brace))
       return ParseConstexprDeclaration();
     goto dont_know;
 
