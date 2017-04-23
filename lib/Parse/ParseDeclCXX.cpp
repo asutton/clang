@@ -3115,7 +3115,7 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   unsigned ScopeFlags = Scope::ClassScope | Scope::DeclScope;
 
   // Determine whether this is the definition of a metaclass.
-  if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(TagDecl))
+  if (CXXRecordDecl *RD = dyn_cast_or_null<CXXRecordDecl>(TagDecl))
     if (RD->isMetaclassDefinition())
       ScopeFlags |= Scope::MetaclassScope;
 
