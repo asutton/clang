@@ -8279,13 +8279,14 @@ public:
   bool InjectCode(SmallVectorImpl<Stmt *> &Injections);
   bool InjectCode(Stmt *Injection);
 
-  DeclResult ActOnStartConstexprDeclaration(SourceLocation Loc,
-                                            int &ScopeFlags);
-  void ActOnStartOfConstexprDef(Decl *D);
-  DeclResult ActOnFinishConstexprDeclaration(Decl *D, Stmt *S);
+  Decl *ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
+                           unsigned &ScopeFlags);
+  void ActOnStartConstexprDecl(Scope *S, Decl *D);
+  void ActOnFinishConstexprDecl(Scope *S, Decl *D, Stmt *Body);
+  void ActOnConstexprDeclError(Scope *S, Decl *D);
 
-  bool EvaluateConstexprDeclaration(ConstexprDecl *CD, FunctionDecl *D);
-  bool EvaluateConstexprDeclaration(ConstexprDecl *CD, LambdaExpr *E);
+  bool EvaluateConstexprDecl(ConstexprDecl *CD, FunctionDecl *D);
+  bool EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E);
   bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
 
   StmtResult ActOnCXXInjectionStmt(SourceLocation Arrow, 

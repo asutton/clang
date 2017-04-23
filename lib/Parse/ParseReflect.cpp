@@ -307,19 +307,29 @@ Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
 
   SourceLocation ConstexprLoc = ConsumeToken();
 
-  int ScopeFlags;
-  DeclResult D =
-      Actions.ActOnStartConstexprDeclaration(ConstexprLoc, ScopeFlags);
-
-  // Enter function scope as if we're parsing a function body.
-  // FIXME: Handle parse errors gracefully.
-  ParseScope BodyScope(this, ScopeFlags);
-  Actions.ActOnStartOfConstexprDef(D.get());
-  StmtResult Body = ParseCompoundStatement();
-  BodyScope.Exit();
-  if (Body.isInvalid())
+  if (!Tok.is(tok::l_brace)) {
+    Diag(Tok, diag::err_expected) << tok::l_brace;
     return nullptr;
+  }
 
-  D = Actions.ActOnFinishConstexprDeclaration(D.get(), Body.get());
-  return Actions.ConvertDeclToDeclGroup(D.get());
+  unsigned ScopeFlags;
+  Decl *D = Actions.ActOnConstexprDecl(getCurScope(), ConstexprLoc, ScopeFlags);
+
+  // Enter a scope for the constexpr declaration body.
+  ParseScope BodyScope(this, ScopeFlags);
+
+  Actions.ActOnStartConstexprDecl(getCurScope(), D);
+
+  PrettyDeclStackTraceEntry CrashInfo(Actions, D, ConstexprLoc,
+                                      "parsing constexpr declaration body");
+
+  // Parse the body of the constexpr declaration.
+  StmtResult Body(ParseCompoundStatementBody());
+
+  if (!Body.isInvalid())
+    Actions.ActOnFinishConstexprDecl(getCurScope(), D, Body.get());
+  else
+    Actions.ActOnConstexprDeclError(getCurScope(), D);
+
+  return Actions.ConvertDeclToDeclGroup(D);
 }

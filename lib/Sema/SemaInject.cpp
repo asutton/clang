@@ -333,16 +333,16 @@ Decl *MetaclassInjector::TransformFieldDecl(FieldDecl *D) {
 Decl *MetaclassInjector::TransformConstexprDecl(ConstexprDecl *D) {
   // We can use the ActOn* members since the initial parsing for these
   // declarations is trivial (i.e., don't have to translate declarators).
-  int F; // Unused
-  DeclResult New = SemaRef.ActOnStartConstexprDeclaration(D->getLocation(), F);
-  ConstexprDecl *R = cast<ConstexprDecl>(New.get());
-  SemaRef.ActOnStartOfConstexprDef(R);
+  unsigned ScopeFlags; // Unused
+  Decl *New = SemaRef.ActOnConstexprDecl(SemaRef.getCurScope(),
+                                         D->getLocation(), ScopeFlags);
+  SemaRef.ActOnStartConstexprDecl(SemaRef.getCurScope(), New);
   StmtResult S = TransformStmt(D->getBody());
-  if (S.isInvalid())
-    R->setInvalidDecl();
+  if (!S.isInvalid())
+    SemaRef.ActOnFinishConstexprDecl(SemaRef.getCurScope(), New, S.get());
   else
-    SemaRef.ActOnFinishConstexprDeclaration(R, S.get());
-  return R;
+    SemaRef.ActOnConstexprDeclError(SemaRef.getCurScope(), New);
+  return New;
 }
 
 /// Transform each parameter of a function.
