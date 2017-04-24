@@ -165,11 +165,10 @@ CoroutineBodyStmt::CoroutineBodyStmt(CoroutineBodyStmt::CtorArgs const &Args)
             const_cast<Stmt **>(getParamMoves().data()));
 }
 
-CXXInjectionStmt::CXXInjectionStmt(ASTContext& Cxt, SourceLocation Arrow, 
-                                   SourceLocation LB, SourceLocation RB, 
+CXXInjectionStmt::CXXInjectionStmt(ASTContext &Cxt, SourceLocation Arrow,
+                                   SourceLocation LB, SourceLocation RB,
                                    ArrayRef<Token> TokArray)
-  : Stmt(CXXInjectionStmtClass), ArrowLoc(Arrow), LBraceLoc(LB), RBraceLoc(RB), 
-    NumToks(TokArray.size()), Toks(new (Cxt) Token[NumToks])
-{
+    : Stmt(CXXInjectionStmtClass), ArrowLoc(Arrow), LBraceLoc(LB),
+      RBraceLoc(RB), NumToks(TokArray.size()), Toks(new (Cxt) Token[NumToks]) {
   std::copy(TokArray.begin(), TokArray.end(), Toks);
 }

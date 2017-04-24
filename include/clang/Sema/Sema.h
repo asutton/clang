@@ -8289,10 +8289,8 @@ public:
   bool EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E);
   bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
 
-  StmtResult ActOnCXXInjectionStmt(SourceLocation Arrow, 
-                                   SourceLocation LB,
-                                   SourceLocation RB, 
-                                   ArrayRef<Token> TokArray);
+  StmtResult ActOnCXXInjectionStmt(SourceLocation Arrow, SourceLocation LB,
+                                   SourceLocation RB, ArrayRef<Token> TokArray);
 
   ArrayRef<Token> GetTokensToInject(Stmt *S);
 
@@ -8305,19 +8303,18 @@ public:
 
   /// The cached parser object, used as the first argument to parsing callbacks.
   ///
-  /// FIXME: This is the same as the OpaqueParser for late template parsing.
-  /// There's some duplication that could be cleaned up.
+  // FIXME: This is the same as the OpaqueParser for late template parsing.
+  // There's some duplication that could be cleaned up.
   void *InjectionParser;
 
-  using NamespaceInjenctionParserCB = void(void*, Stmt*);
-  NamespaceInjenctionParserCB *NamespaceInjectionParser;  
+  using NamespaceInjectionParserCB = void (void *, Stmt *);
+  NamespaceInjectionParserCB *NamespaceInjectionParser;
 
-  using ClassInjenctionParserCB = void(void*, Stmt*);
-  ClassInjenctionParserCB *ClassInjectionParser;
+  using ClassInjectionParserCB = void (void *, Stmt *);
+  ClassInjectionParserCB *ClassInjectionParser;
 
-  using BlockInjenctionParserCB = void(void*, Stmt*);
-  BlockInjenctionParserCB *BlockInjectionParser;
-
+  using BlockInjectionParserCB = void (void *, Stmt *);
+  BlockInjectionParserCB *BlockInjectionParser;
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

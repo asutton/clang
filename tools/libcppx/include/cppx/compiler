@@ -30,9 +30,8 @@ struct compiler_type
 
 constexpr compiler_type compiler;
 
-
 } // inline namespace v1
 } // namespace meta
 } // namespace cppx
 
-#endif // CPPX_META
+#endif // CPPX_COMPILER

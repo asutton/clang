@@ -356,7 +356,6 @@ void StmtPrinter::VisitCXXInjectionStmt(CXXInjectionStmt *Node) {
   Indent() << "-> { ... }";
 }
 
-
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
   Indent();
   if (Node->isIfExists())

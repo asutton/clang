@@ -106,13 +106,13 @@ namespace clang {
   enum ReflectionTrait {
     /// \name General Declaration Properties
     /// @{
-    URT_ReflectPrint, ///< Emits debug info about a reflection
+    URT_ReflectPrint,               ///< Emits debug info about a reflection.
     URT_ReflectName,
     URT_ReflectQualifiedName,
     URT_ReflectDeclarationContext,
     URT_ReflectLexicalContext,
-    URT_ReflectTraits,     ///< Computed properties of declarations.
-    URT_ReflectSpecifiers, ///< Written properties of declarations.
+    URT_ReflectTraits,              ///< Computed properties of declarations.
+    URT_ReflectSpecifiers,          ///< Written properties of declarations.
     /// @}
     
     /// \name Value and Function Declaration Properties

@@ -271,7 +271,7 @@ Retry:
     SemiError = "co_return";
     break;
 
-  case tok::arrow: // [Meta] '-> { tokens }'
+  case tok::arrow: // [Meta] injection-statement
     return ParseCXXInjectionStmt();
 
   case tok::kw_asm: {

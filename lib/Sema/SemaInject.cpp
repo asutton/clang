@@ -427,10 +427,9 @@ bool Sema::InjectCode(Stmt *Injection) {
       ClassInjectionParser(InjectionParser, Injection);
     else
       BlockInjectionParser(InjectionParser, Injection);
-
     break;
   }
-  
+
   case Stmt::ReflectionTraitExprClass: {
     ReflectionTraitExpr *E = cast<ReflectionTraitExpr>(Injection);
     switch (E->getTrait()) {
@@ -442,7 +441,7 @@ bool Sema::InjectCode(Stmt *Injection) {
       llvm_unreachable("Invalid reflection trait");
     }
   }
-  
+
   default:
     llvm_unreachable("Invalid injection");
   }
@@ -461,21 +460,18 @@ bool Sema::InjectCode(SmallVectorImpl<Stmt *> &Injections) {
   return true;
 }
 
-/// Returns a new injection statement. These things are pretty opaque; there's
-/// practically no checking we can do until they are injected.
-StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Arrow,
-                                       SourceLocation LB,
+/// Returns a new C++ injection statement.
+///
+/// These things are pretty opaque; there's practically no checking we can do
+/// until they are injected.
+StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Arrow, SourceLocation LB,
                                        SourceLocation RB,
-                                       ArrayRef<Token> TokArray)
-{
+                                       ArrayRef<Token> TokArray) {
   return new (Context) CXXInjectionStmt(Context, Arrow, LB, RB, TokArray);
 }
 
 /// Returns the tokens for the injection statement S.
-ArrayRef<Token>
-Sema::GetTokensToInject(Stmt *S)
-{
+ArrayRef<Token> Sema::GetTokensToInject(Stmt *S) {
   assert(isa<CXXInjectionStmt>(S));
   return cast<CXXInjectionStmt>(S)->getTokens();
 }
-

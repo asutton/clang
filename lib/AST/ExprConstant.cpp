@@ -4058,8 +4058,8 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
       Info.EvalStatus.Injections->push_back(const_cast<Stmt *>(S));
       return ESR_Succeeded;
     }
-    Info.CCEDiag(S->getLocStart(), 
-                 diag::note_injection_outside_constexpr_decl);
+
+    Info.CCEDiag(S->getLocStart(), diag::note_injection_outside_constexpr_decl);
     return ESR_Failed;
   }
 
@@ -9825,24 +9825,25 @@ public:
   }
 
   bool VisitCompilerErrorExpr(const CompilerErrorExpr *E) {
-    /// This never produces a value.
-    if (Info.checkingPotentialConstantExpression()) {
+    // This never produces a value.
+    if (Info.checkingPotentialConstantExpression())
       return false;
-    }
 
     APValue Result;
+
     if (!Evaluate(Result, Info, E->getMessage()))
       return Error(E->getMessage(), diag::note_invalid_subexpr_in_const_expr);
+    // TODO: This should never be the case.
     if (!Result.isLValue())
-      // TODO: This should never be the case.
       return Error(E->getMessage(), diag::note_invalid_subexpr_in_const_expr);
 
     const StringLiteral *Message;
     APValue::LValueBase Base = Result.getLValueBase();
+
     if (Base.is<const Expr *>()) {
-      const Expr * BaseExpr = Base.get<const Expr *>();
+      const Expr *BaseExpr = Base.get<const Expr *>();
+      // FIXME: This should probably never happen.
       if (!isa<StringLiteral>(BaseExpr))
-        // FIXME: This should probably never happen.
         return Error(E->getMessage());
       Message = cast<StringLiteral>(BaseExpr);
     } else {
@@ -9935,7 +9936,6 @@ static bool Evaluate(APValue &Result, EvalInfo &Info, const Expr *E) {
     if (!EvaluateAtomic(E, Result, Info))
       return false;
   } else if (Info.getLangOpts().CPlusPlus11) {
-
     // FIXME: This is a total hack. This almost certainly implies that we're
     // potentially evaluating an expression involving a metaclass, which we've
     // poisoned with having dependent type. This is not evaluable, but it

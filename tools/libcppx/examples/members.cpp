@@ -1,4 +1,3 @@
-
 #include <cppx/meta>
 #include <iostream>
 

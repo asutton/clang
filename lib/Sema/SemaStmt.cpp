@@ -2221,7 +2221,7 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   SemaRef.LookupQualifiedName(ValueLookup, Spec);
   VarDecl *Value = ValueLookup.getAsSingle<VarDecl>();
   if (!Value) {
-    SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;    
+    SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;
     return false;
   }
 
@@ -2427,7 +2427,6 @@ Sema::BuildCXXForRangeStmt(SourceLocation ForLoc, SourceLocation CoawaitLoc,
         Diag(Range->getLocStart(), diag::err_for_range_invalid)
             << RangeLoc << Range->getType() << BEFFailure;
         CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Range);
-
       }
       // Return an error if no fix was discovered.
       if (RangeStatus != FRS_Success)
@@ -2976,15 +2975,15 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
 
   // Return an empty compound statement.
   if (S->getSize() == 0) {
-    return new (Context) CompoundStmt(Context, {}, SourceLocation(), 
-                                      SourceLocation());
+    return new (Context)
+        CompoundStmt(Context, None, SourceLocation(), SourceLocation());
   }
 
   // Create a new compound statement that binds the loop variable with the
   // parsed body. This is what we're going to instantiate.
   Stmt *VarAndBody[] = {S->getLoopVarStmt(), B};
-  Stmt *Body = new (Context) CompoundStmt(Context, VarAndBody, 
-                                          SourceLocation(), SourceLocation());
+  Stmt *Body = new (Context)
+      CompoundStmt(Context, VarAndBody, SourceLocation(), SourceLocation());
 
   // Instantiate the loop body for each element of the tuple.
   llvm::SmallVector<Stmt *, 8> Stmts;

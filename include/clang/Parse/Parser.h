@@ -2561,7 +2561,7 @@ private:
 
   StmtResult ParseCXXInjectionStmt();
 
-  void InjectTokens(Stmt *Injection, CachedTokens& Toks);
+  void InjectTokens(Stmt *Injection, CachedTokens &Toks);
   void ParseInjectedNamespaceMember(Stmt *Injection);
   void ParseInjectedClassMember(Stmt *Injection);
   void ParseInjectedStatement(Stmt *Injection);
@@ -2570,15 +2570,16 @@ private:
   static void InjectedClassMemberCB(void *OpaqueParser, Stmt *Injection);
   static void InjectedStatementCB(void *OpaqueParser, Stmt *Injection);
 
-  /// This stores a compound-statement that accumulates all statements injected
-  /// during the evaluation of a constexpr-declaration. This must be checked
-  /// at certain times during parsing to detect the insertion of statements
-  /// including:
+  /// Stores a compound-statement that accumulates all statements injected
+  /// during the evaluation of a constexpr-declaration.
   ///
-  ///   - Each statement in a compound statement,
-  ///   - The true and false branches of an if statement,
-  ///   - The body of a switch statement,
-  ///   - And more?
+  /// This must be checked at certain times during parsing to detect the
+  /// insertion of statements including:
+  ///
+  /// - Each statement in a compound statement,
+  /// - The true and false branches of an if statement,
+  /// - The body of a switch statement,
+  /// - And more?
   ///
   /// The state of this result can generally be ignored when it is null or
   /// invalid.

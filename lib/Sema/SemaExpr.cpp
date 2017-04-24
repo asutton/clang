@@ -15492,10 +15492,8 @@ ExprResult Sema::BuildCompilerErrorExpr(Expr *MessageExpr,
           << MessageExpr->getSourceRange();
       return ExprError();
     }
-  }
 
-  #if 0
-
+#if 0
     if (!MessageExpr->isValueDependent()) {
       // The string argument should be a compile-time constant.
       Expr::EvalResult Result;
@@ -15550,8 +15548,8 @@ ExprResult Sema::BuildCompilerErrorExpr(Expr *MessageExpr,
         Diag(BuiltinLoc, diag::err_compiler_error) << Msg.str();
       }
     }
+#endif
   }
-  #endif
 
   return CompilerErrorExpr::Create(Context, Context.VoidTy, MessageExpr,
                                    BuiltinLoc, RParenLoc);

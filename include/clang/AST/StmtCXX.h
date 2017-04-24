@@ -624,22 +624,21 @@ public:
   }
 };
 
-/// A C++ injection statement of the form '-> { tokens }'
-///
+/// Represents a C++ injection statement of the form '-> { tokens }'.
 class CXXInjectionStmt : public Stmt {
   SourceLocation ArrowLoc;
   SourceLocation LBraceLoc;
   SourceLocation RBraceLoc;
   unsigned NumToks;
-  Token* Toks;
+  Token *Toks;
 
 public:
-  CXXInjectionStmt(ASTContext& Cxt, SourceLocation Arrow, SourceLocation LB, 
+  CXXInjectionStmt(ASTContext &Cxt, SourceLocation Arrow, SourceLocation LB,
                    SourceLocation RB, ArrayRef<Token> Toks);
 
-  explicit CXXInjectionStmt(EmptyShell Empty) 
-    : Stmt(CXXInjectionStmtClass, Empty), ArrowLoc(), LBraceLoc(), RBraceLoc(),
-      NumToks(0), Toks(nullptr) {}
+  explicit CXXInjectionStmt(EmptyShell Empty)
+      : Stmt(CXXInjectionStmtClass, Empty), ArrowLoc(), LBraceLoc(),
+        RBraceLoc(), NumToks(0), Toks(nullptr) {}
 
   SourceLocation getArrowLoc() const { return ArrowLoc; }
   SourceLocation getLBraceLoc() const { return LBraceLoc; }

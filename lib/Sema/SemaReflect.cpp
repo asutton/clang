@@ -180,14 +180,9 @@ static char const *GetReflectionClass(Decl *D) {
     return "conversion";
   case Decl::CXXDestructor:
     return "destructor";
-  case Decl::CXXMethod: {
+  case Decl::CXXMethod:
     // Generate function reflections for static member functions.
-    CXXMethodDecl* Method = cast<CXXMethodDecl>(D);
-    if (Method->isStatic())
-      return "function";
-    else
-      return "member_function";
-  }
+    return cast<CXXMethodDecl>(D)->isStatic() ? "function" : "member_function";
   case Decl::EnumConstant:
     return "enumerator";
   case Decl::Field:
@@ -533,7 +528,6 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
     llvm::errs() << '\n';
     return ExprResult();
   }
-  
   case URT_ReflectName:
     return ReflectName(D);
   case URT_ReflectQualifiedName:
@@ -723,7 +717,7 @@ static AccessTrait getAccess(Decl *D) {
   case AS_none:
     return AccessNone;
   }
-  llvm_unreachable("Invalid Access specifier");
+  llvm_unreachable("Invalid access specifier");
 }
 
 /// This gives the storage duration of declared objects, not the storage
@@ -1453,9 +1447,10 @@ bool Sema::isMetaclassName(Scope *S, CXXScopeSpec *SS,
 ///
 /// \note This function extracts the type from a MetaclassDecl's underlying
 ///       CXXRecordDecl representation and is used to provide a ParsedType
-///       object to Parser::ParseBaseSpecifier() when parsing metaclass base
-///       specifiers. Should MetaclassDecl ever become a subclass of RecordDecl
-///       or CXXRecordDecl, this function will hopefully no longer be necessary.
+///       object to Parser::ParseMetaclassBaseSpecifier() when parsing metaclass
+///       base specifiers. Should MetaclassDecl ever become a subclass of
+///       RecordDecl or CXXRecordDecl, this function will hopefully no longer be
+///       necessary.
 ///
 /// \see  Sema::getTypeName()
 ParsedType Sema::getMetaclassName(const IdentifierInfo &II,

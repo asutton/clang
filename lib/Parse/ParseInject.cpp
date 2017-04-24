@@ -1,4 +1,4 @@
-//===--- ParseReflect.cpp - Reflection Parsing ----------------------------===//
+//===--- ParseInject.cpp - Reflection Parsing -----------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements parsing for C++ reflection.
+// This file implements parsing for C++ injection statements.
 //
 //===----------------------------------------------------------------------===//
 
@@ -19,12 +19,15 @@
 
 using namespace clang;
 
+/// \brief Parse a C++ injection statement.
+///
+/// \verbatim
 /// injection-statement:
 ///   '->' '{' token-list '}'
+/// \endverbatim
 ///
-/// FIXME: Allow '-> token-list ;' for non-nested injections?
-StmtResult Parser::ParseCXXInjectionStmt()
-{
+// FIXME: Allow '-> token-list ;' for non-nested injections?
+StmtResult Parser::ParseCXXInjectionStmt() {
   assert(Tok.is(tok::arrow));
   SourceLocation ArrowLoc = ConsumeToken();
 
@@ -33,22 +36,19 @@ StmtResult Parser::ParseCXXInjectionStmt()
     return StmtError();
 
   // Consume all of the tokens up to but not including the closing brace.
-  CachedTokens Toks; 
+  CachedTokens Toks;
   ConsumeAndStoreUntil(tok::r_brace, Toks, false, false);
 
   if (Braces.consumeClose())
     return StmtError();
 
-  return Actions.ActOnCXXInjectionStmt(ArrowLoc, 
-                                       Braces.getOpenLocation(),
-                                       Braces.getCloseLocation(),
-                                       Toks);
+  return Actions.ActOnCXXInjectionStmt(ArrowLoc, Braces.getOpenLocation(),
+                                       Braces.getCloseLocation(), Toks);
 }
 
-// Enter the injected tokens in to the stream. Add to that the current
-// token so that we replay it after the injected tokens.
-void Parser::InjectTokens(Stmt *S, CachedTokens& Toks)
-{
+/// Enter the injected tokens into the stream. Append the current token to the
+/// end of the new token stream so that we replay it after the injected tokens.
+void Parser::InjectTokens(Stmt *S, CachedTokens &Toks) {
   // Build the list of tokens to inject.
   ArrayRef<Token> InjectedToks = Actions.GetTokensToInject(S);
   Toks.resize(InjectedToks.size() + 1);
@@ -63,8 +63,7 @@ void Parser::InjectTokens(Stmt *S, CachedTokens& Toks)
   assert(Tok.is(Toks.front().getKind()));
 }
 
-void Parser::ParseInjectedNamespaceMember(Stmt *S)
-{
+void Parser::ParseInjectedNamespaceMember(Stmt *S) {
   CachedTokens Toks;
   InjectTokens(S, Toks);
 
@@ -79,8 +78,7 @@ void Parser::ParseInjectedNamespaceMember(Stmt *S)
   }
 }
 
-void Parser::ParseInjectedClassMember(Stmt *S)
-{
+void Parser::ParseInjectedClassMember(Stmt *S) {
   CachedTokens Toks;
   InjectTokens(S, Toks);
 
@@ -93,13 +91,12 @@ void Parser::ParseInjectedClassMember(Stmt *S)
   // Note that we don't actually have to do anything with the resulting
   // class. Members are automatically registered in the current class when
   // parsed.
-  ParseCXXClassMemberDeclaration(AS_public, /*AccessAttrs=*/nullptr, 
-                                 ParsedTemplateInfo(), 
+  ParseCXXClassMemberDeclaration(AS_public, /*AccessAttrs=*/nullptr,
+                                 ParsedTemplateInfo(),
                                  /*TemplateDiags=*/nullptr);
 }
 
-void Parser::ParseInjectedStatement(Stmt *S)
-{
+void Parser::ParseInjectedStatement(Stmt *S) {
   CachedTokens Toks;
   InjectTokens(S, Toks);
 
@@ -112,27 +109,21 @@ void Parser::ParseInjectedStatement(Stmt *S)
   Stmts.push_back(R.get());
 
   // Build a compound statement to store the injected results.
-  InjectedStmts = Actions.ActOnCompoundStmt(S->getLocStart(), 
-                                            S->getLocEnd(),
-                                            Stmts, false);
+  InjectedStmts =
+      Actions.ActOnCompoundStmt(S->getLocStart(), S->getLocEnd(), Stmts, false);
 }
 
-void Parser::InjectedNamespaceMemberCB(void *OpaqueParser, Stmt *Injection)
-{
-  Parser* P = reinterpret_cast<Parser*>(OpaqueParser);
+void Parser::InjectedNamespaceMemberCB(void *OpaqueParser, Stmt *Injection) {
+  Parser *P = reinterpret_cast<Parser *>(OpaqueParser);
   return P->ParseInjectedNamespaceMember(Injection);
 }
 
-void
-Parser::InjectedClassMemberCB(void *OpaqueParser, Stmt *Injection)
-{
-  Parser* P = reinterpret_cast<Parser*>(OpaqueParser);
+void Parser::InjectedClassMemberCB(void *OpaqueParser, Stmt *Injection) {
+  Parser *P = reinterpret_cast<Parser *>(OpaqueParser);
   return P->ParseInjectedClassMember(Injection);
 }
 
-void Parser::InjectedStatementCB(void *OpaqueParser, Stmt *Injection)
-{
-  Parser* P = reinterpret_cast<Parser*>(OpaqueParser);
+void Parser::InjectedStatementCB(void *OpaqueParser, Stmt *Injection) {
+  Parser *P = reinterpret_cast<Parser *>(OpaqueParser);
   return P->ParseInjectedStatement(Injection);
 }
-
