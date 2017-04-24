@@ -104,6 +104,8 @@ struct named : decl<X> {
 };
 
 // A helper class that provides access to members of a scope declaration.
+//
+// Scoped declarations are also tuples over their members.
 template<reflection_t X>
 struct scope
 {
@@ -118,12 +120,36 @@ struct scope
     }
   };
 
-  using observe_tuple = filtered_tuple<member_info, is_observable_trait>;
+  using member_tuple = filtered_tuple<member_info, is_observable_trait>;
 
-  static constexpr observe_tuple members() {
+  static constexpr member_tuple members() {
     return {};
   }
+
+  static constexpr std::size_t size() {
+    return member_tuple::size();
+  }
+  static constexpr bool empty() {
+    return member_tuple::empty();
+  }
 };
+
+// Returns the Ith element in the filtered tuple.
+template<std::size_t I, reflection_t X>
+constexpr auto
+get(scope<X> const& t)
+{
+  return get<I>(t.members());
+}
+
+// Returns the Ith element in the filtered tuple as a constant expression.
+template<std::size_t I, reflection_t X>
+constexpr auto
+cget(scope<X> const& t)
+{
+  return get<I>(t.members());
+}
+
 
 // Reflects the current translation unit.
 template<reflection_t X>
@@ -678,5 +704,76 @@ constexpr bool is_variable_or_field(T) {
 } // inline namespace v1
 } // namespace meta
 } // namespace cppx
+
+
+namespace std
+{
+
+// Tuple adaptors for class_type
+
+template<cppx::meta::reflection_t X>
+struct tuple_size<cppx::meta::class_type<X>>
+  : std::integral_constant<std::size_t, cppx::meta::class_type<X>::size()>
+{ };
+
+template<std::size_t I, cppx::meta::reflection_t X>
+struct tuple_element<I, cppx::meta::class_type<X>>
+{
+  using type = decltype(get<I>(std::declval<cppx::meta::class_type<X>>().members()));
+};
+
+// Tuple adaptors for union_type
+
+template<cppx::meta::reflection_t X>
+struct tuple_size<cppx::meta::union_type<X>>
+  : std::integral_constant<std::size_t, cppx::meta::union_type<X>::size()>
+{ };
+
+template<std::size_t I, cppx::meta::reflection_t X>
+struct tuple_element<I, cppx::meta::union_type<X>>
+{
+  using type = decltype(get<I>(std::declval<cppx::meta::union_type<X>>().members()));
+};
+
+// Tuple adaptors for enum_type
+
+template<cppx::meta::reflection_t X>
+struct tuple_size<cppx::meta::enum_type<X>>
+  : std::integral_constant<std::size_t, cppx::meta::enum_type<X>::size()>
+{ };
+
+template<std::size_t I, cppx::meta::reflection_t X>
+struct tuple_element<I, cppx::meta::enum_type<X>>
+{
+  using type = decltype(get<I>(std::declval<cppx::meta::enum_type<X>>().members()));
+};
+
+// Tuple adaptors for ns
+
+template<cppx::meta::reflection_t X>
+struct tuple_size<cppx::meta::ns<X>>
+  : std::integral_constant<std::size_t, cppx::meta::ns<X>::size()>
+{ };
+
+template<std::size_t I, cppx::meta::reflection_t X>
+struct tuple_element<I, cppx::meta::ns<X>>
+{
+  using type = decltype(get<I>(std::declval<cppx::meta::ns<X>>().members()));
+};
+
+// Tuple adaptors for tu
+
+template<cppx::meta::reflection_t X>
+struct tuple_size<cppx::meta::tu<X>>
+  : std::integral_constant<std::size_t, cppx::meta::tu<X>::size()>
+{ };
+
+template<std::size_t I, cppx::meta::reflection_t X>
+struct tuple_element<I, cppx::meta::tu<X>>
+{
+  using type = decltype(get<I>(std::declval<cppx::meta::tu<X>>().members()));
+};
+
+} // namespace std
 
 #endif // CPPX_META
