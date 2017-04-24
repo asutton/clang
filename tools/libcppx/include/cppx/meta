@@ -13,6 +13,8 @@ namespace meta
 inline namespace v1
 {
 
+template<typename T> struct is_observable;
+
 template<typename T> struct is_variable;
 template<typename T> struct is_function;
 template<typename T> struct is_member_variable;
@@ -31,6 +33,11 @@ struct decl {
   static constexpr decl_traits traits() {
     return decl_traits(__reflect_traits(X));
   }
+};
+
+// A reflection of an internal entity. 
+template<reflection_t X>
+struct internal {
 };
 
 // A helper class that provides support for named entities.
@@ -108,7 +115,9 @@ struct scope
     }
   };
 
-  static constexpr reflected_tuple<member_info> members() {
+  using observe_tuple = filtered_tuple<member_info, is_observable>;
+
+  static constexpr observe_tuple members() {
     return {};
   }
 };
@@ -477,6 +486,30 @@ for_each(T const& t, F f) {
 
 // -------------------------------------------------------------------------- //
 // Type traits
+
+// is internal
+//
+// True for any internally generated AST nodes. These are typically filtered
+// from sequences by the is_observable trait.
+
+template<typename T>
+struct is_internal
+  : std::integral_constant<bool, false> { };
+
+template<reflection_t X>
+struct is_internal<internal<X>>
+  : std::integral_constant<bool, true> { };
+
+// is observable
+//
+// True for all non-internal nodes.
+
+template<typename T>
+struct is_observable
+  : std::integral_constant<bool, !is_internal<T>::value> { };
+
+template<typename T>
+constexpr bool is_observable_v = is_observable<T>::value;
 
 // is variable
 

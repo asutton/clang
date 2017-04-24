@@ -17,6 +17,13 @@ struct S {
   
   static int static_v1;
   static int static_v2;
+
+public:
+  int x;
+private:
+  int y;
+protected:
+  int z;
 };
 
 int main() {

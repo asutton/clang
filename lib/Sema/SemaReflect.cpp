@@ -205,6 +205,11 @@ static char const *GetReflectionClass(Decl *D) {
   case Decl::Constexpr:
     // Return something that is effectively unusable.
     return "decl";
+  case Decl::AccessSpec:
+    // Return a placeholder for a declaration. These shouldn't be exposed in
+    // the AST, but it's difficult to suppress (we'd have to filter the tuple
+    // accessors). For now, push this responsibility onto the library.
+    return "internal";
   default:
     break;
   }
