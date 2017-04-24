@@ -13,16 +13,16 @@ namespace meta
 inline namespace v1
 {
 
-template<typename T> struct is_observable;
+template<typename T> struct is_observable_trait;
 
-template<typename T> struct is_variable;
-template<typename T> struct is_function;
-template<typename T> struct is_member_variable;
-template<typename T> struct is_member_function;
-template<typename T> struct is_constructor;
-template<typename T> struct is_destructor;
-template<typename T> struct is_variable_or_field;
-template<typename T> struct is_function_or_method;
+template<typename T> struct is_variable_trait;
+template<typename T> struct is_function_trait;
+template<typename T> struct is_member_variable_trait;
+template<typename T> struct is_member_function_trait;
+template<typename T> struct is_constructor_trait;
+template<typename T> struct is_destructor_trait;
+template<typename T> struct is_variable_or_field_trait;
+template<typename T> struct is_function_or_method_trait;
 
 // The type of a reflected AST node.
 using reflection_t = std::intptr_t;
@@ -118,7 +118,7 @@ struct scope
     }
   };
 
-  using observe_tuple = filtered_tuple<member_info, is_observable>;
+  using observe_tuple = filtered_tuple<member_info, is_observable_trait>;
 
   static constexpr observe_tuple members() {
     return {};
@@ -160,14 +160,14 @@ template<reflection_t X>
 struct member_type : user_defined_type<X>
 {
   using member_info = typename scope<X>::member_info;
-  using var_tuple = filtered_tuple<member_info, is_variable_or_field>;
-  using memvar_tuple = filtered_tuple<member_info, is_member_variable>;
-  using svar_tuple = filtered_tuple<member_info, is_variable>;
-  using fn_field = filtered_tuple<member_info, is_function_or_method>;
-  using memfn_tuple = filtered_tuple<member_info, is_member_function>;
-  using ctor_tuple = filtered_tuple<member_info, is_constructor>;
-  using dtor_tuple = filtered_tuple<member_info, is_destructor>;
-  using sfn_tuple = filtered_tuple<member_info, is_function>;
+  using var_tuple = filtered_tuple<member_info, is_variable_or_field_trait>;
+  using memvar_tuple = filtered_tuple<member_info, is_member_variable_trait>;
+  using svar_tuple = filtered_tuple<member_info, is_variable_trait>;
+  using fn_field = filtered_tuple<member_info, is_function_or_method_trait>;
+  using memfn_tuple = filtered_tuple<member_info, is_member_function_trait>;
+  using ctor_tuple = filtered_tuple<member_info, is_constructor_trait>;
+  using dtor_tuple = filtered_tuple<member_info, is_destructor_trait>;
+  using sfn_tuple = filtered_tuple<member_info, is_function_trait>;
 
   static constexpr class_traits traits() {
     return class_traits(__reflect_traits(X));
@@ -508,127 +508,172 @@ struct is_internal<internal<X>>
 // True for all non-internal nodes.
 
 template<typename T>
-struct is_observable
+struct is_observable_trait
   : std::integral_constant<bool, !is_internal<T>::value> { };
 
 template<typename T>
-constexpr bool is_observable_v = is_observable<T>::value;
+constexpr bool is_observable_v = is_observable_trait<T>::value;
+
+template<typename T>
+constexpr bool is_observable(T) {
+  return is_observable_v<T>;
+}
 
 // is variable
 
 template<typename T>
-struct is_variable
+struct is_variable_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_variable<variable<X>>
+struct is_variable_trait<variable<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
-constexpr bool is_variable_v = is_variable<T>::value;
+constexpr bool is_variable_v = is_variable_trait<T>::value;
+
+template<typename T>
+constexpr bool is_variable(T) {
+  return is_variable_v<T>;
+}
 
 // is function
 
 template<typename T>
-struct is_function
+struct is_function_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_function<function<X>>
+struct is_function_trait<function<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
-constexpr bool is_function_v = is_function<T>::value;
+constexpr bool is_function_v = is_function_trait<T>::value;
+
+template<typename T>
+constexpr bool is_function(T) {
+  return is_function_v<T>;
+}
 
 // is member variable
 
 template<typename T>
-struct is_member_variable
+struct is_member_variable_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_member_variable<member_variable<X>>
+struct is_member_variable_trait<member_variable<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
-constexpr bool is_member_variable_v = is_member_variable<T>::value;
+constexpr bool is_member_variable_v = is_member_variable_trait<T>::value;
+
+template<typename T>
+constexpr bool is_member_variable(T) {
+  return is_member_variable_v<T>;
+}
 
 // is member function
 
 template<typename T>
-struct is_member_function
+struct is_member_function_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_member_function<member_function<X>>
+struct is_member_function_trait<member_function<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
-constexpr bool is_member_function_v = is_member_function<T>::value;
+constexpr bool is_member_function_v = is_member_function_trait<T>::value;
+
+template<typename T>
+constexpr bool is_member_function(T) {
+  return is_member_function_v<T>;
+}
 
 // is constructor
 
 template<typename T>
-struct is_constructor
+struct is_constructor_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_constructor<constructor<X>>
+struct is_constructor_trait<constructor<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
-constexpr bool is_constructor_v = is_constructor<T>::value;
+constexpr bool is_constructor_v = is_constructor_trait<T>::value;
+
+template<typename T>
+constexpr bool is_constructor(T) {
+  return is_constructor_v<T>;
+}
 
 // is destructor
 
 template<typename T>
-struct is_destructor
+struct is_destructor_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_destructor<destructor<X>>
+struct is_destructor_trait<destructor<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
-constexpr bool is_destructor_v = is_destructor<T>::value;
+constexpr bool is_destructor_v = is_destructor_trait<T>::value;
+
+template<typename T>
+constexpr bool is_destructor(T) {
+  return is_destructor_v<T>;
+}
 
 // is function or method
 //
 // True for any (possibly static) member variable.
 
 template<typename T>
-struct is_function_or_method
+struct is_function_or_method_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_function_or_method<function<X>>
+struct is_function_or_method_trait<function<X>>
   : std::integral_constant<bool, true> { };
 
 template<reflection_t X>
-struct is_function_or_method<member_function<X>>
+struct is_function_or_method_trait<member_function<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
-constexpr bool is_function_or_method_v = is_function_or_method<T>::value;
+constexpr bool is_function_or_method_v = is_function_or_method_trait<T>::value;
+
+template<typename T>
+constexpr bool is_function_or_method(T) {
+  return is_function_or_method_v<T>;
+}
 
 // is variable or field
 //
 // True for any (possibly static) member variable.
 
 template<typename T>
-struct is_variable_or_field
+struct is_variable_or_field_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_variable_or_field<variable<X>>
+struct is_variable_or_field_trait<variable<X>>
   : std::integral_constant<bool, true> { };
 
 template<reflection_t X>
-struct is_variable_or_field<member_variable<X>>
+struct is_variable_or_field_trait<member_variable<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
-constexpr bool is_variable_or_field_v = is_variable_or_field<T>::value;
+constexpr bool is_variable_or_field_v = is_variable_or_field_trait<T>::value;
+
+template<typename T>
+constexpr bool is_variable_or_field(T) {
+  return is_variable_or_field_v<T>;
+}
 
 } // inline namespace v1
 } // namespace meta
