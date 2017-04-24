@@ -1,18 +1,19 @@
-set(LIBCPPX_HEADERS cppx/meta cppx/traits.hpp cppx/tuple.hpp)
+set(LIBCPPX_HEADERS cppx/compiler cppx/meta cppx/traits.hpp cppx/tuple.hpp)
 
 # Group all headers together in generated IDE projects (otherwise, header files
 # without extensions may not be placed in the "Header Files" group).
 source_group("Header Files" FILES ${LIBCPPX_HEADERS})
 
 # Set properties on source files.
-set_source_files_properties(cppx/meta PROPERTIES XCODE_EXPLICIT_FILE_TYPE
-  sourcecode.cpp.h)
+set_source_files_properties(cppx/compiler cppx/meta PROPERTIES
+  XCODE_EXPLICIT_FILE_TYPE sourcecode.cpp.h)
 set_source_files_properties(${LIBCPPX_HEADERS} PROPERTIES HEADER_FILE_ONLY
   TRUE)
 
 set(LIBCPPX_HEADER_PATTERN
-  PATTERN "*"
-  PATTERN "CMakeLists.txt" EXCLUDE)
+  PATTERN "compiler"
+  PATTERN "meta"
+  PATTERN "*.hpp")
 
 # Copy the headers to the build tree if we're building Clang.
 if(LIBCPPX_BUILDING_CLANG)
