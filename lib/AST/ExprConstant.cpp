@@ -3975,6 +3975,12 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
 
   case Stmt::CXXForRangeStmtClass: {
     const CXXForRangeStmt *FS = cast<CXXForRangeStmt>(S);
+
+    // In certain contexts involving metaclasses, the FS may be incomplete,
+    // meaning it's begin and end statements will not have been resolved.
+    if (Info.checkingPotentialConstantExpression() && !FS->getBeginStmt())
+      return ESR_Failed;
+
     BlockScopeRAII Scope(Info);
 
     // Initialize the __range variable.
