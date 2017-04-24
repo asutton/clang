@@ -1605,45 +1605,57 @@ ParsedType Sema::getMetaclassName(const IdentifierInfo &II,
   return ParsedType::make(T);
 }
 
-/// Returns \c true if a constexpr-declaration in declaration context \p C would
-/// be represented using a function.
-static inline bool NeedsFunctionRep(const DeclContext *C) {
-  return C->isTranslationUnit() || C->isNamespace() || C->isRecord();
+/// Returns \c true if a constexpr-declaration in declaration context \p DC
+/// would be represented using a function.
+static inline bool NeedsFunctionRepresentation(const DeclContext *DC) {
+  return DC->isFileContext() || DC->isRecord();
 }
 
 /// Create a constexpr-declaration that will hold the body of the
 /// constexpr-declaration.
 ///
-/// This sets the scope flags to those of the scope that will be pushed
-/// just after this call returns.
-DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc,
-                                                int &ScopeFlags) {
+/// \p ScopeFlags is set to the value that should be used to create the scope
+/// containing the constexpr-declaration body.
+Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
+                               unsigned &ScopeFlags) {
   ConstexprDecl *CD;
-  if (NeedsFunctionRep(CurContext)) {
+  if (NeedsFunctionRepresentation(CurContext)) {
+    ScopeFlags = Scope::FnScope | Scope::DeclScope;
+
+    PushFunctionScope();
+
     // Build the function
     //
     //  constexpr void __constexpr_decl() compound-statement
     //
     // where compound-statement is the as-of-yet parsed body of the
     // constexpr-declaration.
-    PushFunctionScope();
     IdentifierInfo *II = &PP.getIdentifierTable().get("__constexpr_decl");
     DeclarationName Name(II);
-    DeclarationNameInfo DNI(Name, Loc);
-    QualType Ty = Context.getFunctionType(Context.VoidTy, ArrayRef<QualType>(),
-                                          FunctionProtoType::ExtProtoInfo());
-    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Ty, Loc);
-    FunctionDecl *Fn =
-        FunctionDecl::Create(Context, CurContext, Loc, DNI, Ty, TSI, SC_None,
-                             /*isInlineSpecfied=*/false,
-                             /*hasWrittenPrototype=*/false,
-                             /*isConstexpr=*/true);
-    Fn->setImplicit();
+    DeclarationNameInfo NameInfo(Name, ConstexprLoc);
+
+    FunctionProtoType::ExtProtoInfo EPI(
+        Context.getDefaultCallingConvention(/*IsVariadic=*/false,
+                                            /*IsCXXMethod=*/false));
+    QualType FunctionTy = Context.getFunctionType(Context.VoidTy, None, EPI);
+    TypeSourceInfo *FunctionTyInfo =
+        Context.getTrivialTypeSourceInfo(FunctionTy);
+
+    FunctionDecl *Function =
+        FunctionDecl::Create(Context, CurContext, ConstexprLoc, NameInfo,
+                             FunctionTy, FunctionTyInfo, SC_None,
+                             /*isInlineSpecified=*/false,
+                             /*hasWrittenPrototype=*/true,
+                             /*isConstexprSpecified=*/true);
+    Function->setImplicit();
 
     // Build the constexpr declaration around the function.
-    ScopeFlags = Scope::FnScope | Scope::DeclScope;
-    CD = ConstexprDecl::Create(Context, CurContext, Loc, Fn);
+    CD = ConstexprDecl::Create(Context, CurContext, ConstexprLoc, Function);
   } else if (CurContext->isFunctionOrMethod()) {
+    ScopeFlags = Scope::BlockScope | Scope::FnScope | Scope::DeclScope;
+    
+    LambdaScopeInfo *LSI = PushLambdaScope();
+
     // Build the expression
     //
     //    [&]() -> void compound-statement
@@ -1654,84 +1666,104 @@ DeclResult Sema::ActOnStartConstexprDeclaration(SourceLocation Loc,
     //
     // TODO: It would be great if we could only capture constexpr declarations,
     // but C++ doesn't have a constexpr default.
-    FunctionProtoType::ExtProtoInfo TypeInfo;
-    TypeInfo.HasTrailingReturn = true;
-    TypeInfo.TypeQuals = Qualifiers::Const;
-    QualType Ty = Context.getFunctionType(Context.VoidTy, {}, TypeInfo);
-    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Ty, Loc);
+    const bool KnownDependent = S->getTemplateParamParent();
 
-    // Build the lambda expression.
-    LambdaScopeInfo *LSI = PushLambdaScope();
+    FunctionProtoType::ExtProtoInfo EPI(
+        Context.getDefaultCallingConvention(/*IsVariadic=*/false,
+                                            /*IsCXXMethod=*/true));
+    EPI.HasTrailingReturn = true;
+    EPI.TypeQuals |= DeclSpec::TQ_const;
+    QualType MethodTy = Context.getFunctionType(Context.VoidTy, None, EPI);
+    TypeSourceInfo *MethodTyInfo = Context.getTrivialTypeSourceInfo(MethodTy);
+
     LambdaIntroducer Intro;
-    Intro.Range = SourceRange(Loc, Loc);
-    Intro.Default = LCD_None;
-    CXXRecordDecl *Closure =
-        createLambdaClosureType(Intro.Range, TSI, false, Intro.Default);
+    Intro.Range = SourceRange(ConstexprLoc);
+    Intro.Default = LCD_ByRef;
+
+    CXXRecordDecl *Closure = createLambdaClosureType(
+        Intro.Range, MethodTyInfo, KnownDependent, Intro.Default);
     CXXMethodDecl *Method =
-        startLambdaDefinition(Closure, Intro.Range, TSI, Loc, {}, true);
+        startLambdaDefinition(Closure, Intro.Range, MethodTyInfo, ConstexprLoc,
+                              None, /*IsConstexprSpecified=*/true);
     buildLambdaScope(LSI, Method, Intro.Range, Intro.Default, Intro.DefaultLoc,
                      /*ExplicitParams=*/false,
-                     /*ExplicitResultType*/ true,
-                     /*Mutable*/ false);
-
-    ScopeFlags = Scope::BlockScope | Scope::FnScope | Scope::DeclScope;
+                     /*ExplicitResultType=*/true,
+                     /*Mutable=*/false);
 
     // NOTE: The call operator is not yet attached to the closure type. That
-    // happens in ActOnFinishConstexprDeclaration(). The operator is, however,
+    // happens in ActOnFinishConstexprDecl(). The operator is, however,
     // available in the LSI.
-    CD = ConstexprDecl::Create(Context, CurContext, Loc, Closure);
+    CD = ConstexprDecl::Create(Context, CurContext, ConstexprLoc, Closure);
   } else
     llvm_unreachable("constexpr declaration in unsupported context");
 
-  CurContext->addHiddenDecl(CD);
+  CurContext->addDecl(CD);
   return CD;
 }
 
-/// Called just prior to parsing the definition of a constexpr-declaration.
+/// Called just prior to parsing the body of a constexpr-declaration.
 ///
 /// This ensures that the declaration context is pushed with the appropriate
 /// scope.
-void Sema::ActOnStartOfConstexprDef(Decl *D) {
+void Sema::ActOnStartConstexprDecl(Scope *S, Decl *D) {
   ConstexprDecl *CD = cast<ConstexprDecl>(D);
+
   if (CD->hasFunctionRepresentation())
-    PushDeclContext(CurScope, CD->getFunctionDecl());
+    PushDeclContext(S, CD->getFunctionDecl());
   else {
     LambdaScopeInfo *LSI = cast<LambdaScopeInfo>(FunctionScopes.back());
-    PushDeclContext(CurScope, LSI->CallOperator);
+    PushDeclContext(S, LSI->CallOperator);
     PushExpressionEvaluationContext(PotentiallyEvaluated);
   }
 }
 
-/// Attach the parsed statements to the body.
-DeclResult Sema::ActOnFinishConstexprDeclaration(Decl *D, Stmt *S) {
+/// Called immediately after parsing the body of a constexpr-declaration.
+///
+/// The statements within the body are evaluated here.
+void Sema::ActOnFinishConstexprDecl(Scope *S, Decl *D, Stmt *Body) {
   ConstexprDecl *CD = cast<ConstexprDecl>(D);
+
+  bool Evaluated;
+
   if (CD->hasFunctionRepresentation()) {
     FunctionDecl *Fn = CD->getFunctionDecl();
-    ActOnFinishFunctionBody(Fn, S);
-    if (!EvaluateConstexprDeclaration(CD, Fn))
-      return DeclResult(true);
+    ActOnFinishFunctionBody(Fn, Body);
+    Evaluated = EvaluateConstexprDecl(CD, Fn);
   } else {
-    LambdaScopeInfo *LSI = cast<LambdaScopeInfo>(FunctionScopes.back());
-    ActOnFinishFunctionBody(LSI->CallOperator, S);
-    LambdaExpr *Lambda = cast<LambdaExpr>(
-        BuildLambdaExpr(CD->getLocation(), S->getLocEnd(), LSI).get());
-    if (!EvaluateConstexprDeclaration(CD, Lambda))
-      return DeclResult(true);
+    LambdaExpr *Lambda =
+        cast<LambdaExpr>(ActOnLambdaExpr(CD->getLocation(), Body, S).get());
+    Evaluated = EvaluateConstexprDecl(CD, Lambda);
   }
-  return CD;
+
+  // TODO: Emit a diagnostic if Evaluated is false?
+}
+
+/// Called when an error occurs while parsing the constexpr-declaration body.
+void Sema::ActOnConstexprDeclError(Scope *S, Decl *D) {
+  ConstexprDecl *CD = cast<ConstexprDecl>(D);
+  CD->setInvalidDecl();
+
+  if (CD->hasFunctionRepresentation()) {
+    FunctionDecl *Fn = CD->getFunctionDecl();
+    ActOnFinishFunctionBody(Fn, nullptr);
+  } else {
+    ActOnLambdaError(CD->getLocation(), S);
+  }
 }
 
 /// Process a constexpr-declaration.
 ///
 /// This builds an unnamed \c constexpr \c void function whose body is that of
 /// the constexpr-delaration, and evaluates a call to that function.
-bool Sema::EvaluateConstexprDeclaration(ConstexprDecl *CD, FunctionDecl *D) {
-  QualType Ty = D->getType();
+bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, FunctionDecl *D) {
+  QualType FunctionTy = D->getType();
   DeclRefExpr *Ref =
-      new (Context) DeclRefExpr(D, false, Ty, VK_LValue, SourceLocation());
-  QualType PtrTy = Context.getPointerType(Ty);
-  ImplicitCastExpr *Cast = ImplicitCastExpr::Create(
-      Context, PtrTy, CK_FunctionToPointerDecay, Ref, nullptr, VK_RValue);
+      new (Context) DeclRefExpr(D, /*RefersToEnclosingVariableOrCapture=*/false,
+                                FunctionTy, VK_LValue, SourceLocation());
+  QualType PtrTy = Context.getPointerType(FunctionTy);
+  ImplicitCastExpr *Cast =
+      ImplicitCastExpr::Create(Context, PtrTy, CK_FunctionToPointerDecay, Ref,
+                               /*BasePath=*/nullptr, VK_RValue);
   CallExpr *Call =
       new (Context) CallExpr(Context, Cast, ArrayRef<Expr *>(), Context.VoidTy,
                              VK_RValue, SourceLocation());
@@ -1742,14 +1774,16 @@ bool Sema::EvaluateConstexprDeclaration(ConstexprDecl *CD, FunctionDecl *D) {
 ///
 /// This builds an unnamed \c constexpr \c void function whose body is that of
 /// the constexpr-delaration, and evaluates a call to that function.
-bool Sema::EvaluateConstexprDeclaration(ConstexprDecl *CD, LambdaExpr *E) {
+bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E) {
   CXXMethodDecl *Method = E->getCallOperator();
   QualType MethodTy = Method->getType();
   DeclRefExpr *Ref = new (Context)
-      DeclRefExpr(Method, false, MethodTy, VK_LValue, SourceLocation());
+      DeclRefExpr(Method, /*RefersToEnclosingVariableOrCapture=*/false,
+                  MethodTy, VK_LValue, SourceLocation());
   QualType PtrTy = Context.getPointerType(MethodTy);
-  ImplicitCastExpr *Cast = ImplicitCastExpr::Create(
-      Context, PtrTy, CK_FunctionToPointerDecay, Ref, nullptr, VK_RValue);
+  ImplicitCastExpr *Cast =
+      ImplicitCastExpr::Create(Context, PtrTy, CK_FunctionToPointerDecay, Ref,
+                               /*BasePath=*/nullptr, VK_RValue);
   CallExpr *Call = new (Context) CXXOperatorCallExpr(
       Context, OO_Call, Cast, {E}, Context.VoidTy, VK_RValue, SourceLocation(),
       /*fpContractible=*/false);
@@ -1769,18 +1803,19 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   CD->setCallExpr(Call);
 
   // Don't evaluate the call if this declaration appears within a metaclass.
-  DeclContext *ParentCxt = CurContext->getParent();
-  if (ParentCxt && isa<MetaclassDecl>(ParentCxt))
-    return true;
+  if (CXXRecordDecl *RD =
+          dyn_cast_or_null<CXXRecordDecl>(CurContext->getParent()))
+    if (RD->isMetaclassDefinition())
+      return true;
 
   SmallVector<PartialDiagnosticAt, 8> Notes;
   SmallVector<Stmt *, 16> Injections;
-  Expr::EvalResult Eval;
-  Eval.Diag = &Notes;
-  Eval.Injections = &Injections;
+  Expr::EvalResult Result;
+  Result.Diag = &Notes;
+  Result.Injections = &Injections;
 
-  bool Result = Call->EvaluateAsRValue(Eval, Context);
-  if (!Result) {
+  bool Folded = Call->EvaluateAsRValue(Result, Context);
+  if (!Folded) {
     // If the only error is that we didn't initialize a (void) value, that's
     // actually okay. APValue doesn't know how to do this anyway.
     //
@@ -1795,8 +1830,7 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
 
       if (Notes[0].second.getDiagID() != diag::note_constexpr_uninitialized) {
         // FIXME: These source locations are wrong.
-        Diag(CD->getLocStart(), diag::err_expr_not_ice)
-            << CD->getSourceRange() << LangOpts.CPlusPlus;
+        Diag(CD->getLocStart(), diag::err_expr_not_ice) << LangOpts.CPlusPlus;
         for (const PartialDiagnosticAt &Note : Notes)
           Diag(Note.first, Note.second);
         return false;

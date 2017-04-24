@@ -2518,7 +2518,8 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
   }
 
   // constexpr-declaration
-  if (Tok.is(tok::kw_constexpr) && NextToken().is(tok::l_brace))
+  if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw_constexpr) &&
+      NextToken().is(tok::l_brace))
     return ParseConstexprDeclaration();
 
   // Hold late-parsed attributes so we can attach a Decl to them later.
@@ -3114,7 +3115,7 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   unsigned ScopeFlags = Scope::ClassScope | Scope::DeclScope;
 
   // Determine whether this is the definition of a metaclass.
-  if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(TagDecl))
+  if (CXXRecordDecl *RD = dyn_cast_or_null<CXXRecordDecl>(TagDecl))
     if (RD->isMetaclassDefinition())
       ScopeFlags |= Scope::MetaclassScope;
 
