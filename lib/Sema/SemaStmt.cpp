@@ -3000,6 +3000,8 @@ StmtResult Sema::FinishCXXPackExpansionStmt(CXXPackExpansionStmt *S, Stmt *B) {
 
 /// Attach the body to the expansion statement, and expand as needed.
 StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
+  if (!S || !B)
+    return StmtError();
   if (CXXTupleExpansionStmt *TES = dyn_cast<CXXTupleExpansionStmt>(S))
     return FinishCXXTupleExpansionStmt(TES, B);
   if (CXXPackExpansionStmt *PES = dyn_cast<CXXPackExpansionStmt>(S))

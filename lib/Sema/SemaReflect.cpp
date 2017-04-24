@@ -85,7 +85,10 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec &SS,
   LookupResult R(*this, II, OpLoc, LookupAnyName);
   LookupParsedName(R, CurScope, &SS);
   if (!R.isSingleResult())
-    return ExprError(Diag(IdLoc, diag::err_reflected_overload));
+    // FIXME: This doesn't give the best errors in case of e.g., finding
+    // an overload (although we should handle that).
+    return ExprError();
+
   Decl *D = R.getAsSingle<Decl>();
   if (!D)
     return ExprError();
