@@ -9847,8 +9847,8 @@ public:
         return Error(E->getMessage());
       Message = cast<StringLiteral>(BaseExpr);
     } else {
-      const ValueDecl *D = Base.get<const ValueDecl *>();
-      D->dump();
+      // FIXME: Actually make this work.
+      // const ValueDecl *D = Base.get<const ValueDecl *>();
       return Error(E->getMessage());
     }
 

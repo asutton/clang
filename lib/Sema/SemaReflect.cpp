@@ -1748,7 +1748,6 @@ void Sema::ActOnFinishConstexprDecl(Scope *S, Decl *D, Stmt *Body) {
   ConstexprDecl *CD = cast<ConstexprDecl>(D);
 
   bool Evaluated;
-
   if (CD->hasFunctionRepresentation()) {
     FunctionDecl *Fn = CD->getFunctionDecl();
     ActOnFinishFunctionBody(Fn, Body);
@@ -1758,8 +1757,9 @@ void Sema::ActOnFinishConstexprDecl(Scope *S, Decl *D, Stmt *Body) {
         cast<LambdaExpr>(ActOnLambdaExpr(CD->getLocation(), Body, S).get());
     Evaluated = EvaluateConstexprDecl(CD, Lambda);
   }
-
-  // TODO: Emit a diagnostic if Evaluated is false?
+  // TODO: Emit a diagnostic if Evaluated is false? Or did we already
+  // diagnose the error?
+  (void)Evaluated;
 }
 
 /// Called when an error occurs while parsing the constexpr-declaration body.
@@ -1827,10 +1827,10 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   CD->setCallExpr(Call);
 
   // Don't evaluate the call if this declaration appears within a metaclass.
-  if (CXXRecordDecl *RD =
-          dyn_cast_or_null<CXXRecordDecl>(CurContext->getParent()))
+  if (CXXRecordDecl *RD = dyn_cast_or_null<CXXRecordDecl>(CurContext)) {
     if (RD->isMetaclassDefinition())
       return true;
+  }
 
   SmallVector<PartialDiagnosticAt, 8> Notes;
   SmallVector<Stmt *, 16> Injections;

@@ -396,6 +396,18 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
 
   // Inject each metaclass member in turn.
   CXXRecordDecl *Def = Meta->getDefinition();
+  
+  // Recursively inject base classes.
+  for (CXXBaseSpecifier &B : Def->bases()) {
+    QualType T = B.getType();
+    CXXRecordDecl *BaseClass = T->getAsCXXRecordDecl();
+    assert(BaseClass->isMetaclassDefinition() && 
+           "Metaclass inheritance from regular class");
+    MetaclassDecl *BaseMeta = cast<MetaclassDecl>(BaseClass->getDeclContext());
+    InjectMetaclassMembers(BaseMeta, Class, Fields);
+  }
+
+  // Inject the members.
   for (Decl *D : Def->decls()) {
     if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {
       // Skip the injected class name.
@@ -411,6 +423,7 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
         Fields.push_back(R);
     }
   }
+
   // llvm::errs() << "RESULTING CLASS\n";
   // Class->dump();
 }
