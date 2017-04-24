@@ -2182,6 +2182,60 @@ static StmtResult RebuildForRangeWithDereference(Sema &SemaRef, Scope *S,
                                       Sema::BFRK_Rebuild);
 }
 
+/// Build an expression that evaluates \c std::tuple_size\<RangeType\>::value
+/// for the given type \p RangeType. This is to detect tuple expansions.
+///
+/// \p RangeType must not be a dependent type.
+///
+/// \returns  \c true if the expression can be evaluated, \c false otherwise.
+///           If \c true, \p Size is set to the number of elements in the tuple.
+static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
+                         llvm::APSInt &Size) {
+  NamespaceDecl *Std = SemaRef.getStdNamespace();
+  IdentifierInfo *SizeName = &SemaRef.PP.getIdentifierTable().get("tuple_size");
+  LookupResult SizeLookup(SemaRef, SizeName, Loc, Sema::LookupAnyName);
+  SemaRef.LookupQualifiedName(SizeLookup, Std);
+  ClassTemplateDecl *TupleSize = SizeLookup.getAsSingle<ClassTemplateDecl>();
+  if (!TupleSize) {
+    SemaRef.Diag(Loc, diag::err_no_member) << SizeName << Std;
+    return false;
+  }
+
+  // Build a template specialization, instantiate it, and then complete it.
+  TemplateName TempName(TupleSize);
+  TemplateArgument Arg(RangeType);
+  TypeSourceInfo *TSI =
+      SemaRef.Context.getTrivialTypeSourceInfo(RangeType, Loc);
+  TemplateArgumentLoc ArgLoc(Arg, TSI);
+  TemplateArgumentListInfo TempArgs(Loc, Loc);
+  TempArgs.addArgument(ArgLoc);
+  QualType SpecType = SemaRef.CheckTemplateIdType(TempName, Loc, TempArgs);
+
+  if (SemaRef.RequireCompleteType(Loc, SpecType, diag::err_incomplete_type))
+    return false;
+  CXXRecordDecl *Spec = SpecType->getAsCXXRecordDecl();
+
+  // Lookup the the '::value' member in the specifier.
+  IdentifierInfo *ValueName = &SemaRef.PP.getIdentifierTable().get("value");
+  LookupResult ValueLookup(SemaRef, ValueName, Loc, Sema::LookupOrdinaryName);
+  SemaRef.LookupQualifiedName(ValueLookup, Spec);
+  VarDecl *Value = ValueLookup.getAsSingle<VarDecl>();
+  if (!Value) {
+    SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;    
+    return false;
+  }
+
+  // Build an expression that accesses the member and evaluate it.
+  ExprResult Ref =
+      SemaRef.BuildDeclRefExpr(Value, Value->getType(), VK_LValue, Loc);
+  if (!Ref.get()->EvaluateAsInt(Size, SemaRef.Context)) {
+    // FIXME: This is probably not the right error.
+    SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;
+    return false;
+  }
+  return true;
+}
+
 namespace {
 /// RAII object to automatically invalidate a declaration if an error occurs.
 struct InvalidateOnErrorScope {
@@ -2351,10 +2405,29 @@ Sema::BuildCXXForRangeStmt(SourceLocation ForLoc, SourceLocation CoawaitLoc,
 
       // Otherwise, emit diagnostics if we haven't already.
       if (RangeStatus == FRS_NoViableFunction) {
+        // Check to see if the loop should have been expanded. Note that we
+        // don't want this to emit diagnostics.
+        //
+        // FIXME: Check for pack expansions also.
+        //
+        // FIXME: Use a SFINAE trap or no?
+        Diags.setSuppressAllDiagnostics(true);
+        llvm::APSInt TupleSize;
+        if (GetTupleSize(*this, RangeLoc, RangeType, TupleSize)) {
+          Diags.setSuppressAllDiagnostics(false);
+          CXXRecordDecl *Tuple = RangeType->getAsCXXRecordDecl();
+          Diag(RangeLoc, diag::err_range_loop_over_tuple) << Tuple;
+          Diag(Tuple->getLocation(), diag::note_entity_declared_at) << Tuple;
+          Diag(ForLoc, diag::note_use_loop_expansion);
+          return StmtError();
+        }
+        Diags.setSuppressAllDiagnostics(false);
+
         Expr *Range = BEFFailure ? EndRangeRef.get() : BeginRangeRef.get();
         Diag(Range->getLocStart(), diag::err_for_range_invalid)
             << RangeLoc << Range->getType() << BEFFailure;
         CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Range);
+
       }
       // Return an error if no fix was discovered.
       if (RangeStatus != FRS_Success)
@@ -2520,60 +2593,6 @@ static NestedNameSpecifierLoc GetQualifiedNameForDecl(ASTContext &Cxt, Decl *D,
     }
   }
   return Builder.getWithLocInContext(Cxt);
-}
-
-/// Build an expression that evaluates \c std::tuple_size\<RangeType\>::value
-/// for the given type \p RangeType.
-///
-/// \p RangeType must not be a dependent type.
-///
-/// \returns  \c true if the expression can be evaluated, \c false otherwise.
-///           If \c true, \p Size is set to the number of elements in the tuple.
-static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
-                         llvm::APSInt &Size) {
-  NamespaceDecl *Std = SemaRef.getStdNamespace();
-  IdentifierInfo *SizeName = &SemaRef.PP.getIdentifierTable().get("tuple_size");
-  LookupResult SizeLookup(SemaRef, SizeName, Loc, Sema::LookupAnyName);
-  SemaRef.LookupQualifiedName(SizeLookup, Std);
-  ClassTemplateDecl *TupleSize = SizeLookup.getAsSingle<ClassTemplateDecl>();
-  if (!TupleSize) {
-    SemaRef.Diag(Loc, diag::err_no_member) << SizeName << Std;
-    return false;
-  }
-
-  // Build a template specialization, instantiate it, and then complete it.
-  TemplateName TempName(TupleSize);
-  TemplateArgument Arg(RangeType);
-  TypeSourceInfo *TSI =
-      SemaRef.Context.getTrivialTypeSourceInfo(RangeType, Loc);
-  TemplateArgumentLoc ArgLoc(Arg, TSI);
-  TemplateArgumentListInfo TempArgs(Loc, Loc);
-  TempArgs.addArgument(ArgLoc);
-  QualType SpecType = SemaRef.CheckTemplateIdType(TempName, Loc, TempArgs);
-
-  if (SemaRef.RequireCompleteType(Loc, SpecType, diag::err_incomplete_type))
-    return false;
-  CXXRecordDecl *Spec = SpecType->getAsCXXRecordDecl();
-
-  // Lookup the the '::value' member in the specifier.
-  IdentifierInfo *ValueName = &SemaRef.PP.getIdentifierTable().get("value");
-  LookupResult ValueLookup(SemaRef, ValueName, Loc, Sema::LookupOrdinaryName);
-  SemaRef.LookupQualifiedName(ValueLookup, Spec);
-  VarDecl *Value = ValueLookup.getAsSingle<VarDecl>();
-  if (!Value) {
-    SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;    
-    return false;
-  }
-
-  // Build an expression that accesses the member and evaluate it.
-  ExprResult Ref =
-      SemaRef.BuildDeclRefExpr(Value, Value->getType(), VK_LValue, Loc);
-  if (!Ref.get()->EvaluateAsInt(Size, SemaRef.Context)) {
-    // FIXME: This is probably not the right error.
-    SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;
-    return false;
-  }
-  return true;
 }
 
 /// Build a C++ expansion statement.

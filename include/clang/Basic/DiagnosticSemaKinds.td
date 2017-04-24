@@ -8877,6 +8877,10 @@ def err_invalid_access_specifier : Error<
   "invalid access specifier">;
 def err_pure_function_with_definition : Error<
   "making a defined function pure virtual">;
+def err_range_loop_over_tuple : Error<
+  "range-based loop over a tuple with type %0">;
+def note_use_loop_expansion : Note<
+  "did you mean to use 'for...'">;  
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {
