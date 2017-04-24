@@ -29,7 +29,7 @@ using reflection_t = std::intptr_t;
 template<reflection_t X>
 struct decl {
   static constexpr decl_traits traits() {
-    return __reflect_traits(X);
+    return decl_traits(__reflect_traits(X));
   }
 };
 
@@ -64,7 +64,7 @@ struct named : decl<X> {
   }
 
   static constexpr access_kind access() {
-    return decl<X>::traits.access;
+    return decl<X>::traits().access;
   }
   static constexpr bool has_access() {
     return access() != no_access;
@@ -124,7 +124,7 @@ template<reflection_t X>
 struct ns : named<X>, scope<X>
 {
   static constexpr namespace_traits traits() {
-    return __reflect_traits(X);
+    return namespace_traits(__reflect_traits(X));
   }
   static constexpr bool is_inline() {
     return traits().is_inline;
