@@ -177,8 +177,14 @@ static char const *GetReflectionClass(Decl *D) {
     return "conversion";
   case Decl::CXXDestructor:
     return "destructor";
-  case Decl::CXXMethod:
-    return "member_function";
+  case Decl::CXXMethod: {
+    // Generate function reflections for static member functions.
+    CXXMethodDecl* Method = cast<CXXMethodDecl>(D);
+    if (Method->isStatic())
+      return "function";
+    else
+      return "member_function";
+  }
   case Decl::EnumConstant:
     return "enumerator";
   case Decl::Field:

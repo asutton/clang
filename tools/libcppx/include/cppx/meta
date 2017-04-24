@@ -13,10 +13,14 @@ namespace meta
 inline namespace v1
 {
 
+template<typename T> struct is_variable;
+template<typename T> struct is_function;
 template<typename T> struct is_member_variable;
 template<typename T> struct is_member_function;
 template<typename T> struct is_constructor;
 template<typename T> struct is_destructor;
+template<typename T> struct is_variable_or_field;
+template<typename T> struct is_function_or_method;
 
 // The type of a reflected AST node.
 using reflection_t = std::intptr_t;
@@ -144,10 +148,14 @@ template<reflection_t X>
 struct member_type : user_defined_type<X>
 {
   using member_info = typename scope<X>::member_info;
+  using var_tuple = filtered_tuple<member_info, is_variable_or_field>;
   using memvar_tuple = filtered_tuple<member_info, is_member_variable>;
+  using svar_tuple = filtered_tuple<member_info, is_variable>;
+  using fn_field = filtered_tuple<member_info, is_function_or_method>;
   using memfn_tuple = filtered_tuple<member_info, is_member_function>;
   using ctor_tuple = filtered_tuple<member_info, is_constructor>;
   using dtor_tuple = filtered_tuple<member_info, is_destructor>;
+  using sfn_tuple = filtered_tuple<member_info, is_function>;
 
   static constexpr class_traits traits() {
     return class_traits(__reflect_traits(X));
@@ -157,7 +165,16 @@ struct member_type : user_defined_type<X>
     return traits().is_complete;
   }
 
+  static constexpr var_tuple variables() {
+    return {};
+  }
   static constexpr memvar_tuple member_variables() {
+    return {};
+  }
+  static constexpr svar_tuple static_variables() {
+    return {};
+  }
+  static constexpr fn_field functions() {
     return {};
   }
   static constexpr memfn_tuple member_functions() {
@@ -168,6 +185,9 @@ struct member_type : user_defined_type<X>
   }
   static constexpr auto destructor() {
     return cget<0>(dtor_tuple{});
+  }
+  static constexpr sfn_tuple static_functions() {
+    return {};
   }
 };
 
@@ -458,6 +478,32 @@ for_each(T const& t, F f) {
 // -------------------------------------------------------------------------- //
 // Type traits
 
+// is variable
+
+template<typename T>
+struct is_variable
+  : std::integral_constant<bool, false> { };
+
+template<reflection_t X>
+struct is_variable<variable<X>>
+  : std::integral_constant<bool, true> { };
+
+template<typename T>
+constexpr bool is_variable_v = is_variable<T>::value;
+
+// is function
+
+template<typename T>
+struct is_function
+  : std::integral_constant<bool, false> { };
+
+template<reflection_t X>
+struct is_function<function<X>>
+  : std::integral_constant<bool, true> { };
+
+template<typename T>
+constexpr bool is_function_v = is_function<T>::value;
+
 // is member variable
 
 template<typename T>
@@ -509,6 +555,44 @@ struct is_destructor<destructor<X>>
 
 template<typename T>
 constexpr bool is_destructor_v = is_destructor<T>::value;
+
+// is function or method
+//
+// True for any (possibly static) member variable.
+
+template<typename T>
+struct is_function_or_method
+  : std::integral_constant<bool, false> { };
+
+template<reflection_t X>
+struct is_function_or_method<function<X>>
+  : std::integral_constant<bool, true> { };
+
+template<reflection_t X>
+struct is_function_or_method<member_function<X>>
+  : std::integral_constant<bool, true> { };
+
+template<typename T>
+constexpr bool is_function_or_method_v = is_function_or_method<T>::value;
+
+// is variable or field
+//
+// True for any (possibly static) member variable.
+
+template<typename T>
+struct is_variable_or_field
+  : std::integral_constant<bool, false> { };
+
+template<reflection_t X>
+struct is_variable_or_field<variable<X>>
+  : std::integral_constant<bool, true> { };
+
+template<reflection_t X>
+struct is_variable_or_field<member_variable<X>>
+  : std::integral_constant<bool, true> { };
+
+template<typename T>
+constexpr bool is_variable_or_field_v = is_variable_or_field<T>::value;
 
 } // inline namespace v1
 } // namespace meta
