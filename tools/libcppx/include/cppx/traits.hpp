@@ -154,7 +154,9 @@ struct method_traits {
       is_inline    (n & 0x1000),
       is_deleted   (n & 0x2000),
       is_defaulted (n & 0x4000),
-      is_trivial   (n & 0x8000)
+      is_trivial   (n & 0x8000),
+      is_copy_ctor (n & 0x10000),
+      is_move_ctor (n & 0x20000)
   { }
 
   linkage_kind linkage : 2;
@@ -171,6 +173,8 @@ struct method_traits {
   bool is_deleted : 1;
   bool is_defaulted : 1; // ctors and dtors
   bool is_trivial : 1; // ctors and dtors
+  bool is_copy_ctor : 1; // ctors
+  bool is_move_ctor : 1; // dtors
 };
 
 // TODO: Accumulate all known type traits for classes.

@@ -801,6 +801,8 @@ struct MethodTraits {
   bool Deleted : 1;
   bool Defaulted : 1;
   bool Trivial : 1;
+  bool CopyCtor : 1;
+  bool MoveCtor : 1;
 };
 
 static MethodTraits getMethodTraits(ASTContext &C, CXXConstructorDecl *D) {
@@ -814,6 +816,8 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXConstructorDecl *D) {
   T.Deleted = D->isDeleted();
   T.Defaulted = D->isDefaulted();
   T.Trivial = D->isTrivial();
+  T.CopyCtor = D->isCopyConstructor();
+  T.MoveCtor = D->isMoveConstructor();
   return T;
 }
 

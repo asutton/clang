@@ -363,6 +363,12 @@ struct constructor : method<X> {
     static_assert(method<X>::is_defined());
     return method<X>::traits().is_deleted;
   }
+  static constexpr bool is_copy() {
+    return method<X>::traits().is_copy_ctor;
+  }
+  static constexpr bool is_move() {
+    return method<X>::traits().is_move_ctor;
+  }
 };
 
 // A destructor is a special member function that can be overridden.
