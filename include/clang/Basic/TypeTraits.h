@@ -106,6 +106,7 @@ namespace clang {
   enum ReflectionTrait {
     /// \name General Declaration Properties
     /// @{
+    URT_ReflectPrint, ///< Emits debug info about a reflection
     URT_ReflectName,
     URT_ReflectQualifiedName,
     URT_ReflectDeclarationContext,

@@ -603,6 +603,7 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 /// [Meta]  unary-reflection-trait '(' expression ')'
 /// [Meta]  binary-reflection-trait '(' expression ',' expression ')'
 /// [Meta]  '__compiler_error' '(' constant-expression ')'
+/// [Meta]  '__compiler_dump' '(' constant-expression ')'
 ///
 ///       constant: [C99 6.4.4]
 ///         integer-constant

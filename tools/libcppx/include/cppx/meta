@@ -30,6 +30,9 @@ using reflection_t = std::intptr_t;
 // Reflections for all traits
 template<reflection_t X>
 struct decl {
+  static constexpr void print() {
+    return __reflect_print(X);
+  }
   static constexpr decl_traits traits() {
     return decl_traits(__reflect_traits(X));
   }

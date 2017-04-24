@@ -526,6 +526,14 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
   switch (RT) {
   default:
     break;
+  case URT_ReflectPrint: {
+    PrintingPolicy PP = S.getASTContext().getPrintingPolicy();
+    PP.TerseOutput = false;
+    D->print(llvm::errs(), PP);
+    llvm::errs() << '\n';
+    return ExprResult();
+  }
+  
   case URT_ReflectName:
     return ReflectName(D);
   case URT_ReflectQualifiedName:
@@ -561,6 +569,19 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
   switch (RT) {
   default:
     break;
+  case URT_ReflectPrint: {
+    PrintingPolicy PP = S.getASTContext().getPrintingPolicy();
+    PP.TerseOutput = false;
+    if (CXXRecordDecl* Class = T->getAsCXXRecordDecl()) {
+      Class->print(llvm::errs(), PP);
+    } else {
+      QualType Q(T, 0);
+      Q.print(llvm::errs(), PP);
+    }
+    llvm::errs() << '\n';
+    return ExprResult();
+  }
+  
   case URT_ReflectName:
     return ReflectName(T);
   case URT_ReflectQualifiedName:

@@ -3,7 +3,6 @@
 #ifndef CPPX_COMPILER
 #define CPPX_COMPILER
 
-
 namespace cppx
 {
 namespace meta
@@ -20,6 +19,12 @@ struct compiler_type
   static constexpr void require(bool cond, const char* msg) {
     if (!cond)
       error(msg);
+  }
+
+  /// FIXME: Constrain T so that it's a reflection.
+  template<typename T>
+  static constexpr void debug(T refl) {
+    refl.print();
   }
 };
 
