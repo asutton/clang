@@ -1682,7 +1682,7 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
 
     // Build the expression
     //
-    //    [&]() -> void compound-statement
+    //    []() -> void compound-statement
     //
     // where compound-statement is the as-of-yet parsed body of the
     // constexpr-declaration. Note that the return type is not deduced (it
@@ -1702,7 +1702,7 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
 
     LambdaIntroducer Intro;
     Intro.Range = SourceRange(ConstexprLoc);
-    Intro.Default = LCD_ByRef;
+    Intro.Default = LCD_None;
 
     CXXRecordDecl *Closure = createLambdaClosureType(
         Intro.Range, MethodTyInfo, KnownDependent, Intro.Default);
