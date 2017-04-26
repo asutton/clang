@@ -13587,8 +13587,8 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
     if (SS.isEmpty()) {
       bool Owned = false;
       bool IsDependent = false;
-      return ActOnTag(S, TagSpec, nullptr, TUK_Friend, TagLoc, SS, Name, NameLoc,
-                      Attr, AS_public,
+      return ActOnTag(S, TagSpec, /*Metaclass=*/nullptr, TUK_Friend, TagLoc, SS,
+                      Name, NameLoc, Attr, AS_public,
                       /*ModulePrivateLoc=*/SourceLocation(),
                       MultiTemplateParamsArg(), Owned, IsDependent,
                       /*ScopedEnumKWLoc=*/SourceLocation(),

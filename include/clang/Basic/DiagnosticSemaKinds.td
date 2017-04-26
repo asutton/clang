@@ -2159,7 +2159,8 @@ def err_invalid_constexpr : Error<
 def err_invalid_constexpr_member : Error<"non-static data member cannot be "
   "constexpr%select{; did you intend to make it %select{const|static}0?|}1">;
 def err_constexpr_tag : Error<
-  "%select{class|struct|interface|union|enum}0 cannot be marked constexpr">;
+  "%select{class|struct|interface|union|enum|class prototype}0 cannot be "
+  "marked constexpr">;
 def err_constexpr_dtor : Error<"destructor cannot be marked constexpr">;
 def err_constexpr_no_declarators : Error<
   "constexpr can only be used in variable and function declarations">;
@@ -2599,8 +2600,8 @@ def err_stmt_attribute_invalid_on_decl : Error<
   "%0 attribute cannot be applied to a declaration">;
 def warn_declspec_attribute_ignored : Warning<
   "attribute %0 is ignored, place it after "
-  "\"%select{class|struct|interface|union|enum}1\" to apply attribute to "
-  "type declaration">, InGroup<IgnoredAttributes>;
+  "\"%select{class|struct|interface|union|enum|class prototype}1\" to apply "
+  "attribute to type declaration">, InGroup<IgnoredAttributes>;
 def warn_attribute_precede_definition : Warning<
   "attribute declaration must precede definition">,
   InGroup<IgnoredAttributes>;
@@ -5664,8 +5665,8 @@ def warn_standalone_specifier : Warning<"'%0' ignored on this declaration">,
 def ext_standalone_specifier : ExtWarn<"'%0' is not permitted on a declaration "
   "of a type">, InGroup<MissingDeclarations>;
 def err_standalone_class_nested_name_specifier : Error<
-  "forward declaration of %select{class|struct|interface|union|enum}0 cannot "
-  "have a nested name specifier">;
+  "forward declaration of %select{class|struct|interface|union|enum|class "
+  "prototype}0 cannot have a nested name specifier">;
 def err_typecheck_sclass_func : Error<"illegal storage class on function">;
 def err_static_block_func : Error<
   "function declared in block scope cannot have 'static' storage class">;
@@ -8764,8 +8765,8 @@ def err_module_private_local : Error<
   "%select{local variable|parameter|typedef}0 %1 cannot be declared "
   "__module_private__">;
 def err_module_private_local_class : Error<
-  "local %select{struct|interface|union|class|enum}0 cannot be declared "
-  "__module_private__">;
+  "local %select{class|struct|interface|union|enum|class prototype}0 cannot be "
+  "declared __module_private__">;
 def err_module_unimported_use : Error<
   "%select{declaration|definition|default argument|"
   "explicit specialization|partial specialization}0 of %1 must be imported "

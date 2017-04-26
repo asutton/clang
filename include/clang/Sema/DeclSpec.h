@@ -726,8 +726,8 @@ public:
     ConceptLoc = SourceLocation();
   }
 
-  void setMetaclass(Decl *MC) { Metaclass = MC; }
   Decl *getMetaclass() const { return Metaclass; }
+  void setMetaclass(Decl *MD) { Metaclass = MD; }
 
   AttributePool &getAttributePool() const {
     return Attrs.getPool();

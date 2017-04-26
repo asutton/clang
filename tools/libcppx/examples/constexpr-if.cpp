@@ -1,5 +1,6 @@
-#include <cppx/meta>
 #include <iostream>
+
+#include <cppx/meta>
 
 using namespace cppx::meta;
 
@@ -9,13 +10,13 @@ struct S {
 
   void member_f1() { }
   void member_f2() { }
-  
+
   static void static_f1() { }
   static void static_f2() { }
 
   int member_v1;
   int member_v2;
-  
+
   static int static_v1;
   static int static_v2;
 
@@ -35,5 +36,4 @@ int main() {
     else if constexpr (is_member_function(x))
       std::cout << "member function: " << x.name() << '\n';
   }
-  
 }

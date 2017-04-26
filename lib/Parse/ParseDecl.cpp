@@ -2888,7 +2888,8 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       // This will introduce a class-specifier. If the current token is a C++
       // scope specifier, the scope token will be consumed.
       Decl *Metaclass = nullptr;
-      if (Actions.isMetaclassName(getCurScope(), &SS, *Next.getIdentifierInfo(),
+      if (getLangOpts().Reflection &&
+          Actions.isMetaclassName(getCurScope(), &SS, *Next.getIdentifierInfo(),
                                   Next.getLocation(), &Metaclass)) {
         ConsumeToken(); // The C++ scope.
         AnnotateMetaclassName(&SS, Metaclass);
@@ -3042,7 +3043,8 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       // If the identifier refers to a C++ metaclass, then this will introduce
       // a class-specifier.
       Decl *Metaclass = nullptr;
-      if (Actions.isMetaclassName(getCurScope(), nullptr,
+      if (getLangOpts().Reflection &&
+          Actions.isMetaclassName(getCurScope(), nullptr,
                                   *Tok.getIdentifierInfo(), Tok.getLocation(),
                                   &Metaclass)) {
         AnnotateMetaclassName(nullptr, Metaclass);
@@ -4138,10 +4140,11 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   bool IsDependent = false;
   const char *PrevSpec = nullptr;
   unsigned DiagID;
-  Decl *TagDecl = Actions.ActOnTag(getCurScope(), DeclSpec::TST_enum, nullptr, TUK,
-                                   StartLoc, SS, Name, NameLoc, attrs.getList(),
-                                   AS, DS.getModulePrivateSpecLoc(), TParams,
-                                   Owned, IsDependent, ScopedEnumKWLoc,
+  Decl *TagDecl = Actions.ActOnTag(getCurScope(), DeclSpec::TST_enum,
+                                   /*Metaclass=*/nullptr, TUK, StartLoc, SS,
+                                   Name, NameLoc, attrs.getList(), AS,
+                                   DS.getModulePrivateSpecLoc(), TParams, Owned,
+                                   IsDependent, ScopedEnumKWLoc,
                                    IsScopedUsingClassTag, BaseType,
                                    DSC == DSC_type_specifier, &SkipBody);
 

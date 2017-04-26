@@ -1742,14 +1742,15 @@ public:
   /// C++ metaclass.
   bool isMetaclassDefinition() const;
 
+  /// \brief Returns the metaclass the class was declared with. May be null.
+  MetaclassDecl *getMetaclass() const { return Metaclass; }
+
   /// \brief Associates a metaclass definition with this class.
   ///
   /// When the class definition is completed, the metaclass is instantiated
   /// and evaluated, ultimately replacing this class with the generated one.
-  void setMetaclass(MetaclassDecl *MC) { Metaclass = MC; }
+  void setMetaclass(MetaclassDecl *MD) { Metaclass = MD; }
 
-  /// \brief Returns the metaclass the class was declared with. May be null.
-  MetaclassDecl *getMetaclass() const { return Metaclass; }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) {

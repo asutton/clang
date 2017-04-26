@@ -38,7 +38,7 @@ struct decl {
   }
 };
 
-// A reflection of an internal entity. 
+// A reflection of an internal entity.
 template<reflection_t X>
 struct internal {
 };
@@ -149,7 +149,6 @@ cget(scope<X> const& t)
 {
   return get<I>(t.members());
 }
-
 
 // Reflects the current translation unit.
 template<reflection_t X>

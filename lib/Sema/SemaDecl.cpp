@@ -3911,6 +3911,8 @@ static unsigned GetDiagnosticTypeSpecifierID(DeclSpec::TST T) {
     return 3;
   case DeclSpec::TST_enum:
     return 4;
+  case DeclSpec::TST_metaclass:
+    return 5;
   default:
     llvm_unreachable("unexpected type specifier");
   }
@@ -3930,7 +3932,8 @@ Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS, DeclSpec &DS,
       DS.getTypeSpecType() == DeclSpec::TST_struct ||
       DS.getTypeSpecType() == DeclSpec::TST_interface ||
       DS.getTypeSpecType() == DeclSpec::TST_union ||
-      DS.getTypeSpecType() == DeclSpec::TST_enum) {
+      DS.getTypeSpecType() == DeclSpec::TST_enum ||
+      DS.getTypeSpecType() == DeclSpec::TST_metaclass) {
     TagD = DS.getRepAsDecl();
 
     if (!TagD) // We probably had an error
@@ -4100,7 +4103,7 @@ Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS, DeclSpec &DS,
   if (DS.isModulePrivateSpecified() &&
       Tag && Tag->getDeclContext()->isFunctionOrMethod())
     Diag(DS.getModulePrivateSpecLoc(), diag::err_module_private_local_class)
-      << Tag->getTagKind()
+      << GetDiagnosticTypeSpecifierID(DS.getTypeSpecType())
       << FixItHint::CreateRemoval(DS.getModulePrivateSpecLoc());
 
   ActOnDocumentableDecl(TagD);
@@ -4169,7 +4172,8 @@ Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS, DeclSpec &DS,
         TypeSpecType == DeclSpec::TST_struct ||
         TypeSpecType == DeclSpec::TST_interface ||
         TypeSpecType == DeclSpec::TST_union ||
-        TypeSpecType == DeclSpec::TST_enum) {
+        TypeSpecType == DeclSpec::TST_enum ||
+        TypeSpecType == DeclSpec::TST_metaclass) {
       for (AttributeList* attrs = DS.getAttributes().getList(); attrs;
            attrs = attrs->getNext())
         Diag(attrs->getLoc(), diag::warn_declspec_attribute_ignored)
@@ -12557,7 +12561,8 @@ TypedefDecl *Sema::ParseTypedefDecl(Scope *S, Declarator &D, QualType T,
   case TST_struct:
   case TST_interface:
   case TST_union:
-  case TST_class: {
+  case TST_class:
+  case TST_metaclass: {
     TagDecl *tagFromDeclSpec = cast<TagDecl>(D.getDeclSpec().getRepAsDecl());
     setTagNameForLinkagePurposes(tagFromDeclSpec, NewTD);
     break;
@@ -12836,16 +12841,16 @@ static bool isAcceptableTagRedeclContext(Sema &S, DeclContext *OldDC,
 /// TagSpec indicates what kind of tag this is. TUK indicates whether this is a
 /// reference/declaration/definition of a tag.
 ///
-/// \param MC A pointer to a metaclass declaration, if the tag was introduced
-/// by a metaclass name. May be null.
+/// \param Metaclass The metaclass declaration, if the tag was introduced by a
+/// metaclass-name. May be null.
 ///
 /// \param IsTypeSpecifier \c true if this is a type-specifier (or
 /// trailing-type-specifier) other than one in an alias-declaration.
 ///
 /// \param SkipBody If non-null, will be set to indicate if the caller should
 /// skip the definition of this tag and treat it as if it were a declaration.
-Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, Decl *MC, TagUseKind TUK,
-                     SourceLocation KWLoc, CXXScopeSpec &SS,
+Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, Decl *Metaclass,
+                     TagUseKind TUK, SourceLocation KWLoc, CXXScopeSpec &SS,
                      IdentifierInfo *Name, SourceLocation NameLoc,
                      AttributeList *Attr, AccessSpecifier AS,
                      SourceLocation ModulePrivateLoc,
@@ -13556,8 +13561,8 @@ CreateNewDecl:
       if (isStdBadAlloc && (!StdBadAlloc || getStdBadAlloc()->isImplicit()))
         StdBadAlloc = Class;
 
-      if (MC)
-        Class->setMetaclass(cast<MetaclassDecl>(MC));
+      if (Metaclass)
+        Class->setMetaclass(cast<MetaclassDecl>(Metaclass));
 
       New = Class;
     } else
@@ -13813,8 +13818,8 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
 #if 0
   // Lastly... apply the metaclass, if it exists.
   if (CXXRecordDecl *Old = dyn_cast<CXXRecordDecl>(Tag)) {
-    if (MetaclassDecl *MC = Old->getMetaclass()) {
-      CXXRecordDecl *New = EvaluateMetaclass(MC, Old);
+    if (MetaclassDecl *Metaclass = Old->getMetaclass()) {
+      CXXRecordDecl *New = EvaluateMetaclass(Metaclass, Old);
 
       // TODO: This is not efficient. Removing declarations from a DC is a
       // linear in the number of declarations in the DC. It would be more
