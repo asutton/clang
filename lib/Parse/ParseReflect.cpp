@@ -305,6 +305,8 @@ TypeResult Parser::ParseMetaclassBaseSpecifier(SourceLocation &BaseLoc,
 ///     'constexpr' compound-statement
 /// \endverbatim
 Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
+  assert(getLangOpts().CPlusPlus1z &&
+         "Can only parse constexpr declarations in C++1z");
   assert(Tok.is(tok::kw_constexpr));
 
   SourceLocation ConstexprLoc = ConsumeToken();
