@@ -3911,6 +3911,8 @@ static unsigned GetDiagnosticTypeSpecifierID(DeclSpec::TST T) {
     return 3;
   case DeclSpec::TST_enum:
     return 4;
+  case DeclSpec::TST_metaclass:
+    return 5;
   default:
     llvm_unreachable("unexpected type specifier");
   }
@@ -3930,7 +3932,8 @@ Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS, DeclSpec &DS,
       DS.getTypeSpecType() == DeclSpec::TST_struct ||
       DS.getTypeSpecType() == DeclSpec::TST_interface ||
       DS.getTypeSpecType() == DeclSpec::TST_union ||
-      DS.getTypeSpecType() == DeclSpec::TST_enum) {
+      DS.getTypeSpecType() == DeclSpec::TST_enum ||
+      DS.getTypeSpecType() == DeclSpec::TST_metaclass) {
     TagD = DS.getRepAsDecl();
 
     if (!TagD) // We probably had an error
@@ -4100,7 +4103,7 @@ Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS, DeclSpec &DS,
   if (DS.isModulePrivateSpecified() &&
       Tag && Tag->getDeclContext()->isFunctionOrMethod())
     Diag(DS.getModulePrivateSpecLoc(), diag::err_module_private_local_class)
-      << Tag->getTagKind()
+      << GetDiagnosticTypeSpecifierID(DS.getTypeSpecType())
       << FixItHint::CreateRemoval(DS.getModulePrivateSpecLoc());
 
   ActOnDocumentableDecl(TagD);
@@ -4169,7 +4172,8 @@ Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS, DeclSpec &DS,
         TypeSpecType == DeclSpec::TST_struct ||
         TypeSpecType == DeclSpec::TST_interface ||
         TypeSpecType == DeclSpec::TST_union ||
-        TypeSpecType == DeclSpec::TST_enum) {
+        TypeSpecType == DeclSpec::TST_enum ||
+        TypeSpecType == DeclSpec::TST_metaclass) {
       for (AttributeList* attrs = DS.getAttributes().getList(); attrs;
            attrs = attrs->getNext())
         Diag(attrs->getLoc(), diag::warn_declspec_attribute_ignored)
@@ -12557,7 +12561,8 @@ TypedefDecl *Sema::ParseTypedefDecl(Scope *S, Declarator &D, QualType T,
   case TST_struct:
   case TST_interface:
   case TST_union:
-  case TST_class: {
+  case TST_class:
+  case TST_metaclass: {
     TagDecl *tagFromDeclSpec = cast<TagDecl>(D.getDeclSpec().getRepAsDecl());
     setTagNameForLinkagePurposes(tagFromDeclSpec, NewTD);
     break;

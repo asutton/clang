@@ -3520,7 +3520,8 @@ void Sema::CodeCompleteDeclSpec(Scope *S, DeclSpec &DS,
   if (getLangOpts().CPlusPlus) {
     if (getLangOpts().CPlusPlus11 &&
         (DS.getTypeSpecType() == DeclSpec::TST_class ||
-         DS.getTypeSpecType() == DeclSpec::TST_struct))
+         DS.getTypeSpecType() == DeclSpec::TST_struct ||
+         DS.getTypeSpecType() == DeclSpec::TST_metaclass))
       Results.AddResult("final");
 
     if (AllowNonIdentifiers) {
@@ -4026,6 +4027,7 @@ void Sema::CodeCompleteTag(Scope *S, unsigned TagSpec) {
   case DeclSpec::TST_struct:
   case DeclSpec::TST_class:
   case DeclSpec::TST_interface:
+  case DeclSpec::TST_metaclass:
     Filter = &ResultBuilder::IsClassOrStruct;
     ContextKind = CodeCompletionContext::CCC_ClassOrStructTag;
     break;
