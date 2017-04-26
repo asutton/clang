@@ -160,23 +160,23 @@ struct method_traits {
     : linkage        (get_linkage(n)), // 0x01 | 0x02
       access         (get_access(n)),  // 0x04 | 0x08
       kind           (get_method(n)),  // 0x10 | 0x20
-      is_constexpr   (n & 0x10),
-      is_explicit    (n & 0x20),
-      is_virtual     (n & 0x40),
-      is_pure        (n & 0x80),
-      is_final       (n & 0x0100),
-      is_override    (n & 0x0200),
-      is_noexcept    (n & 0x0400),
-      is_defined     (n & 0x0800),
-      is_inline      (n & 0x1000),
-      is_deleted     (n & 0x2000),
-      is_defaulted   (n & 0x4000),
-      is_trivial     (n & 0x8000),
-      is_default_ctor(n & 0x10000),
-      is_copy_ctor   (n & 0x20000),
-      is_move_ctor   (n & 0x40000),
-      is_copy_assign (n & 0x80000),
-      is_move_assign (n & 0x100000)
+      is_constexpr   (n & 0x40),
+      is_explicit    (n & 0x80),
+      is_virtual     (n & 0x100),
+      is_pure        (n & 0x200),
+      is_final       (n & 0x400),
+      is_override    (n & 0x800),
+      is_noexcept    (n & 0x1000),
+      is_defined     (n & 0x2000),
+      is_inline      (n & 0x4000),
+      is_deleted     (n & 0x8000),
+      is_defaulted   (n & 0x10000),
+      is_trivial     (n & 0x20000),
+      is_default_ctor(n & 0x40000),
+      is_copy_ctor   (n & 0x80000),
+      is_move_ctor   (n & 0x100000),
+      is_copy_assign (n & 0x200000),
+      is_move_assign (n & 0x400000)
   { }
 
   linkage_kind linkage : 2;
