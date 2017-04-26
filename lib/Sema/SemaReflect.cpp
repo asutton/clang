@@ -832,6 +832,8 @@ struct MethodTraits {
   bool Trivial : 1;
   bool CopyCtor : 1;
   bool MoveCtor : 1;
+  bool CopyAssign : 1;
+  bool MoveAssign : 1;
 };
 
 static MethodTraits getMethodTraits(ASTContext &C, CXXConstructorDecl *D) {
@@ -897,6 +899,8 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXMethodDecl *D) {
   T.Defined = D->getDefinition() != nullptr;
   T.Inline = D->isInlined();
   T.Deleted = D->isDeleted();
+  T.CopyAssign = D->isCopyAssignmentOperator();
+  T.MoveAssign = D->isMoveAssignmentOperator();
   return T;
 }
 

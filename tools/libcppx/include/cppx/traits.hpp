@@ -141,22 +141,24 @@ struct field_traits {
 
 struct method_traits {
   constexpr explicit method_traits(unsigned n)
-    : linkage      (get_linkage(n)), // 0x01 | 0x02
-      access       (get_access(n)),  // 0x04 | 0x08
-      is_constexpr (n & 0x10),
-      is_explicit  (n & 0x20),
-      is_virtual   (n & 0x40),
-      is_pure      (n & 0x80),
-      is_final     (n & 0x0100),
-      is_override  (n & 0x0200),
-      is_noexcept  (n & 0x0400),
-      is_defined   (n & 0x0800),
-      is_inline    (n & 0x1000),
-      is_deleted   (n & 0x2000),
-      is_defaulted (n & 0x4000),
-      is_trivial   (n & 0x8000),
-      is_copy_ctor (n & 0x10000),
-      is_move_ctor (n & 0x20000)
+    : linkage        (get_linkage(n)), // 0x01 | 0x02
+      access         (get_access(n)),  // 0x04 | 0x08
+      is_constexpr   (n & 0x10),
+      is_explicit    (n & 0x20),
+      is_virtual     (n & 0x40),
+      is_pure        (n & 0x80),
+      is_final       (n & 0x0100),
+      is_override    (n & 0x0200),
+      is_noexcept    (n & 0x0400),
+      is_defined     (n & 0x0800),
+      is_inline      (n & 0x1000),
+      is_deleted     (n & 0x2000),
+      is_defaulted   (n & 0x4000),
+      is_trivial     (n & 0x8000),
+      is_copy_ctor   (n & 0x10000),
+      is_move_ctor   (n & 0x20000),
+      is_copy_assign (n & 0x40000),
+      is_move_assign (n & 0x80000)
   { }
 
   linkage_kind linkage : 2;
@@ -175,6 +177,8 @@ struct method_traits {
   bool is_trivial : 1; // ctors and dtors
   bool is_copy_ctor : 1; // ctors
   bool is_move_ctor : 1; // dtors
+  bool is_copy_assign : 1; // not ctors, dtors, and convs
+  bool is_move_assign : 1; // not ctors, dtors, and convs
 };
 
 // TODO: Accumulate all known type traits for classes.

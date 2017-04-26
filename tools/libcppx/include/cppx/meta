@@ -221,8 +221,14 @@ struct member_type : user_defined_type<X>
   static constexpr ctor_tuple constructors() {
     return {};
   }
+  static constexpr dtor_tuple destructors() {
+    return {};
+  }
+  static constexpr bool has_destructor() {
+    return !destructors().empty();
+  }
   static constexpr auto destructor() {
-    return cget<0>(dtor_tuple{});
+    return cget<0>(destructors());
   }
   static constexpr sfn_tuple static_functions() {
     return {};
@@ -449,6 +455,12 @@ struct member_function : polymethod<X>
 {
   static constexpr bool is_constexpr() {
     return polymethod<X>::traits().is_constexpr;
+  }
+  static constexpr bool is_copy_assignment_operator() {
+    return polymethod<X>::traits().is_copy_assign;
+  }
+  static constexpr bool is_move_assignment_operator() {
+    return polymethod<X>::traits().is_move_assign;
   }
 
   static constexpr void make_virtual() {
