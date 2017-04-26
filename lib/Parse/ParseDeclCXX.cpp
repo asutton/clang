@@ -2683,11 +2683,7 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
       //
       // If a member function definition was injected, then the trailing semi 
       // colon may end the class definition. Don't consume it.
-      if (IsInjected) {
-        if (DefinitionKind != FDK_Definition && Tok.is(tok::semi))
-          ConsumeExtraSemi(AfterMemberFunctionDefinition);
-      }
-      else if (Tok.is(tok::semi))
+      if (!IsInjected && Tok.is(tok::semi))
         ConsumeExtraSemi(AfterMemberFunctionDefinition);
 
       return DeclGroupPtrTy::make(DeclGroupRef(FunDecl));
