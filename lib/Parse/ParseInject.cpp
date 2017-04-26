@@ -55,6 +55,12 @@ void Parser::InjectTokens(Stmt *S, CachedTokens &Toks) {
   auto Iter = std::copy(InjectedToks.begin(), InjectedToks.end(), Toks.begin());
   *Iter = Tok;
 
+  // llvm::errs() << "INJECTING\n";
+  // for (Token K : InjectedToks) {
+  //   PP.DumpToken(K);
+  //   llvm::errs() << '\n';
+  // }
+
   // Inject the tokens and consume the current token.
   PP.EnterTokenStream(Toks, true);
   ConsumeAnyToken();

@@ -53,6 +53,8 @@ public:
   bool TransformTemplateArgument(const TemplateArgumentLoc &Input,
                                  TemplateArgumentLoc &Output, bool Uneval);
 
+  StmtResult TransformCXXInjectionStmt(CXXInjectionStmt *S);
+
   Decl *TransformDecl(Decl *D);
   Decl *TransformDecl(SourceLocation, Decl *D);
   Decl *TransformVarDecl(VarDecl *D);
@@ -84,6 +86,51 @@ bool MetaclassInjector::TransformTemplateArgument(
   }
   return TreeTransform<MetaclassInjector>::TransformTemplateArgument(
       Input, Output, Uneval);
+}
+
+/// Rewrite the identifier information in injected tokens so that names
+/// referring to the metaclass will, after transformation, refer to the
+/// destination class.
+///
+/// \todo This has some peculiar quirks. Consider:
+///
+///   $class meta {
+///     constexpr { -> { void f() { int meta = 0; } } }
+///   }
+///   meta S { };
+///
+/// The transformation will ultimately inject the function:
+///
+///   void f() { int S = 0; }
+///
+/// It is thus possible for thus transformation to introduce ambiguities.
+/// Perhaps we should return an annotation token containing both the source
+/// and destination names, and allow the semantic analyzer to determine which
+/// was meant (although that sounds terrible).
+StmtResult MetaclassInjector::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
+  IdentifierInfo *SrcII = Source->getIdentifier();
+  IdentifierInfo *DstII = Dest->getIdentifier();
+  assert(SrcII && "Invalid metaclass definition");
+  assert(DstII && "Injection into unnamed class"); 
+
+  ArrayRef<Token> OrigToks = S->getTokens();
+  std::vector<Token> NewToks(OrigToks.size());
+  std::transform(OrigToks.begin(), OrigToks.end(), NewToks.begin(), 
+    [&](Token Tok) {
+      if (Tok.is(tok::identifier)) {
+        IdentifierInfo *II = Tok.getIdentifierInfo();
+        if (II == SrcII)
+          Tok.setIdentifierInfo(DstII);
+      }
+      return Tok;
+    }
+  );
+
+  return new (SemaRef.Context) CXXInjectionStmt(SemaRef.Context, 
+                                                S->getArrowLoc(),
+                                                S->getLBraceLoc(), 
+                                                S->getRBraceLoc(),
+                                                NewToks);
 }
 
 /// Look to see if the declaration has been locally transformed. If so,
