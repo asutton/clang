@@ -2515,7 +2515,8 @@ private:
   DeclGroupPtrTy ParseCXXClassMemberDeclaration(
       AccessSpecifier AS, AttributeList *Attr,
       const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
-      ParsingDeclRAIIObject *DiagsFromTParams = nullptr);
+      ParsingDeclRAIIObject *DiagsFromTParams = nullptr, 
+      bool IsInjected = false);
   DeclGroupPtrTy ParseCXXClassMemberDeclarationWithPragmas(
       AccessSpecifier &AS, ParsedAttributesWithRange &AccessAttrs,
       DeclSpec::TST TagType, Decl *Tag);

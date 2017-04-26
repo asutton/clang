@@ -2392,7 +2392,8 @@ Parser::DeclGroupPtrTy
 Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
                                        AttributeList *AccessAttrs,
                                        const ParsedTemplateInfo &TemplateInfo,
-                                       ParsingDeclRAIIObject *TemplateDiags) {
+                                       ParsingDeclRAIIObject *TemplateDiags,
+                                       bool IsInjected) {
   if (Tok.is(tok::at)) {
     if (getLangOpts().ObjC1 && NextToken().isObjCAtKeyword(tok::objc_defs))
       Diag(Tok, diag::err_at_defs_cxx);
@@ -2678,8 +2679,15 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
       }
       LateParsedAttrs.clear();
 
-      // Consume the ';' - it's optional unless we have a delete or default
-      if (Tok.is(tok::semi))
+      // Consume the ';' - it's optional unless we have a delete or default.
+      //
+      // If a member function definition was injected, then the trailing semi 
+      // colon may end the class definition. Don't consume it.
+      if (IsInjected) {
+        if (DefinitionKind != FDK_Definition && Tok.is(tok::semi))
+          ConsumeExtraSemi(AfterMemberFunctionDefinition);
+      }
+      else if (Tok.is(tok::semi))
         ConsumeExtraSemi(AfterMemberFunctionDefinition);
 
       return DeclGroupPtrTy::make(DeclGroupRef(FunDecl));

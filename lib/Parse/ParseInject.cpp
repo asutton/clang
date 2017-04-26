@@ -93,7 +93,8 @@ void Parser::ParseInjectedClassMember(Stmt *S) {
   // parsed.
   ParseCXXClassMemberDeclaration(AS_public, /*AccessAttrs=*/nullptr,
                                  ParsedTemplateInfo(),
-                                 /*TemplateDiags=*/nullptr);
+                                 /*TemplateDiags=*/nullptr,
+                                 /*IsInjected=*/true);
 }
 
 void Parser::ParseInjectedStatement(Stmt *S) {
