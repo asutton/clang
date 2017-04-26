@@ -12841,16 +12841,16 @@ static bool isAcceptableTagRedeclContext(Sema &S, DeclContext *OldDC,
 /// TagSpec indicates what kind of tag this is. TUK indicates whether this is a
 /// reference/declaration/definition of a tag.
 ///
-/// \param MC A pointer to a metaclass declaration, if the tag was introduced
-/// by a metaclass name. May be null.
+/// \param Metaclass The metaclass declaration, if the tag was introduced by a
+/// metaclass-name. May be null.
 ///
 /// \param IsTypeSpecifier \c true if this is a type-specifier (or
 /// trailing-type-specifier) other than one in an alias-declaration.
 ///
 /// \param SkipBody If non-null, will be set to indicate if the caller should
 /// skip the definition of this tag and treat it as if it were a declaration.
-Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, Decl *MC, TagUseKind TUK,
-                     SourceLocation KWLoc, CXXScopeSpec &SS,
+Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, Decl *Metaclass,
+                     TagUseKind TUK, SourceLocation KWLoc, CXXScopeSpec &SS,
                      IdentifierInfo *Name, SourceLocation NameLoc,
                      AttributeList *Attr, AccessSpecifier AS,
                      SourceLocation ModulePrivateLoc,
@@ -13561,8 +13561,8 @@ CreateNewDecl:
       if (isStdBadAlloc && (!StdBadAlloc || getStdBadAlloc()->isImplicit()))
         StdBadAlloc = Class;
 
-      if (MC)
-        Class->setMetaclass(cast<MetaclassDecl>(MC));
+      if (Metaclass)
+        Class->setMetaclass(cast<MetaclassDecl>(Metaclass));
 
       New = Class;
     } else
@@ -13818,8 +13818,8 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
 #if 0
   // Lastly... apply the metaclass, if it exists.
   if (CXXRecordDecl *Old = dyn_cast<CXXRecordDecl>(Tag)) {
-    if (MetaclassDecl *MC = Old->getMetaclass()) {
-      CXXRecordDecl *New = EvaluateMetaclass(MC, Old);
+    if (MetaclassDecl *Metaclass = Old->getMetaclass()) {
+      CXXRecordDecl *New = EvaluateMetaclass(Metaclass, Old);
 
       // TODO: This is not efficient. Removing declarations from a DC is a
       // linear in the number of declarations in the DC. It would be more

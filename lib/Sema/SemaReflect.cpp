@@ -217,8 +217,8 @@ ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
 
   // References to a metaclass should refer to the underlying class.
   // FIXME: Handle this above.
-  if (auto *MC = dyn_cast<MetaclassDecl>(D))
-    D = MC->getDefinition();
+  if (auto *MD = dyn_cast<MetaclassDecl>(D))
+    D = MD->getDefinition();
 
   // Use BuildTypeReflection for type declarations.
   if (TagDecl *TD = dyn_cast<TagDecl>(D))

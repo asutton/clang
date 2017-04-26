@@ -21,7 +21,7 @@ struct compiler_type
       error(msg);
   }
 
-  /// FIXME: Constrain T so that it's a reflection.
+  // FIXME: Constrain T so that it's a reflection.
   template<typename T>
   static constexpr void debug(T refl) {
     refl.print();

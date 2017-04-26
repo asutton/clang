@@ -4140,10 +4140,11 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   bool IsDependent = false;
   const char *PrevSpec = nullptr;
   unsigned DiagID;
-  Decl *TagDecl = Actions.ActOnTag(getCurScope(), DeclSpec::TST_enum, nullptr, TUK,
-                                   StartLoc, SS, Name, NameLoc, attrs.getList(),
-                                   AS, DS.getModulePrivateSpecLoc(), TParams,
-                                   Owned, IsDependent, ScopedEnumKWLoc,
+  Decl *TagDecl = Actions.ActOnTag(getCurScope(), DeclSpec::TST_enum,
+                                   /*Metaclass=*/nullptr, TUK, StartLoc, SS,
+                                   Name, NameLoc, attrs.getList(), AS,
+                                   DS.getModulePrivateSpecLoc(), TParams, Owned,
+                                   IsDependent, ScopedEnumKWLoc,
                                    IsScopedUsingClassTag, BaseType,
                                    DSC == DSC_type_specifier, &SkipBody);
 
