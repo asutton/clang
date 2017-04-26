@@ -354,6 +354,7 @@ void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
 void StmtPrinter::VisitCXXInjectionStmt(CXXInjectionStmt *Node) {
   // FIXME: Print tokens.
   Indent() << "-> { ... }";
+  if (Policy.IncludeNewlines) OS << "\n";
 }
 
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
@@ -2523,6 +2524,7 @@ static const char *getReflectionTraitName(ReflectionTrait RT) {
   case clang::BRT_##Kind: return #Spelling;
 #include "clang/Basic/TokenKinds.def"
   }
+  llvm_unreachable("Invalid trait");
 }
 
 void StmtPrinter::VisitReflectionExpr(ReflectionExpr *E) {

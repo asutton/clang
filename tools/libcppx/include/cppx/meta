@@ -469,7 +469,7 @@ struct method : named<X>, typed<X> {
 
 // A member variable is a non-static data member.
 template<reflection_t X>
-struct member_variable : named<X>, typed<X> {
+struct field : named<X>, typed<X> {
   static constexpr field_traits traits() {
     return field_traits(__reflect_traits(X));
   }
@@ -584,7 +584,7 @@ struct is_member_variable_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_member_variable_trait<member_variable<X>>
+struct is_member_variable_trait<field<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
@@ -686,7 +686,7 @@ struct is_variable_or_field_trait<variable<X>>
   : std::integral_constant<bool, true> { };
 
 template<reflection_t X>
-struct is_variable_or_field_trait<member_variable<X>>
+struct is_variable_or_field_trait<field<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>

@@ -180,12 +180,12 @@ static char const *GetReflectionClass(Decl *D) {
   case Decl::CXXMethod:
     // All non-static member functions are simply member functions. But static 
     // member functions are functions.
-    return cast<CXXMethodDecl>(D)->isStatic() ? "function" : "member_function";
+    return cast<CXXMethodDecl>(D)->isStatic() ? "function" : "method";
 
   case Decl::EnumConstant:
     return "enumerator";
   case Decl::Field:
-    return "member_variable";
+    return "field";
   case Decl::Function:
     return "function";
   case Decl::Namespace:
@@ -216,8 +216,8 @@ ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
 
   // References to a metaclass should refer to the underlying class.
   // FIXME: Handle this above.
-  if (auto *MD = dyn_cast<MetaclassDecl>(D))
-    D = MD->getDefinition();
+  if (auto *MC = dyn_cast<MetaclassDecl>(D))
+    D = MC->getDefinition();
 
   // Use BuildTypeReflection for type declarations.
   if (TagDecl *TD = dyn_cast<TagDecl>(D))
@@ -1699,7 +1699,7 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
 
     // Build the expression
     //
-    //    []() -> void compound-statement
+    //    [&]() -> void compound-statement
     //
     // where compound-statement is the as-of-yet parsed body of the
     // constexpr-declaration. Note that the return type is not deduced (it
@@ -1719,7 +1719,7 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
 
     LambdaIntroducer Intro;
     Intro.Range = SourceRange(ConstexprLoc);
-    Intro.Default = LCD_None;
+    Intro.Default = LCD_ByRef;
 
     CXXRecordDecl *Closure = createLambdaClosureType(
         Intro.Range, MethodTyInfo, KnownDependent, Intro.Default);
