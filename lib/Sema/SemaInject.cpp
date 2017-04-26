@@ -53,10 +53,6 @@ public:
   bool TransformTemplateArgument(const TemplateArgumentLoc &Input,
                                  TemplateArgumentLoc &Output, bool Uneval);
 
-  QualType TransformType(QualType T);
-  TypeSourceInfo *TransformType(TypeSourceInfo *TSI);
-  QualType TransformType(TypeLocBuilder &TLB, TypeLoc TL);
-
   Decl *TransformDecl(Decl *D);
   Decl *TransformDecl(SourceLocation, Decl *D);
   Decl *TransformVarDecl(VarDecl *D);
@@ -90,26 +86,6 @@ bool MetaclassInjector::TransformTemplateArgument(
       Input, Output, Uneval);
 }
 
-QualType MetaclassInjector::TransformType(QualType T) {
-  return BaseType::TransformType(T);
-}
-
-// If the requested TSI happens to be that of the source class, then
-// replace it with the destination class.
-TypeSourceInfo *MetaclassInjector::TransformType(TypeSourceInfo *TSI) {
-  QualType LHS = SemaRef.Context.getRecordType(Source);
-  QualType RHS = TSI->getType();
-  if (LHS == RHS) {
-    QualType Ret = SemaRef.Context.getRecordType(Dest);
-    return SemaRef.Context.getTrivialTypeSourceInfo(Ret);
-  }
-  return BaseType::TransformType(TSI);
-}
-
-QualType MetaclassInjector::TransformType(TypeLocBuilder &TLB, TypeLoc TL) {
-  return BaseType::TransformType(TLB, TL);
-}
-
 /// Look to see if the declaration has been locally transformed. If so,
 /// return that. Otherwise, explicitly rebuild the declaration.
 Decl *MetaclassInjector::TransformDecl(Decl *D) {
@@ -121,7 +97,7 @@ Decl *MetaclassInjector::TransformDecl(Decl *D) {
 ///
 /// This is \c true for any declaration that is not directly contained within
 /// the metaclass, either directly as a member or indirectly (e.g., a local
-/// variable in a member function).
+/// variable in a member function). 
 static inline bool ShouldNotTransform(Decl *D, DeclContext *Cxt) {
   DeclContext *DC = D->getDeclContext();
   while (DC) {
@@ -138,12 +114,15 @@ Decl *MetaclassInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   if (!D)
     return nullptr;
 
+  // Always replace the source class with the destination class.
+  if (D == Source)
+    return Dest;
+
   if (ShouldNotTransform(D, Source))
     return D;
 
-  llvm::DenseMap<Decl *, Decl *>::iterator Known =
-      TransformedLocalDecls.find(D);
-
+  // Search for a previous transformation.
+  auto Known = TransformedLocalDecls.find(D);
   if (Known != TransformedLocalDecls.end())
     return Known->second;
 
