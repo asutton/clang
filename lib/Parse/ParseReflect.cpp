@@ -161,6 +161,8 @@ ExprResult Parser::ParseReflectionTrait() {
 /// \param Metaclass  The C++ metaclass declaration that corresponds to the
 ///                   metaclass-name.
 void Parser::AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass) {
+  assert(getLangOpts().Reflection &&
+         "Can only annotate metaclass-names when C++ reflection is enabled");
   assert(Tok.is(tok::identifier));
 
   // Replace the current token with an annotation token.
