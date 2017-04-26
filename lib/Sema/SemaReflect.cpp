@@ -175,14 +175,13 @@ static std::pair<ReflectionKind, void *> ExplodeOpaqueValue(std::uintptr_t N) {
 static char const *GetReflectionClass(Decl *D) {
   switch (D->getKind()) {
   case Decl::CXXConstructor:
-    return "constructor";
   case Decl::CXXConversion:
-    return "conversion";
   case Decl::CXXDestructor:
-    return "destructor";
   case Decl::CXXMethod:
-    // Generate function reflections for static member functions.
+    // All non-static member functions are simply member functions. But static 
+    // member functions are functions.
     return cast<CXXMethodDecl>(D)->isStatic() ? "function" : "member_function";
+
   case Decl::EnumConstant:
     return "enumerator";
   case Decl::Field:
@@ -197,14 +196,14 @@ static char const *GetReflectionClass(Decl *D) {
     return "tu";
   case Decl::Var:
     return "variable";
+
   case Decl::Constexpr:
-    // Return something that is effectively unusable.
-    return "decl";
   case Decl::AccessSpec:
     // Return a placeholder for a declaration. These shouldn't be exposed in
     // the AST, but it's difficult to suppress (we'd have to filter the tuple
     // accessors). For now, push this responsibility onto the library.
     return "internal";
+  
   default:
     break;
   }
@@ -814,10 +813,18 @@ static FunctionTraits getFunctionTraits(ASTContext &C, FunctionDecl *D) {
   return T;
 }
 
+enum MethodKind : unsigned {
+  Method,
+  Constructor,
+  Destructor,
+  Conversion
+};
+
 /// Traits for normal member functions.
 struct MethodTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
+  MethodKind Kind : 2;
   bool Constexpr : 1;
   bool Explicit : 1;
   bool Virtual : 1;
@@ -830,6 +837,7 @@ struct MethodTraits {
   bool Deleted : 1;
   bool Defaulted : 1;
   bool Trivial : 1;
+  bool DefaultCtor : 1;
   bool CopyCtor : 1;
   bool MoveCtor : 1;
   bool CopyAssign : 1;
@@ -840,6 +848,7 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXConstructorDecl *D) {
   MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
+  T.Kind = Constructor;
   T.Constexpr = D->isConstexpr();
   T.Nothrow = getNothrow(C, D);
   T.Defined = D->getDefinition() != nullptr;
@@ -847,6 +856,7 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXConstructorDecl *D) {
   T.Deleted = D->isDeleted();
   T.Defaulted = D->isDefaulted();
   T.Trivial = D->isTrivial();
+  T.DefaultCtor = D->isDefaultConstructor();
   T.CopyCtor = D->isCopyConstructor();
   T.MoveCtor = D->isMoveConstructor();
   return T;
@@ -856,6 +866,7 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXDestructorDecl *D) {
   MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
+  T.Kind = Destructor;
   T.Virtual = D->isVirtual();
   T.Pure = D->isPure();
   T.Final = D->hasAttr<FinalAttr>();
@@ -873,6 +884,7 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXConversionDecl *D) {
   MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
+  T.Kind = Conversion;
   T.Constexpr = D->isConstexpr();
   T.Explicit = D->isExplicit();
   T.Virtual = D->isVirtual();
@@ -890,6 +902,7 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXMethodDecl *D) {
   MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
+  T.Kind = Method;
   T.Constexpr = D->isConstexpr();
   T.Virtual = D->isVirtual();
   T.Pure = D->isPure();

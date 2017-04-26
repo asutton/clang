@@ -50,6 +50,8 @@ enum storage_kind : unsigned {
 };
 
 // When present, storage specifiers are stored in bits 5 and 6.
+//
+// FIXME: This isn't accurate.
 static constexpr storage_kind get_storage(unsigned n) {
   return storage_kind((n & 0x0b) >> 2);
 }
@@ -139,10 +141,25 @@ struct field_traits {
   bool is_mutable : 1;
 };
 
+
+// Methods
+
+enum method_kind : unsigned {
+  method_normal,
+  method_ctor,
+  method_dtor,
+  method_conv
+};
+
+static constexpr method_kind get_method(unsigned n) {
+  return method_kind(n & 0x30);
+}
+
 struct method_traits {
   constexpr explicit method_traits(unsigned n)
     : linkage        (get_linkage(n)), // 0x01 | 0x02
       access         (get_access(n)),  // 0x04 | 0x08
+      kind           (get_method(n)),  // 0x10 | 0x20
       is_constexpr   (n & 0x10),
       is_explicit    (n & 0x20),
       is_virtual     (n & 0x40),
@@ -155,31 +172,36 @@ struct method_traits {
       is_deleted     (n & 0x2000),
       is_defaulted   (n & 0x4000),
       is_trivial     (n & 0x8000),
-      is_copy_ctor   (n & 0x10000),
-      is_move_ctor   (n & 0x20000),
-      is_copy_assign (n & 0x40000),
-      is_move_assign (n & 0x80000)
+      is_default_ctor(n & 0x10000),
+      is_copy_ctor   (n & 0x20000),
+      is_move_ctor   (n & 0x40000),
+      is_copy_assign (n & 0x80000),
+      is_move_assign (n & 0x100000)
   { }
 
   linkage_kind linkage : 2;
   access_kind access : 2;
-  bool is_constexpr : 1; // not dtors
-  bool is_explicit : 1; // ctors and conversions
-  bool is_virtual : 1; // not ctors
-  bool is_pure : 1; // not ctors
-  bool is_final : 1; // not ctors
-  bool is_override : 1; // not ctors
+  method_kind kind : 2;
+  bool is_constexpr : 1;
+  bool is_explicit : 1;
+  bool is_virtual : 1;
+  bool is_pure : 1;
+  bool is_final : 1;
+  bool is_override : 1;
   bool is_noexcept : 1;
   bool is_defined : 1;
   bool is_inline : 1;
   bool is_deleted : 1;
-  bool is_defaulted : 1; // ctors and dtors
-  bool is_trivial : 1; // ctors and dtors
-  bool is_copy_ctor : 1; // ctors
-  bool is_move_ctor : 1; // dtors
-  bool is_copy_assign : 1; // not ctors, dtors, and convs
-  bool is_move_assign : 1; // not ctors, dtors, and convs
+  bool is_defaulted : 1;
+  bool is_trivial : 1;
+  bool is_default_ctor : 1;
+  bool is_copy_ctor : 1;
+  bool is_move_ctor : 1;
+  bool is_copy_assign : 1;
+  bool is_move_assign : 1;
 };
+
+// Classes
 
 // TODO: Accumulate all known type traits for classes.
 struct class_traits {

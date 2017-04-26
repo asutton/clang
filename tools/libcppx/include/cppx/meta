@@ -375,9 +375,77 @@ struct method : named<X>, typed<X> {
     return method_traits(__reflect_traits(X));
   }
 
+  // Method kind
+
+  static constexpr bool is_normal() {
+    return traits().kind == method_normal;
+  }
+  static constexpr bool is_constructor() {
+    return traits().kind == method_ctor;
+  }
+  static constexpr bool is_destructor() {
+    return traits().kind == method_ctor;
+  }
+  static constexpr bool is_conversion() {
+    return traits().kind == method_ctor;
+  }
+
+  // Specifiers
+
+  static constexpr bool is_constexpr() {
+    return traits().is_constexpr;
+  }
+  static constexpr bool is_explicit() {
+    return traits().is_explicit;
+  }
+
+  // Virtual functions
+
+  static constexpr bool is_virtual() {
+    return traits().is_virtual;
+  }
+  static constexpr bool is_pure_virtual() {
+    return traits().is_pure;
+  }
+  static constexpr bool is_final() {
+    return traits().is_final;
+  }
+  static constexpr bool is_override() {
+    return traits().is_override;
+  }
+
+  static constexpr void make_virtual() {
+    __modify_virtual(X, false);
+  }
+  static constexpr void make_pure_virtual() {
+    __modify_virtual(X, true);
+  }
+
+  // Traits
+
+  static constexpr bool is_default_constructor() {
+    return traits().is_copy_ctor;
+  }
+  static constexpr bool is_copy_constructor() {
+    return traits().is_copy_ctor;
+  }
+  static constexpr bool is_move_constructor() {
+    return traits().is_move_ctor;
+  }
+  static constexpr bool is_copy_assignment_operator() {
+    return traits().is_copy_assign;
+  }
+  static constexpr bool is_move_assignment_operator() {
+    return traits().is_move_assign;
+  }
+
+  // Exceptions
+
   static constexpr bool is_noexcept() {
     return traits().is_noexcept;
   }
+
+  // Definition
 
   static constexpr bool is_defined() {
     return traits().is_defined;
@@ -390,96 +458,13 @@ struct method : named<X>, typed<X> {
     static_assert(is_defined());
     return traits().is_deleted;
   }
-};
-
-// A helper class for possibly polymorphic methods.
-template<reflection_t X>
-struct polymethod : method<X> {
-  static constexpr bool is_virtual() {
-    return method<X>::traits().is_virtual;
-  }
-  static constexpr bool is_pure_virtual() {
-    return method<X>::traits().is_abstract;
-  }
-  static constexpr bool is_final() {
-    return method<X>::traits().is_final;
-  }
-  static constexpr bool is_override() {
-    return method<X>::traits().is_override;
-  }
-};
-
-// A constructor is a special member function.
-template<reflection_t X>
-struct constructor : method<X> {
-  static constexpr bool is_constexpr() {
-    return method<X>::traits().is_constexpr;
-  }
-  static constexpr bool is_explicit() {
-    return method<X>::traits().is_explicit;
-  }
-
   static constexpr bool is_defaulted() {
-    static_assert(method<X>::is_defined());
-    return method<X>::traits().is_deleted;
+    static_assert(is_defined());
+    return traits().is_deleted;
   }
   static constexpr bool is_trivial() {
-    static_assert(method<X>::is_defined());
-    return method<X>::traits().is_deleted;
-  }
-  static constexpr bool is_copy() {
-    return method<X>::traits().is_copy_ctor;
-  }
-  static constexpr bool is_move() {
-    return method<X>::traits().is_move_ctor;
-  }
-};
-
-// A destructor is a special member function that can be overridden.
-template<reflection_t X>
-struct destructor : polymethod<X>
-{
-  static constexpr bool is_defaulted() {
-    static_assert(polymethod<X>::is_defined());
-    return polymethod<X>::traits().is_deleted;
-  }
-  static constexpr bool is_trivial() {
-    static_assert(polymethod<X>::is_defined());
-    return polymethod<X>::traits().is_deleted;
-  }
-};
-
-// Non-special member functions.
-template<reflection_t X>
-struct member_function : polymethod<X>
-{
-  static constexpr bool is_constexpr() {
-    return polymethod<X>::traits().is_constexpr;
-  }
-  static constexpr bool is_copy_assignment_operator() {
-    return polymethod<X>::traits().is_copy_assign;
-  }
-  static constexpr bool is_move_assignment_operator() {
-    return polymethod<X>::traits().is_move_assign;
-  }
-
-  static constexpr void make_virtual() {
-    __modify_virtual(X, false);
-  }
-  static constexpr void make_pure_virtual() {
-    __modify_virtual(X, true);
-  }
-};
-
-// Conversion operators.
-template<reflection_t X>
-struct conversion_function : member_function<X>
-{
-  static constexpr bool is_constexpr() {
-    return member_function<X>::traits().is_constexpr;
-  }
-  static constexpr bool is_explicit() {
-    return member_function<X>::traits().is_explicit;
+    static_assert(is_defined());
+    return traits().is_deleted;
   }
 };
 
@@ -618,7 +603,7 @@ struct is_member_function_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_member_function_trait<member_function<X>>
+struct is_member_function_trait<method<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
@@ -636,8 +621,8 @@ struct is_constructor_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_constructor_trait<constructor<X>>
-  : std::integral_constant<bool, true> { };
+struct is_constructor_trait<method<X>>
+  : std::integral_constant<bool, method<X>::is_constructor()> { };
 
 template<typename T>
 constexpr bool is_constructor_v = is_constructor_trait<T>::value;
@@ -654,8 +639,8 @@ struct is_destructor_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_destructor_trait<destructor<X>>
-  : std::integral_constant<bool, true> { };
+struct is_destructor_trait<method<X>>
+  : std::integral_constant<bool, method<X>::is_destructor()> { };
 
 template<typename T>
 constexpr bool is_destructor_v = is_destructor_trait<T>::value;
@@ -678,7 +663,7 @@ struct is_function_or_method_trait<function<X>>
   : std::integral_constant<bool, true> { };
 
 template<reflection_t X>
-struct is_function_or_method_trait<member_function<X>>
+struct is_function_or_method_trait<method<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
