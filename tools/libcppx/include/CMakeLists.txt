@@ -19,6 +19,10 @@ set(LIBCPPX_HEADER_PATTERN
 if(LIBCPPX_BUILDING_CLANG)
   file(COPY cppx DESTINATION ${CMAKE_BINARY_DIR}/include
     FILES_MATCHING ${LIBCPPX_HEADER_PATTERN})
+  # Force reconfiguration when headers are modified so that the updated headers
+  # are copied to the build tree.
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${LIBCPPX_HEADERS})
 endif()
 
 if(LIBCPPX_INSTALL_HEADERS)
