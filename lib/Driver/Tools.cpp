@@ -6369,6 +6369,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-fno-dollars-in-identifiers");
   }
 
+  if (Args.hasFlag(options::OPT_freflection, options::OPT_fno_reflection,
+                   false) &&
+      types::isCXX(InputType))
+    CmdArgs.push_back("-freflection");
+
   // -funit-at-a-time is default, and we don't support -fno-unit-at-a-time for
   // practical purposes.
   if (Arg *A = Args.getLastArg(options::OPT_funit_at_a_time,
