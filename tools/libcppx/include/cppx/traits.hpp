@@ -39,7 +39,7 @@ enum access_kind : unsigned {
 
 // Access specifiers are always stored in bits 3 and 4.
 static constexpr access_kind get_access(unsigned n) {
-  return access_kind((n & 0x0b) >> 2);
+  return access_kind((n & 0x0c) >> 2);
 }
 
 enum storage_kind : unsigned {
@@ -53,7 +53,7 @@ enum storage_kind : unsigned {
 //
 // FIXME: This isn't accurate.
 static constexpr storage_kind get_storage(unsigned n) {
-  return storage_kind((n & 0x0b) >> 2);
+  return storage_kind((n & 0x30) >> 2);
 }
 
 // All declarations have linkage and access.
@@ -151,6 +151,7 @@ enum method_kind : unsigned {
   method_conv
 };
 
+/// For methods, the kind is stored in bits 5 and 6.
 static constexpr method_kind get_method(unsigned n) {
   return method_kind(n & 0x30);
 }
