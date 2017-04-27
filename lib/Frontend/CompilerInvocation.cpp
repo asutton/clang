@@ -1962,11 +1962,17 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
                                    OPT_fno_dollars_in_identifiers,
                                    Opts.DollarIdents);
 
-  // [Meta] Determine if C++ reflection is supported. If so, disable
-  // -fdollar-in-identifiers.
+  // [Meta] Determine if C++ reflection is supported.
   Opts.Reflection = Args.hasArg(OPT_freflection);
-  if (Opts.Reflection)
-    Opts.DollarIdents = false;
+  if (Opts.Reflection) {
+    const Arg *A = Args.getLastArg(OPT_fdollars_in_identifiers,
+                                   OPT_fno_dollars_in_identifiers);
+    if (A && A->getOption().matches(OPT_fdollars_in_identifiers))
+      Diags.Report(diag::err_drv_argument_not_allowed_with)
+          << A->getSpelling() << "-freflection";
+    else
+      Opts.DollarIdents = 0; // Disable '$' in identifiers.
+  }
 
   Opts.PascalStrings = Args.hasArg(OPT_fpascal_strings);
   Opts.VtorDispMode = getLastArgIntValue(Args, OPT_vtordisp_mode_EQ, 1, Diags);
