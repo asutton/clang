@@ -170,7 +170,6 @@ static std::pair<ReflectionKind, void *> ExplodeOpaqueValue(std::uintptr_t N) {
 /// Returns the name of the class we're going to instantiate.
 ///
 // TODO: Add templates and... other stuff?
-//
 // TODO: Do we want a more precise set of types for these things?
 static char const *GetReflectionClass(Decl *D) {
   switch (D->getKind()) {
@@ -178,10 +177,9 @@ static char const *GetReflectionClass(Decl *D) {
   case Decl::CXXConversion:
   case Decl::CXXDestructor:
   case Decl::CXXMethod:
-    // All non-static member functions are simply member functions. But static 
+    // All non-static member functions are simply methods. But static 
     // member functions are functions.
     return cast<CXXMethodDecl>(D)->isStatic() ? "function" : "method";
-
   case Decl::EnumConstant:
     return "enumerator";
   case Decl::Field:
@@ -196,14 +194,12 @@ static char const *GetReflectionClass(Decl *D) {
     return "tu";
   case Decl::Var:
     return "variable";
-
   case Decl::Constexpr:
   case Decl::AccessSpec:
     // Return a placeholder for a declaration. These shouldn't be exposed in
     // the AST, but it's difficult to suppress (we'd have to filter the tuple
     // accessors). For now, push this responsibility onto the library.
     return "internal";
-  
   default:
     break;
   }

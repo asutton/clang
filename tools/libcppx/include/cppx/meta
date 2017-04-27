@@ -17,8 +17,8 @@ template<typename T> struct is_observable_trait;
 
 template<typename T> struct is_variable_trait;
 template<typename T> struct is_function_trait;
-template<typename T> struct is_member_variable_trait;
-template<typename T> struct is_member_function_trait;
+template<typename T> struct is_field_trait;
+template<typename T> struct is_method_trait;
 template<typename T> struct is_constructor_trait;
 template<typename T> struct is_destructor_trait;
 template<typename T> struct is_variable_or_field_trait;
@@ -186,10 +186,10 @@ struct member_type : user_defined_type<X>
 {
   using member_info = typename scope<X>::member_info;
   using var_tuple = filtered_tuple<member_info, is_variable_or_field_trait>;
-  using memvar_tuple = filtered_tuple<member_info, is_member_variable_trait>;
+  using field_tuple = filtered_tuple<member_info, is_field_trait>;
   using svar_tuple = filtered_tuple<member_info, is_variable_trait>;
-  using fn_field = filtered_tuple<member_info, is_function_or_method_trait>;
-  using memfn_tuple = filtered_tuple<member_info, is_member_function_trait>;
+  using fn_tuple = filtered_tuple<member_info, is_function_or_method_trait>;
+  using method_tuple = filtered_tuple<member_info, is_method_trait>;
   using ctor_tuple = filtered_tuple<member_info, is_constructor_trait>;
   using dtor_tuple = filtered_tuple<member_info, is_destructor_trait>;
   using sfn_tuple = filtered_tuple<member_info, is_function_trait>;
@@ -205,16 +205,16 @@ struct member_type : user_defined_type<X>
   static constexpr var_tuple variables() {
     return {};
   }
-  static constexpr memvar_tuple member_variables() {
+  static constexpr field_tuple fields() {
     return {};
   }
   static constexpr svar_tuple static_variables() {
     return {};
   }
-  static constexpr fn_field functions() {
+  static constexpr fn_tuple functions() {
     return {};
   }
-  static constexpr memfn_tuple member_functions() {
+  static constexpr method_tuple methods() {
     return {};
   }
   static constexpr ctor_tuple constructors() {
@@ -592,37 +592,37 @@ constexpr bool is_function(T) {
 // is member variable
 
 template<typename T>
-struct is_member_variable_trait
+struct is_field_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_member_variable_trait<field<X>>
+struct is_field_trait<field<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
-constexpr bool is_member_variable_v = is_member_variable_trait<T>::value;
+constexpr bool is_field_v = is_field_trait<T>::value;
 
 template<typename T>
-constexpr bool is_member_variable(T) {
-  return is_member_variable_v<T>;
+constexpr bool is_field(T) {
+  return is_field_v<T>;
 }
 
 // is member function
 
 template<typename T>
-struct is_member_function_trait
+struct is_method_trait
   : std::integral_constant<bool, false> { };
 
 template<reflection_t X>
-struct is_member_function_trait<method<X>>
+struct is_method_trait<method<X>>
   : std::integral_constant<bool, true> { };
 
 template<typename T>
-constexpr bool is_member_function_v = is_member_function_trait<T>::value;
+constexpr bool is_method_v = is_method_trait<T>::value;
 
 template<typename T>
-constexpr bool is_member_function(T) {
-  return is_member_function_v<T>;
+constexpr bool is_method(T) {
+  return is_method_v<T>;
 }
 
 // is constructor
