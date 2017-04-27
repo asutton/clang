@@ -437,6 +437,18 @@ struct method : named<X>, typed<X> {
   static constexpr bool is_move_assignment_operator() {
     return traits().is_move_assign;
   }
+  static constexpr bool is_copy_assign() {
+    return traits().is_copy_assign;
+  }
+  static constexpr bool is_move_assign() {
+    return traits().is_move_assign;
+  }
+  static constexpr bool is_copy() {
+    return traits().is_copy_ctor || traits().is_copy_assign;
+  }
+  static constexpr bool is_move () {
+    return traits().is_move_ctor || traits().is_move_assign;
+  }
 
   // Exceptions
 
