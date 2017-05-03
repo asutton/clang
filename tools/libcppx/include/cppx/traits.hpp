@@ -151,7 +151,7 @@ enum method_kind : unsigned {
   method_conv
 };
 
-/// For methods, the kind is stored in bits 5 and 6.
+// For methods, the kind is stored in bits 5 and 6.
 static constexpr method_kind get_method(unsigned n) {
   return method_kind(n & 0x30);
 }

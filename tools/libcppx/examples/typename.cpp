@@ -17,4 +17,3 @@ int main()
   typename(T) y; // also equivalent to 'S x'.
   std::cout << $y.type().name() << '\n';  
 }
-

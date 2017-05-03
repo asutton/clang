@@ -2,7 +2,6 @@
 
 #include <cppx/meta>
 
-
 int f() { return 42; }
 
 int main()
@@ -14,4 +13,3 @@ int main()
   auto var = $loc;
   std::cout << declname(var) << '\n';
 }
-
