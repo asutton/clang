@@ -94,16 +94,20 @@ bool MetaclassInjector::TransformTemplateArgument(
 ///
 /// \todo This has some peculiar quirks. Consider:
 ///
+/// \code
 ///   $class meta {
 ///     constexpr { -> { void f() { int meta = 0; } } }
 ///   }
 ///   meta S { };
+/// \endcode
 ///
 /// The transformation will ultimately inject the function:
 ///
+/// \code
 ///   void f() { int S = 0; }
+/// \endcode
 ///
-/// It is thus possible for thus transformation to introduce ambiguities.
+/// It is thus possible for the transformation to introduce ambiguities.
 /// Perhaps we should return an annotation token containing both the source
 /// and destination names, and allow the semantic analyzer to determine which
 /// was meant (although that sounds terrible).
@@ -509,7 +513,7 @@ StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Arrow, SourceLocation LB,
   return new (Context) CXXInjectionStmt(Context, Arrow, LB, RB, TokArray);
 }
 
-/// Returns the tokens for the injection statement S.
+/// Returns the tokens for the injection statement \p S.
 ArrayRef<Token> Sema::GetTokensToInject(Stmt *S) {
   assert(isa<CXXInjectionStmt>(S));
   return cast<CXXInjectionStmt>(S)->getTokens();

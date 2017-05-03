@@ -2553,7 +2553,7 @@ private:
   ExprResult ParseReflexprExpression();
   ExprResult ParseDeclnameExpression();
   TypeResult ParseTypeReflectionSpecifier(SourceLocation TypenameLoc,
-                                          SourceLocation& EndLoc);
+                                          SourceLocation &EndLoc);
   ExprResult ParseReflectionTrait();
 
   ExprResult ParseCompilerErrorExpression();

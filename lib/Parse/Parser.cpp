@@ -1679,7 +1679,7 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
     //     'typename' '(' constant-expression ')'
     SourceLocation TypenameLoc = ConsumeToken();
 
-    // Parse a reflection-type-specifier by replacing the '(...)' with an 
+    // Parse a reflection-type-specifier by replacing the '(...)' with an
     // annotated token for the reflected type.
     if (Tok.is(tok::l_paren)) {
       SourceLocation EndLoc;

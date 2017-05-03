@@ -4237,7 +4237,7 @@ public:
 
 /// \brief An expression denoting the reflection of a dependent name, type, or
 /// expression.
-/// 
+///
 /// These are used only to preserve dependent expressions in templates.
 ///
 // TODO: The constructors currently assumes that the expression is type
@@ -4269,8 +4269,8 @@ public:
 
   ReflectionExpr(StmtClass SC, EmptyShell Empty) : Expr(SC, Empty) {}
 
-  /// \brief Returns true if the expression is spelled 'reflexpr'. 
-  /// This is the case when the paren locations are valid.
+  /// \brief Returns \c true if the expression is spelled \c reflexpr.
+  /// This is the case when the parentheses' locations are valid.
   bool isReflexpr() const { return !LParenLoc.isInvalid(); }
 
   /// Returns \c true if the operand is a type.
@@ -4291,14 +4291,14 @@ public:
     return Operand.get<Expr *>();
   }
 
-  /// \brief Set the source locations of the left and right parens of a
-  /// 'reflexpr' expression.
+  /// \brief Set the source locations of the left and right parentheses of a
+  /// \c reflexpr expression.
   void setParenLocs(SourceLocation L, SourceLocation R) {
     LParenLoc = L;
     RParenLoc = R;
   }
 
-  /// Returns the source code location of the '$' or 'reflexpr' operator 
+  /// Returns the source code location of the \c $ or \c reflexpr operator
   /// keyword.
   SourceLocation getOperatorLoc() const { return OpLoc; }
 

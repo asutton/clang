@@ -2747,7 +2747,7 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
       return StmtError();
 
     // Build the actual call expression 'NNS::get<I>(__tuple)'.
-    Expr *Args[]{RangeRef.get()};
+    Expr *Args[] = {RangeRef.get()};
     ExprResult Call =
         ActOnCallExpr(getCurScope(), Fn, ColonLoc, Args, ColonLoc);
 

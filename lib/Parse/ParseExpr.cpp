@@ -1343,11 +1343,11 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return Result;
   }
 
-  case tok::kw_reflexpr: // [Meta]: 'reflexpr' '(' ... ')'
+  case tok::kw_reflexpr: // [Meta] 'reflexpr' '(' ... ')'
     Res = ParseReflexprExpression();
     break;
 
-  case tok::kw_declname: // [Meta]: 'declname' '(' constant-expression ')'
+  case tok::kw_declname: // [Meta] 'declname' '(' constant-expression ')'
     Res = ParseDeclnameExpression();
     break;
 

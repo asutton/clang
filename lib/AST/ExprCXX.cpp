@@ -1415,17 +1415,15 @@ TypeTraitExpr *TypeTraitExpr::CreateDeserialized(const ASTContext &C,
 
 void ArrayTypeTraitExpr::anchor() { }
 
-SourceLocation ReflectionExpr::getLocEnd() const
-{
+//===----------------------------------------------------------------------===//
+//  Reflection Expressions and Traits
+//===----------------------------------------------------------------------===//
+
+SourceLocation ReflectionExpr::getLocEnd() const {
   if (!RParenLoc.isInvalid())
     return RParenLoc;
-  else
-    return OpLoc;
+  return OpLoc;
 }
-
-//===----------------------------------------------------------------------===//
-//  Reflection Traits
-//===----------------------------------------------------------------------===//
 
 static bool AnyValueDependentExprs(ArrayRef<Expr *> Args) {
   for (unsigned i = 0; i < Args.size(); ++i)

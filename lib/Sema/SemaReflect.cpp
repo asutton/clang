@@ -166,11 +166,9 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec &SS,
 }
 
 /// Update the reflection expression with by indicating that it is in fact
-/// a reflexpr expression.
-ExprResult Sema::ActOnCXXReflexprExpr(Expr *E, 
-                                      SourceLocation LParenLoc, 
-                                      SourceLocation RParenLoc)
-{
+/// a \c reflexpr expression.
+ExprResult Sema::ActOnCXXReflexprExpr(Expr *E, SourceLocation LParenLoc,
+                                      SourceLocation RParenLoc) {
   assert(isa<ReflectionExpr>(E));
   ReflectionExpr *RE = cast<ReflectionExpr>(E);
   RE->setParenLocs(LParenLoc, RParenLoc);
@@ -178,22 +176,21 @@ ExprResult Sema::ActOnCXXReflexprExpr(Expr *E,
 }
 
 /// Diagnose a type reflection error and return a type error.
-static ExprResult ValueReflectionError(Sema& SemaRef, Expr *E)
-{
+static ExprResult ValueReflectionError(Sema &SemaRef, Expr *E) {
   SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_value)
-    << E->getSourceRange();
+      << E->getSourceRange();
   return ExprResult(true);
 }
 
-/// Construct a declname expression. For non-type-dependent E, this actually
-/// builds a DeclRefExpr referring to the name of the computed declaration.
+/// Construct a \c declname expression.
+/// 
+/// For non-type-dependent \p E, this actually builds a DeclRefExpr referring to
+/// the name of the computed declaration.
 ///
-/// FIXME: If E computes a type, what should I do? Probably return 
-ExprResult Sema::ActOnDeclnameExpression(Expr *E,
-                                         SourceLocation KWLoc,
-                                         SourceLocation LParenLoc, 
-                                         SourceLocation RParenLoc)
-{
+// FIXME: If E computes a type, what should I do? Probably return.
+ExprResult Sema::ActOnDeclnameExpression(Expr *E, SourceLocation KWLoc,
+                                         SourceLocation LParenLoc,
+                                         SourceLocation RParenLoc) {
   // FIXME: This needs to be an actual expression.
   if (E->isTypeDependent())
     llvm_unreachable("Dependent declname expression");
@@ -205,30 +202,30 @@ ExprResult Sema::ActOnDeclnameExpression(Expr *E,
     if (!T.getTypePtr())
       llvm_unreachable("Undeduced value reflection");
   }
-  
+
   // Unpack information from the expression.
   CXXRecordDecl *Class = T->getAsCXXRecordDecl();
   if (!Class)
     return ValueReflectionError(*this, E);
   if (!Class && !isa<ClassTemplateSpecializationDecl>(Class))
     return ValueReflectionError(*this, E);
-  ClassTemplateSpecializationDecl *Spec = 
-    cast<ClassTemplateSpecializationDecl>(Class);
+  ClassTemplateSpecializationDecl *Spec =
+      cast<ClassTemplateSpecializationDecl>(Class);
   // FIXME: We should verify that this Class actually a meta class
   // object so that we aren't arbitrarily converting integers into
   // addresses (no bueno).
-  const TemplateArgumentList& Args = Spec->getTemplateArgs();
+  const TemplateArgumentList &Args = Spec->getTemplateArgs();
   if (Args.size() == 0)
     return ValueReflectionError(*this, E);
   const TemplateArgument &Arg = Args.get(0);
   if (Arg.getKind() != TemplateArgument::Integral)
     return ValueReflectionError(*this, E);
-  
+
   // Decode the specialization argument as a type.
   llvm::APSInt Data = Arg.getAsIntegral();
   std::pair<ReflectionKind, void *> Info =
       ExplodeOpaqueValue(Data.getExtValue());
-  
+
   // FIXME: What should we do if the reflection refers to a type? This is
   // probably for expressions that compute temporaries:
   //
@@ -245,8 +242,8 @@ ExprResult Sema::ActOnDeclnameExpression(Expr *E,
   if (!isa<ValueDecl>(D))
     return ValueReflectionError(*this, E);
   ValueDecl *VD = cast<ValueDecl>(D);
-  DeclRefExpr *DRE = new (Context) DeclRefExpr(VD, false, VD->getType(), 
-                                               VK_LValue, E->getLocStart());
+  DeclRefExpr *DRE = new (Context)
+      DeclRefExpr(VD, false, VD->getType(), VK_LValue, E->getLocStart());
   MarkDeclRefReferenced(DRE);
   return DRE;
 }
@@ -261,7 +258,7 @@ static char const *GetReflectionClass(Decl *D) {
   case Decl::CXXConversion:
   case Decl::CXXDestructor:
   case Decl::CXXMethod:
-    // All non-static member functions are simply methods. But static 
+    // All non-static member functions are simply methods. But static
     // member functions are functions.
     return cast<CXXMethodDecl>(D)->isStatic() ? "function" : "method";
   case Decl::EnumConstant:
@@ -446,8 +443,10 @@ NamespaceDecl *Sema::RequireCppxMetaNamespace(SourceLocation Loc) {
 }
 
 /// \brief Returns the class with the given name in the
-/// std::[experimental::]meta namespace. If no such class can be found, a
-/// diagnostic is emitted, and \c nullptr returned.
+/// std::[experimental::]meta namespace.
+/// 
+/// If no such class can be found, a diagnostic is emitted, and \c nullptr
+/// returned.
 ///
 // TODO: Cache these types so we don't keep doing lookup. In on the first
 // lookup, cache the names of ALL meta types so that we can easily check
@@ -578,7 +577,7 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
   std::pair<ReflectionKind, void *> Info =
       ExplodeOpaqueValue(Vals[0].getExtValue());
 
-  Reflector R{*this, KWLoc, RParenLoc, Args, Vals};
+  Reflector R = {*this, KWLoc, RParenLoc, Args, Vals};
   if (Info.first == RK_Decl)
     return R.Reflect(Kind, (Decl *)Info.second);
   if (Info.first == RK_Type)
@@ -645,7 +644,7 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
   case URT_ReflectPrint: {
     PrintingPolicy PP = S.getASTContext().getPrintingPolicy();
     PP.TerseOutput = false;
-    if (CXXRecordDecl* Class = T->getAsCXXRecordDecl()) {
+    if (CXXRecordDecl *Class = T->getAsCXXRecordDecl()) {
       Class->print(llvm::errs(), PP);
     } else {
       QualType Q(T, 0);
@@ -654,7 +653,7 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
     llvm::errs() << '\n';
     return ExprResult();
   }
-  
+
   case URT_ReflectName:
     return ReflectName(T);
   case URT_ReflectQualifiedName:
@@ -1392,24 +1391,22 @@ bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
 }
 
 /// Diagnose a type reflection error and return a type error.
-static TypeResult TypeReflectionError(Sema& SemaRef, Expr *E)
-{
+static TypeResult TypeReflectionError(Sema &SemaRef, Expr *E) {
   SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_type)
-    << E->getSourceRange();
+      << E->getSourceRange();
   return TypeResult(true);
 }
 
 /// Evaluates the given expression and yields the computed type.
 ///
-/// FIXME: We probably want to return something like decltype(E). We should
-/// factor those two nodes into a common base (call it ComputedType), and
-/// then construct and return that.
-TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc, 
-                                              Expr *E)
-{
+// FIXME: We probably want to return something like decltype(E). We should
+// factor those two nodes into a common base (call it ComputedType), and
+// then construct and return that.
+TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc,
+                                              Expr *E) {
   if (E->isTypeDependent())
     llvm_unreachable("Dependent reflection types not implemented");
-  
+
   // Get the type of the reflection.
   QualType T = E->getType();
   if (AutoType *D = T->getContainedAutoType()) {
@@ -1417,28 +1414,28 @@ TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc,
     if (!T.getTypePtr())
       llvm_unreachable("Undeduced type reflection");
   }
-  
+
   // Unpack information from the expression.
   CXXRecordDecl *Class = T->getAsCXXRecordDecl();
   if (!Class && !isa<ClassTemplateSpecializationDecl>(Class))
     return TypeReflectionError(*this, E);
-  ClassTemplateSpecializationDecl *Spec = 
-    cast<ClassTemplateSpecializationDecl>(Class);
+  ClassTemplateSpecializationDecl *Spec =
+      cast<ClassTemplateSpecializationDecl>(Class);
   // FIXME: We should verify that this Class actually a meta class
   // object so that we aren't arbitrarily converting integers into
   // addresses (no bueno).
-  const TemplateArgumentList& Args = Spec->getTemplateArgs();
+  const TemplateArgumentList &Args = Spec->getTemplateArgs();
   if (Args.size() == 0)
     return TypeReflectionError(*this, E);
   const TemplateArgument &Arg = Args.get(0);
   if (Arg.getKind() != TemplateArgument::Integral)
     return TypeReflectionError(*this, E);
-  
+
   // Decode the specialization argument as a type.
   llvm::APSInt Data = Arg.getAsIntegral();
   std::pair<ReflectionKind, void *> Info =
       ExplodeOpaqueValue(Data.getExtValue());
-  
+
   if (Info.first == RK_Type) {
     // Returns the referenced type. For example:
     //
@@ -1457,7 +1454,7 @@ TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc,
     Decl *D = (Decl *)Info.second;
     if (!isa<ValueDecl>(D)) {
       Diag(E->getLocStart(), diag::err_reflection_not_a_typed_decl)
-        << E->getSourceRange();
+          << E->getSourceRange();
       return TypeResult(true);
     }
     ValueDecl *VD = cast<ValueDecl>(D);
@@ -1466,7 +1463,7 @@ TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc,
     return CreateParsedType(RT, TSI);
   }
 
-  return TypeReflectionError(*this, E);  
+  return TypeReflectionError(*this, E);
 }
 
 Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
@@ -1706,7 +1703,7 @@ ParsedType Sema::getMetaclassName(const IdentifierInfo &II,
         if (Ty) {
           diagnoseTypo(Correction,
                        PDiag(diag::err_unknown_type_or_class_name_suggest)
-                           << Result.getLookupName() << /*class*/1);
+                           << Result.getLookupName() << /*class*/ 1);
           if (SS && NNS)
             SS->MakeTrivial(Context, NNS, SourceRange(NameLoc));
           *CorrectedII = NewII;
@@ -1852,7 +1849,7 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
     CD = ConstexprDecl::Create(Context, CurContext, ConstexprLoc, Function);
   } else if (CurContext->isFunctionOrMethod()) {
     ScopeFlags = Scope::BlockScope | Scope::FnScope | Scope::DeclScope;
-    
+
     LambdaScopeInfo *LSI = PushLambdaScope();
 
     // Build the expression

@@ -18,8 +18,7 @@
 
 using namespace clang;
 
-ExprResult Parser::ParseReflectOperand(SourceLocation OpLoc)
-{
+ExprResult Parser::ParseReflectOperand(SourceLocation OpLoc) {
   // TODO: Actually look at the token following the '$'. We should be able
   // to easily predict the parse.
 
@@ -53,17 +52,18 @@ ExprResult Parser::ParseReflectOperand(SourceLocation OpLoc)
   ExprResult Id = tryParseCXXIdExpression(SS, true, Replacement);
   if (!Id.isInvalid())
     return Actions.ActOnCXXReflectExpr(OpLoc, Id.get());
-  
+
   return ExprError();
 }
 
 /// \brief Parse a reflect expression.
 ///
+/// \verbatim
 ///   primary-expression:
 ///     '$' id-expression
 ///     '$' type-id
 ///     '$' nested-name-specifier[opt] namespace-name
-///
+/// \endverbatim
 // TODO: Consider adding specifiers? $static? $private?
 ExprResult Parser::ParseReflectExpression() {
   assert(Tok.is(tok::dollar));
@@ -71,58 +71,60 @@ ExprResult Parser::ParseReflectExpression() {
   return ParseReflectOperand(OpLoc);
 }
 
-/// \brief Parse a reflexpr expression.
+/// \brief Parse a \c reflexpr expression.
 ///
+/// \verbatim
 ///   primary-expression:
 ///      'reflexpr' '(' id-expression ')'
 ///      'reflexpr' '(' type-id ')'
 ///      'reflexpr' '(' nested-name-specifier[opt] namespace-name ')'
+/// \endverbatim
 ExprResult Parser::ParseReflexprExpression() {
   assert(Tok.is(tok::kw_reflexpr));
   SourceLocation KeyLoc = ConsumeToken();
-  
+
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen_after, "reflexpr"))
     return ExprError();
   ExprResult Result = ParseReflectOperand(KeyLoc);
   T.consumeClose();
   if (!Result.isInvalid())
-    Result = Actions.ActOnCXXReflexprExpr(Result.get(), 
-                                          T.getOpenLocation(), 
+    Result = Actions.ActOnCXXReflexprExpr(Result.get(), T.getOpenLocation(),
                                           T.getCloseLocation());
   return Result;
 }
 
-/// \brief Parse a declname expression.
+/// \brief Parse a \c declname expression.
 ///
+/// \verbatim
 ///   unary-expression:
 ///      'declname' '(' constant-expression ')'
+/// \endverbatim
 ExprResult Parser::ParseDeclnameExpression() {
   assert(Tok.is(tok::kw_declname));
   SourceLocation KeyLoc = ConsumeToken();
-  
+
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen_after, "declname"))
     return ExprError();
   ExprResult Result = ParseConstantExpression();
   T.consumeClose();
   if (!Result.isInvalid())
-    Result = Actions.ActOnDeclnameExpression(Result.get(), 
-                                             KeyLoc,
-                                             T.getOpenLocation(), 
-                                             T.getCloseLocation());
+    Result = Actions.ActOnDeclnameExpression(
+        Result.get(), KeyLoc, T.getOpenLocation(), T.getCloseLocation());
   return Result;
 }
 
-
 /// Parse a reflection type specifier.
 ///
+/// \verbatim
 ///   reflection-type-specifier
 ///     'typename' '(' constant-expression ')'
+/// \endverbatim
 ///
-/// The constant-expression must be a reflection of a type.
+/// The constant expression must be a reflection of a type.
 TypeResult Parser::ParseTypeReflectionSpecifier(SourceLocation TypenameLoc,
-                                                SourceLocation& EndLoc) {
+                                                SourceLocation &EndLoc) {
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen_after, "reflexpr"))
     return TypeResult(true);
