@@ -2548,7 +2548,12 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ Reflection [Meta]
 
+  ExprResult ParseReflectOperand(SourceLocation OpLoc);
   ExprResult ParseReflectExpression();
+  ExprResult ParseReflexprExpression();
+  ExprResult ParseDeclnameExpression();
+  TypeResult ParseTypeReflectionSpecifier(SourceLocation TypenameLoc,
+                                          SourceLocation& EndLoc);
   ExprResult ParseReflectionTrait();
 
   ExprResult ParseCompilerErrorExpression();

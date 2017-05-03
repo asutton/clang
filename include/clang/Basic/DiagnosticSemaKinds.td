@@ -8882,6 +8882,12 @@ def err_range_loop_over_tuple : Error<
   "range-based loop over a tuple with type %0">;
 def note_use_loop_expansion : Note<
   "did you mean to use 'for...'">;  
+def err_reflection_not_a_type : Error<
+  "expression does not reflect a type">;
+def err_reflection_not_a_typed_decl : Error<
+  "expression does not reflect a typed declaration">;
+def err_reflection_not_a_value : Error<
+  "expression does not reflect a variable or function">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

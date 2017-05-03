@@ -1180,6 +1180,7 @@ public:
 /// [GNU]     '__auto_type'
 /// [C++11]   'decltype' ( expression )
 /// [C++1y]   'decltype' ( 'auto' )
+/// [Meta]    'typename' ( constant-expression )
 ///
 ///         type-name:
 ///           class-name
@@ -1473,6 +1474,7 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
 
     // simple-type-specifier:
 
+  case tok::annot_refltype:
   case tok::annot_typename:
   case_typename:
     // In Objective-C, we might have a protocol-qualified type.

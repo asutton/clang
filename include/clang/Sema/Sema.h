@@ -7477,10 +7477,8 @@ public:
 
   StmtResult SubstStmt(Stmt *S,
                        const MultiLevelTemplateArgumentList &TemplateArgs);
-
-  StmtResult
-  SubstForTupleBody(Stmt *Body,
-                    const MultiLevelTemplateArgumentList &TemplateArgs);
+  StmtResult SubstForTupleBody(Stmt *Body,
+                            const MultiLevelTemplateArgumentList &TemplateArgs);
 
   Decl *SubstDecl(Decl *D, DeclContext *Owner,
                   const MultiLevelTemplateArgumentList &TemplateArgs);
@@ -8237,8 +8235,14 @@ public:
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Declarator &D);
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, CXXScopeSpec &SS,
                                  IdentifierInfo *II, SourceLocation IdLoc);
+  ExprResult ActOnCXXReflexprExpr(Expr *E, SourceLocation LParenLoc,
+                                  SourceLocation RParenLoc);
   ExprResult BuildDeclReflection(SourceLocation Loc, Decl *D);
   ExprResult BuildTypeReflection(SourceLocation Loc, QualType T);
+  TypeResult ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc, Expr *E);
+  ExprResult ActOnDeclnameExpression(Expr *E, SourceLocation KWLoc,
+                                     SourceLocation LParenLoc,
+                                     SourceLocation RParenLoc);
 
   NamespaceDecl *RequireCppxNamespace(SourceLocation Loc);
   NamespaceDecl *RequireCppxMetaNamespace(SourceLocation Loc);

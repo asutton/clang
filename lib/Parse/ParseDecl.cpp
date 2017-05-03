@@ -2934,6 +2934,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       continue;
     }
 
+    case tok::annot_refltype:
     case tok::annot_typename: {
       // If we've previously seen a tag definition, we were almost surely
       // missing a semicolon after it.
@@ -4403,6 +4404,7 @@ bool Parser::isKnownToBeTypeSpecifier(const Token &Tok) const {
   case tok::kw_enum:
 
     // typedef-name
+  case tok::annot_refltype:
   case tok::annot_typename:
     return true;
   }
@@ -4488,6 +4490,7 @@ bool Parser::isTypeSpecifierQualifier() {
   case tok::kw___unknown_anytype:
 
     // typedef-name
+  case tok::annot_refltype:
   case tok::annot_typename:
     return true;
 
@@ -4677,6 +4680,7 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
     return getLangOpts().ObjC1;
 
     // typedef-name
+  case tok::annot_refltype:
   case tok::annot_typename:
     return !DisambiguatingWithExpression ||
            !isStartOfObjCClassMessageMissingOpenBracket();

@@ -22,6 +22,30 @@
 using namespace clang;
 using namespace sema;
 
+/// Used to encode the kind of entity reflected.
+///
+/// This value is packed into the low-order bits of each reflected pointer.
+/// Because we stuff pointer values, all must be aligned at 2 bytes (which is
+/// generally guaranteed).
+enum ReflectionKind { RK_Decl = 1, RK_Type = 2, RK_Expr = 3 };
+
+using ReflectionValue =
+    llvm::PointerSumType<ReflectionKind,
+                         llvm::PointerSumTypeMember<RK_Decl, Decl *>,
+                         llvm::PointerSumTypeMember<RK_Type, Type *>,
+                         llvm::PointerSumTypeMember<RK_Expr, Expr *>>;
+
+static std::pair<ReflectionKind, void *> ExplodeOpaqueValue(std::uintptr_t N) {
+  // Look away. I'm totally breaking abstraction.
+  using Helper = llvm::detail::PointerSumTypeHelper<
+      ReflectionKind, llvm::PointerSumTypeMember<RK_Decl, Decl *>,
+      llvm::PointerSumTypeMember<RK_Type, Type *>,
+      llvm::PointerSumTypeMember<RK_Expr, Expr *>>;
+  ReflectionKind K = (ReflectionKind)(N & Helper::TagMask);
+  void *P = (void *)(N & Helper::PointerMask);
+  return {K, P};
+}
+
 /// The expression \c $x returns an object describing the reflected entity \c x.
 /// The type of that object depends on the type of the thing reflected.
 ///
@@ -141,30 +165,88 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec &SS,
   return BuildDeclReflection(OpLoc, D);
 }
 
-/// Used to encode the kind of entity reflected.
-///
-/// This value is packed into the low-order bits of each reflected pointer.
-/// Because we stuff pointer values, all must be aligned at 2 bytes (which is
-/// generally guaranteed).
-///
-// TODO: Could we safely use high-order bits?
-enum ReflectionKind { RK_Decl = 1, RK_Type = 2, RK_Expr = 3 };
+/// Update the reflection expression with by indicating that it is in fact
+/// a reflexpr expression.
+ExprResult Sema::ActOnCXXReflexprExpr(Expr *E, 
+                                      SourceLocation LParenLoc, 
+                                      SourceLocation RParenLoc)
+{
+  assert(isa<ReflectionExpr>(E));
+  ReflectionExpr *RE = cast<ReflectionExpr>(E);
+  RE->setParenLocs(LParenLoc, RParenLoc);
+  return E;
+}
 
-using ReflectionValue =
-    llvm::PointerSumType<ReflectionKind,
-                         llvm::PointerSumTypeMember<RK_Decl, Decl *>,
-                         llvm::PointerSumTypeMember<RK_Type, Type *>,
-                         llvm::PointerSumTypeMember<RK_Expr, Expr *>>;
+/// Diagnose a type reflection error and return a type error.
+static ExprResult ValueReflectionError(Sema& SemaRef, Expr *E)
+{
+  SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_value)
+    << E->getSourceRange();
+  return ExprResult(true);
+}
 
-static std::pair<ReflectionKind, void *> ExplodeOpaqueValue(std::uintptr_t N) {
-  // Look away. I'm totally breaking abstraction.
-  using Helper = llvm::detail::PointerSumTypeHelper<
-      ReflectionKind, llvm::PointerSumTypeMember<RK_Decl, Decl *>,
-      llvm::PointerSumTypeMember<RK_Type, Type *>,
-      llvm::PointerSumTypeMember<RK_Expr, Expr *>>;
-  ReflectionKind K = (ReflectionKind)(N & Helper::TagMask);
-  void *P = (void *)(N & Helper::PointerMask);
-  return {K, P};
+/// Construct a declname expression. For non-type-dependent E, this actually
+/// builds a DeclRefExpr referring to the name of the computed declaration.
+///
+/// FIXME: If E computes a type, what should I do? Probably return 
+ExprResult Sema::ActOnDeclnameExpression(Expr *E,
+                                         SourceLocation KWLoc,
+                                         SourceLocation LParenLoc, 
+                                         SourceLocation RParenLoc)
+{
+  // FIXME: This needs to be an actual expression.
+  if (E->isTypeDependent())
+    llvm_unreachable("Dependent declname expression");
+
+  // Get the type of the reflection.
+  QualType T = E->getType();
+  if (AutoType *D = T->getContainedAutoType()) {
+    T = D->getDeducedType();
+    if (!T.getTypePtr())
+      llvm_unreachable("Undeduced value reflection");
+  }
+  
+  // Unpack information from the expression.
+  CXXRecordDecl *Class = T->getAsCXXRecordDecl();
+  if (!Class && !isa<ClassTemplateSpecializationDecl>(Class))
+    return ValueReflectionError(*this, E);
+  ClassTemplateSpecializationDecl *Spec = 
+    cast<ClassTemplateSpecializationDecl>(Class);
+  // FIXME: We should verify that this Class actually a meta class
+  // object so that we aren't arbitrarily converting integers into
+  // addresses (no bueno).
+  const TemplateArgumentList& Args = Spec->getTemplateArgs();
+  if (Args.size() == 0)
+    return ValueReflectionError(*this, E);
+  const TemplateArgument &Arg = Args.get(0);
+  if (Arg.getKind() != TemplateArgument::Integral)
+    return ValueReflectionError(*this, E);
+  
+  // Decode the specialization argument as a type.
+  llvm::APSInt Data = Arg.getAsIntegral();
+  std::pair<ReflectionKind, void *> Info =
+      ExplodeOpaqueValue(Data.getExtValue());
+  
+  // FIXME: What should we do if the reflection refers to a type? This is
+  // probably for expressions that compute temporaries:
+  //
+  //    declname($x.type()) {a, b, c}
+  //
+  // The best answer is probably to return declname expression object referring
+  // to the computed type, and then unpack its meaning as a postfix expression
+  // later on.
+  if (Info.first != RK_Decl)
+    return ValueReflectionError(*this, E);
+
+  // Try to build a reference to a value declaration.
+  Decl *D = (Decl *)Info.second;
+  if (!isa<ValueDecl>(D))
+    return ValueReflectionError(*this, E);
+  ValueDecl *VD = cast<ValueDecl>(D);
+  DeclRefExpr *DRE = new (Context) DeclRefExpr(VD, false, VD->getType(), 
+                                               VK_LValue, E->getLocStart());
+  MarkDeclRefReferenced(DRE);
+  return DRE;
 }
 
 /// Returns the name of the class we're going to instantiate.
@@ -1305,6 +1387,84 @@ bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
 
   Owner->updateDecl(D);
   return true;
+}
+
+/// Diagnose a type reflection error and return a type error.
+static TypeResult TypeReflectionError(Sema& SemaRef, Expr *E)
+{
+  SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_type)
+    << E->getSourceRange();
+  return TypeResult(true);
+}
+
+/// Evaluates the given expression and yields the computed type.
+///
+/// FIXME: We probably want to return something like decltype(E). We should
+/// factor those two nodes into a common base (call it ComputedType), and
+/// then construct and return that.
+TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc, 
+                                              Expr *E)
+{
+  if (E->isTypeDependent())
+    llvm_unreachable("Dependent reflection types not implemented");
+  
+  // Get the type of the reflection.
+  QualType T = E->getType();
+  if (AutoType *D = T->getContainedAutoType()) {
+    T = D->getDeducedType();
+    if (!T.getTypePtr())
+      llvm_unreachable("Undeduced type reflection");
+  }
+  
+  // Unpack information from the expression.
+  CXXRecordDecl *Class = T->getAsCXXRecordDecl();
+  if (!Class && !isa<ClassTemplateSpecializationDecl>(Class))
+    return TypeReflectionError(*this, E);
+  ClassTemplateSpecializationDecl *Spec = 
+    cast<ClassTemplateSpecializationDecl>(Class);
+  // FIXME: We should verify that this Class actually a meta class
+  // object so that we aren't arbitrarily converting integers into
+  // addresses (no bueno).
+  const TemplateArgumentList& Args = Spec->getTemplateArgs();
+  if (Args.size() == 0)
+    return TypeReflectionError(*this, E);
+  const TemplateArgument &Arg = Args.get(0);
+  if (Arg.getKind() != TemplateArgument::Integral)
+    return TypeReflectionError(*this, E);
+  
+  // Decode the specialization argument as a type.
+  llvm::APSInt Data = Arg.getAsIntegral();
+  std::pair<ReflectionKind, void *> Info =
+      ExplodeOpaqueValue(Data.getExtValue());
+  
+  if (Info.first == RK_Type) {
+    // Returns the referenced type. For example:
+    //
+    //    typename($int) x; // int x
+    QualType RT((Type *)Info.second, 0);
+    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(RT);
+    return CreateParsedType(RT, TSI);
+  } else if (Info.first == RK_Decl) {
+    // Returns the type of the referenced declaration. For example:
+    //
+    //    char x;
+    //    typename($x) y; // char y
+    //
+    // Note that the referenced declaration is not used when referring
+    // to its type.
+    Decl *D = (Decl *)Info.second;
+    if (!isa<ValueDecl>(D)) {
+      Diag(E->getLocStart(), diag::err_reflection_not_a_typed_decl)
+        << E->getSourceRange();
+      return TypeResult(true);
+    }
+    ValueDecl *VD = cast<ValueDecl>(D);
+    QualType RT = VD->getType();
+    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(RT);
+    return CreateParsedType(RT, TSI);
+  }
+
+  return TypeReflectionError(*this, E);  
 }
 
 Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
