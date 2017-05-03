@@ -208,6 +208,8 @@ ExprResult Sema::ActOnDeclnameExpression(Expr *E,
   
   // Unpack information from the expression.
   CXXRecordDecl *Class = T->getAsCXXRecordDecl();
+  if (!Class)
+    return ValueReflectionError(*this, E);
   if (!Class && !isa<ClassTemplateSpecializationDecl>(Class))
     return ValueReflectionError(*this, E);
   ClassTemplateSpecializationDecl *Spec = 
