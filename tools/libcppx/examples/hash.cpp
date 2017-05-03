@@ -43,8 +43,8 @@ struct hash_append_fn
 {
   H& h;
   T const& t;
-  template<cppx::meta::reflection_t X>
-  void operator()(cppx::meta::member_variable<X> var) {
+  template<typename U>
+  void operator()(U var) {
     hash_append(h, t.*(var.pointer()));
   }
 };

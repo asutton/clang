@@ -12,8 +12,8 @@ struct compare_data_members
   const T& b;
   bool& result;
 
-  template<meta::reflection_t X>
-  void operator()(meta::member_variable<X> member) const
+  template<typename U>
+  void operator()(U member) const
   {
     auto ptr = member.pointer();
     result &= a.*ptr == b.*ptr;
