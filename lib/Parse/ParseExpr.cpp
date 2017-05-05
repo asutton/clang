@@ -1348,6 +1348,8 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     break;
 
   case tok::kw_declname: // [Meta]: 'declname' '(' constant-expression ')'
+    // FIXME: This isn't right. If we see a declname, we should delegate
+    // to ParseCXXDeclname.
     Res = ParseDeclnameExpression();
     break;
 

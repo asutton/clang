@@ -185,6 +185,133 @@ static ExprResult ValueReflectionError(Sema& SemaRef, Expr *E)
   return ExprResult(true);
 }
 
+
+/// Construct a declname expression. For non-type-dependent E, this actually
+/// builds a DeclRefExpr referring to the name of the computed declaration.
+///
+/// FIXME: If E computes a type, what should I do? Probably return 
+ExprResult Sema::ActOnDeclnameExpression(SmallVectorImpl<Expr *>& Parts,
+                                         SourceLocation KWLoc,
+                                         SourceLocation LParenLoc, 
+                                         SourceLocation RParenLoc) {
+  SmallString<256> Buf;
+  llvm::raw_svector_ostream OS(Buf);
+
+  for (std::size_t I = 0; I < Parts.size(); ++I) {
+    Expr *E = Parts[I];
+
+    // FIXME: This needs to be an actual expression.
+    if (E->isTypeDependent())
+      llvm_unreachable("Dependent declname expression");
+
+    // Get the type of the reflection.
+    QualType T = E->getType();
+    if (AutoType *D = T->getContainedAutoType()) {
+      T = D->getDeducedType();
+      if (!T.getTypePtr())
+        llvm_unreachable("Undeduced value reflection");
+    }
+
+    SourceLocation ExprLoc = E->getLocStart();
+
+    // Evaluate the sub-expression (depending on type) in order to compute
+    // a string part that will constitute a declaration name.
+    if (T->isConstantArrayType()) {
+      // Insert the string literal into the buffer.
+      auto* ArrayTy = T->getAsArrayTypeUnsafe();
+      QualType ElemTy = ArrayTy->getElementType();
+      if (!ElemTy->isCharType() || !ElemTy.isConstQualified())
+        return ExprError(
+          Diag(ExprLoc, diag::err_declname_invalid_operand_type) << T);
+
+      // This looks like an expression returning a string literal. Attempt
+      // to evaluate it.
+      Expr::EvalResult Result;
+      if (!E->EvaluateAsLValue(Result, Context))
+        // FIXME: This is not the right error.
+        return ExprError(
+          Diag(E->getLocStart(), diag::err_expr_not_ice) << 1);
+      
+      // Extracting the string valkue from the LValue.
+      //
+      // FIXME: We want an EvaluateAsString in the Expr clas.
+      APValue::LValueBase Base = Result.Val.getLValueBase();
+      if (Base.is<const Expr *>()) {
+        const Expr *BaseExpr = Base.get<const Expr *>();
+        assert(isa<StringLiteral>(BaseExpr) && "Not a stirng literal");
+        const StringLiteral *Str = cast<StringLiteral>(BaseExpr);
+        OS << Str->getString();
+      } else {
+        llvm_unreachable("Use of string variable not implemented");
+        // const ValueDecl *D = Base.get<const ValueDecl *>();
+        // return Error(E->getMessage());
+      }
+    } else if (T->isIntegerType()) {
+      // Insert the integer value of the literal into the buffer.
+      if (I == 0) {
+        return ExprError(
+          Diag(E->getLocStart(), diag::err_declname_with_integer_prefix));
+      }
+      llvm::APSInt N;
+      if (!E->EvaluateAsInt(N, Context)) {
+        return ExprError(
+          Diag(E->getLocStart(), diag::err_expr_not_ice) << 1);
+      }
+      OS << N;
+    }
+  }
+
+  llvm::outs() << "GOT ID: " << Buf << '\n';
+
+  return ExprError();
+
+#if 0  
+  // Unpack information from the expression.
+  CXXRecordDecl *Class = T->getAsCXXRecordDecl();
+  if (!Class)
+    return ValueReflectionError(*this, E);
+  if (!Class && !isa<ClassTemplateSpecializationDecl>(Class))
+    return ValueReflectionError(*this, E);
+  ClassTemplateSpecializationDecl *Spec = 
+    cast<ClassTemplateSpecializationDecl>(Class);
+  // FIXME: We should verify that this Class actually a meta class
+  // object so that we aren't arbitrarily converting integers into
+  // addresses (no bueno).
+  const TemplateArgumentList& Args = Spec->getTemplateArgs();
+  if (Args.size() == 0)
+    return ValueReflectionError(*this, E);
+  const TemplateArgument &Arg = Args.get(0);
+  if (Arg.getKind() != TemplateArgument::Integral)
+    return ValueReflectionError(*this, E);
+  
+  // Decode the specialization argument as a type.
+  llvm::APSInt Data = Arg.getAsIntegral();
+  std::pair<ReflectionKind, void *> Info =
+      ExplodeOpaqueValue(Data.getExtValue());
+  
+  // FIXME: What should we do if the reflection refers to a type? This is
+  // probably for expressions that compute temporaries:
+  //
+  //    declname($x.type()) {a, b, c}
+  //
+  // The best answer is probably to return declname expression object referring
+  // to the computed type, and then unpack its meaning as a postfix expression
+  // later on.
+  if (Info.first != RK_Decl)
+    return ValueReflectionError(*this, E);
+
+  // Try to build a reference to a value declaration.
+  Decl *D = (Decl *)Info.second;
+  if (!isa<ValueDecl>(D))
+    return ValueReflectionError(*this, E);
+  ValueDecl *VD = cast<ValueDecl>(D);
+  DeclRefExpr *DRE = new (Context) DeclRefExpr(VD, false, VD->getType(), 
+                                               VK_LValue, E->getLocStart());
+  MarkDeclRefReferenced(DRE);
+  return DRE;
+  #endif
+}
+
 /// Construct a declname expression. For non-type-dependent E, this actually
 /// builds a DeclRefExpr referring to the name of the computed declaration.
 ///

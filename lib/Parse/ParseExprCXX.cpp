@@ -2567,6 +2567,12 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
 
     return false;
   }
+
+  if (Tok.is(tok::kw_declname)) {
+    // FIXME: This is the right place to parse a declname(). 
+    assert(false && "declname declaration");
+  }
+
   
   if (getLangOpts().CPlusPlus && 
       (AllowDestructorName || SS.isSet()) && Tok.is(tok::tilde)) {

@@ -8888,6 +8888,12 @@ def err_reflection_not_a_typed_decl : Error<
   "expression does not reflect a typed declaration">;
 def err_reflection_not_a_value : Error<
   "expression does not reflect a variable or function">;
+
+// declaration names
+def err_declname_with_integer_prefix : Error<
+  "declaration name begins with an integer">;
+def err_declname_invalid_operand_type : Error<
+  "cannot include expression of type %0 in a declaration name">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {
