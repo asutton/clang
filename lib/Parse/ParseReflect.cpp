@@ -93,35 +93,35 @@ ExprResult Parser::ParseReflexprExpression() {
   return Result;
 }
 
-/// \brief Parse a declname expression.
+/// \brief Parse a declname-id
 ///
-///   unary-expression:
+///   unqualified-id:
 ///      'declname' '(' id-concatenation-seq ')'
 ///
 ///   id-concatenation-seq:
 ///       constant-expression
 ///       id-concatenation-seq constant-expression
-ExprResult Parser::ParseDeclnameExpression() {
+///
+/// Returns true if parsing or semantic analysis fail.
+bool Parser::ParseDeclnameId(UnqualifiedId& Result) {
   assert(Tok.is(tok::kw_declname));
   SourceLocation KeyLoc = ConsumeToken();
   
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen_after, "declname"))
-    return ExprError();
+    return true;
   SmallVector<Expr *, 4> Parts;
   while (Tok.isNot(tok::r_paren)) {
     ExprResult Result = ParseConstantExpression();
     if (Result.isInvalid())
-      return ExprError();
+      return true;
     Parts.push_back(Result.get());
   }
-  
   if (T.consumeClose())
-    return ExprError();
+    return true;
 
-  return Actions.ActOnDeclnameExpression(Parts, KeyLoc,
-                                         T.getOpenLocation(), 
-                                         T.getCloseLocation());
+  return Actions.BuildDeclnameId(Parts, Result, KeyLoc, 
+                                 T.getOpenLocation(), T.getCloseLocation());
 }
 
 

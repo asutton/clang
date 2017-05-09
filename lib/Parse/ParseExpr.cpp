@@ -1292,6 +1292,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   }
 
   case tok::kw_operator: // [C++] id-expression: operator/conversion-function-id
+  case tok::kw_declname: // [Meta] id-expression: declname-id
     Res = ParseCXXIdExpression(isAddressOfOperand);
     break;
 
@@ -1345,12 +1346,6 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
 
   case tok::kw_reflexpr: // [Meta]: 'reflexpr' '(' ... ')'
     Res = ParseReflexprExpression();
-    break;
-
-  case tok::kw_declname: // [Meta]: 'declname' '(' constant-expression ')'
-    // FIXME: This isn't right. If we see a declname, we should delegate
-    // to ParseCXXDeclname.
-    Res = ParseDeclnameExpression();
     break;
 
   case tok::dollar:  // [Meta] '$' [id-expression | type-name | namespace-name]

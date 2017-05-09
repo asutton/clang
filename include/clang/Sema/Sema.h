@@ -8240,13 +8240,10 @@ public:
   ExprResult BuildDeclReflection(SourceLocation Loc, Decl *D);
   ExprResult BuildTypeReflection(SourceLocation Loc, QualType T);
   TypeResult ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc, Expr *E);
-  ExprResult ActOnDeclnameExpression(SmallVectorImpl<Expr *>& Parts, 
-                                     SourceLocation KWLoc,
-                                     SourceLocation LParenLoc,
-                                     SourceLocation RParenLoc);
-  ExprResult ActOnDeclnameExpression(Expr *E, SourceLocation KWLoc,
-                                     SourceLocation LParenLoc,
-                                     SourceLocation RParenLoc);
+
+  bool BuildDeclnameId(SmallVectorImpl<Expr *>& Parts, UnqualifiedId& Result,
+                       SourceLocation KWLoc, SourceLocation LParenLoc,
+                       SourceLocation RParenLoc);
 
   NamespaceDecl *RequireCppxNamespace(SourceLocation Loc);
   NamespaceDecl *RequireCppxMetaNamespace(SourceLocation Loc);

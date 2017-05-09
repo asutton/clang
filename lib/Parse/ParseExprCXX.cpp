@@ -2421,7 +2421,8 @@ bool Parser::ParseUnqualifiedIdOperator(CXXScopeSpec &SS, bool EnteringContext,
 /// [C++0x] literal-operator-id [TODO]
 ///         ~ class-name
 ///         template-id
-///
+/// [Meta]  declname-id
+/// 
 /// \endcode
 ///
 /// \param SS The nested-name-specifier that preceded this unqualified-id. If
@@ -2568,11 +2569,13 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
     return false;
   }
 
-  if (Tok.is(tok::kw_declname)) {
-    // FIXME: This is the right place to parse a declname(). 
-    assert(false && "declname declaration");
-  }
-
+  // declname-id:
+  //    'declname' '(' id-concatenation-seq ')'
+  //
+  // FIXME: What should we do if there's a scope specifier. Also, what does
+  // it mean to to have 'template declname(...)'?
+  if (Tok.is(tok::kw_declname))
+    return ParseDeclnameId(Result);
   
   if (getLangOpts().CPlusPlus && 
       (AllowDestructorName || SS.isSet()) && Tok.is(tok::tilde)) {
