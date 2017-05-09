@@ -18,11 +18,10 @@
 
 using namespace clang;
 
+/// FIXME: This function is called from several parses. We need to provide more
+/// information in order to appropriately diagnose errors.
 ExprResult Parser::ParseReflectOperand(SourceLocation OpLoc)
 {
-  // TODO: Actually look at the token following the '$'. We should be able
-  // to easily predict the parse.
-
   CXXScopeSpec SS;
   ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false);
 
@@ -74,9 +73,12 @@ ExprResult Parser::ParseReflectExpression() {
 /// \brief Parse a reflexpr expression.
 ///
 ///   primary-expression:
-///      'reflexpr' '(' id-expression ')'
-///      'reflexpr' '(' type-id ')'
-///      'reflexpr' '(' nested-name-specifier[opt] namespace-name ')'
+///      'reflexpr' '(' reflection-id ')'
+///
+///   reflection-id:
+///      id-expression
+///      type-id
+///      nested-name-specifier[opt] namespace-name
 ExprResult Parser::ParseReflexprExpression() {
   assert(Tok.is(tok::kw_reflexpr));
   SourceLocation KeyLoc = ConsumeToken();
@@ -122,6 +124,36 @@ bool Parser::ParseDeclnameId(UnqualifiedId& Result) {
 
   return Actions.BuildDeclnameId(Parts, Result, KeyLoc, 
                                  T.getOpenLocation(), T.getCloseLocation());
+}
+
+/// Parse a has-name expression:
+///
+///   hasname-expression:
+///     'hasname' '(' reflection-expression ',' unqualified-id ')'
+///
+/// \todo Support qualified-ids in that space?
+ExprResult Parser::ParseHasNameExpression() {
+  assert(Tok.is(tok::kw_hasname) && "Expected hasname token");
+  SourceLocation KeyLoc = ConsumeToken();
+
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "declname"))
+    return ExprError();
+  
+  ExprResult E = ParseConstantExpression();
+  if (E.isInvalid())
+    return ExprError();
+  ExpectAndConsume(tok::comma);
+  CXXScopeSpec SS;
+  ParsedType PT;
+  SourceLocation TempLoc;
+  UnqualifiedId I;
+  if (ParseUnqualifiedId(SS, false, true, true, false, PT, TempLoc, I))
+    return ExprError();
+  if (T.consumeClose())
+    return ExprError();
+
+  return Actions.ActOnHasNameExpr(KeyLoc, E.get(), I, T.getCloseLocation());
 }
 
 

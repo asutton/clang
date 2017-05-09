@@ -2550,6 +2550,8 @@ private:
 
   bool ParseDeclnameId(UnqualifiedId& Result);
 
+  ExprResult ParseHasNameExpression();
+
   ExprResult ParseReflectOperand(SourceLocation OpLoc);
   ExprResult ParseReflectExpression();
   ExprResult ParseReflexprExpression();

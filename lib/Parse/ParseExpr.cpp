@@ -1296,6 +1296,9 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     Res = ParseCXXIdExpression(isAddressOfOperand);
     break;
 
+  case tok::kw_hasname: // [Meta] hasname-expression
+    return ParseHasNameExpression();
+
   case tok::coloncolon: {
     // ::foo::bar -> global qualified name etc.   If TryAnnotateTypeOrScopeToken
     // annotates the token, tail recurse.

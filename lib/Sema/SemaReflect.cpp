@@ -35,7 +35,10 @@ using ReflectionValue =
                          llvm::PointerSumTypeMember<RK_Type, Type *>,
                          llvm::PointerSumTypeMember<RK_Expr, Expr *>>;
 
-static std::pair<ReflectionKind, void *> ExplodeOpaqueValue(std::uintptr_t N) {
+using ReflectionPair = std::pair<ReflectionKind, void *>;
+
+/// Returns a pair containing the reflection kind and AST node pointer.
+static ReflectionPair ExplodeOpaqueValue(std::uintptr_t N) {
   // Look away. I'm totally breaking abstraction.
   using Helper = llvm::detail::PointerSumTypeHelper<
       ReflectionKind, llvm::PointerSumTypeMember<RK_Decl, Decl *>,
@@ -44,6 +47,98 @@ static std::pair<ReflectionKind, void *> ExplodeOpaqueValue(std::uintptr_t N) {
   ReflectionKind K = (ReflectionKind)(N & Helper::TagMask);
   void *P = (void *)(N & Helper::PointerMask);
   return {K, P};
+}
+
+/// A wrapper around an exploded reflection pair. This simplifies certain
+/// reflection tasks.
+struct ReflectedConstruct {
+  bool Valid;
+  ReflectionPair P;
+
+  ReflectedConstruct() 
+    : Valid(false), P() { }
+  
+  ReflectedConstruct(std::uintptr_t V) 
+    : Valid(true), P(ExplodeOpaqueValue(V)) { }
+
+  /// Returns true if the reflection is valid.
+  bool isValid() const { return Valid; }
+
+  /// Returns true if the reflection is invalid.
+  bool isInvalid() const { return !Valid; }
+
+  /// Converts to true when the reflection is valid.
+  explicit operator bool() const { return Valid; }
+
+  /// Returns true if this is a declaration.
+  bool isDeclaration() const { return P.first == RK_Decl; }
+  
+  /// Returns true if this is a type reflection.
+  bool isType() const { return P.first == RK_Type; }
+
+  /// Returns the reflected declaration or nullptr if not a declaration.
+  Decl *getAsDeclaration() {
+    return isDeclaration() ? (Decl *)P.second : nullptr;
+  }
+
+  /// Returns the reflected type or nullptr if not a type.
+  Type *getAsType() {
+    return isType() ? (Type *)P.second : nullptr;
+  }
+};
+
+/// Diagnose a type reflection error and return a type error.
+static ExprResult ValueReflectionError(Sema& SemaRef, Expr *E) {
+  SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_value)
+    << E->getSourceRange();
+  return ExprResult(true);
+}
+
+static ReflectedConstruct EvaluateReflection(Sema& S, Expr *E, QualType T) {
+  CXXRecordDecl *Class = T->getAsCXXRecordDecl();
+  assert(Class && "Not a class type");
+
+  // If the type is a reflection...
+  if (!isa<ClassTemplateSpecializationDecl>(Class)) {
+    ValueReflectionError(S, E);
+    return ReflectedConstruct();
+  }
+  ClassTemplateSpecializationDecl *Spec = 
+    cast<ClassTemplateSpecializationDecl>(Class);
+
+  // Make sure that this is actually a metaclass.
+  DeclContext* Owner = Spec->getDeclContext();
+  if (Owner->isInlineNamespace())
+    Owner = Owner->getParent();
+  if (!Owner->Equals(S.RequireCppxMetaNamespace(E->getLocStart()))) {
+    S.Diag(E->getLocStart(), diag::err_not_a_reflection) << T;
+    return ReflectedConstruct();
+  }
+
+  const TemplateArgumentList& Args = Spec->getTemplateArgs();
+  if (Args.size() == 0) {
+    ValueReflectionError(S, E);
+    return ReflectedConstruct();
+  }
+  const TemplateArgument &Arg = Args.get(0);
+  if (Arg.getKind() != TemplateArgument::Integral) {
+    ValueReflectionError(S, E);
+    return ReflectedConstruct();
+  }
+  
+  // Decode the specialization argument.
+  llvm::APSInt Data = Arg.getAsIntegral();
+  return ReflectedConstruct(Data.getExtValue());
+}
+
+static ReflectedConstruct EvaluateReflection(Sema& S, Expr *E) {
+  QualType T = S.Context.getCanonicalType(E->getType());
+  CXXRecordDecl *Class = T->getAsCXXRecordDecl();
+  if (!Class) {
+    ValueReflectionError(S, E);
+    return ReflectedConstruct();
+  }
+  return EvaluateReflection(S, E, T);
 }
 
 /// The expression \c $x returns an object describing the reflected entity \c x.
@@ -176,13 +271,6 @@ ExprResult Sema::ActOnCXXReflexprExpr(Expr *E,
   return E;
 }
 
-/// Diagnose a type reflection error and return a type error.
-static ExprResult ValueReflectionError(Sema& SemaRef, Expr *E) {
-  SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_value)
-    << E->getSourceRange();
-  return ExprResult(true);
-}
-
 static bool AppendStringValue(Sema& S, llvm::raw_ostream& OS, 
                               const APValue& Val) {
   // Extracting the string valkue from the LValue.
@@ -199,6 +287,7 @@ static bool AppendStringValue(Sema& S, llvm::raw_ostream& OS,
     // const ValueDecl *D = Base.get<const ValueDecl *>();
     // return Error(E->getMessage());
   }
+  return false;
 }
 
 
@@ -260,45 +349,9 @@ static bool AppendInteger(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
 
 static bool
 AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
-  CXXRecordDecl *Class = T->getAsCXXRecordDecl();
-  assert(Class && "Not a class type");
-
-  // If the type is a reflection...
-  if (!isa<ClassTemplateSpecializationDecl>(Class)) {
-    ValueReflectionError(S, E);
-    return true;
-  }
-  ClassTemplateSpecializationDecl *Spec = 
-    cast<ClassTemplateSpecializationDecl>(Class);
-
-  // Make sure that this is actually a metaclass.
-  DeclContext* Owner = Spec->getDeclContext();
-  if (Owner->isInlineNamespace())
-    Owner = Owner->getParent();
-  if (!Owner->Equals(S.RequireCppxMetaNamespace(E->getLocStart()))) {
-    S.Diag(E->getLocStart(), diag::err_not_a_reflection) << T;
-    return true;
-  }
-
-  const TemplateArgumentList& Args = Spec->getTemplateArgs();
-  if (Args.size() == 0) {
-    ValueReflectionError(S, E);
-    return true;
-  }
-  const TemplateArgument &Arg = Args.get(0);
-  if (Arg.getKind() != TemplateArgument::Integral) {
-    ValueReflectionError(S, E);
-    return true;
-  }
-  
-  // Decode the specialization argument.
-  llvm::APSInt Data = Arg.getAsIntegral();
-  std::pair<ReflectionKind, void *> Info =
-      ExplodeOpaqueValue(Data.getExtValue());
-
-  if (Info.first == RK_Decl) {
+  ReflectedConstruct RC = EvaluateReflection(S, E, T);
+  if (Decl *D = RC.getAsDeclaration()) {
     // If this is a named declaration, append its identifier.
-    Decl *D = (Decl *)Info.second;
     if (!isa<NamedDecl>(D)) {
       // FIXME: Improve diagnostics.
       S.Diag(E->getLocStart(), diag::err_reflection_not_named);
@@ -315,15 +368,18 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
     }
     
     OS << ND->getName();
-  } else if(Info.first == RK_Type) {
+  } else if (Type *T = RC.getAsType()) {
     // If this is a class type, append its identifier.
-    Type *RT = (Type *)Info.second;
-    if (auto *RC = RT->getAsCXXRecordDecl())
+    if (auto *RC = T->getAsCXXRecordDecl())
       OS << RC->getName();
     else {
-      S.Diag(E->getLocStart(), diag::err_declname_not_an_identifer) << T;
+      S.Diag(E->getLocStart(), diag::err_declname_not_an_identifer) 
+        << QualType(T, 0);
       return true;
     }
+  } else {
+    // This isn't supported yet.
+    llvm_unreachable("Expression reflection");
   }
   return false;
 }
@@ -388,6 +444,48 @@ bool Sema::BuildDeclnameId(SmallVectorImpl<Expr *>& Parts,
   Result.setIdentifier(II, KWLoc);
   return false;
 }
+
+ExprResult Sema::ActOnHasNameExpr(SourceLocation KWLoc, Expr *E, 
+                                  UnqualifiedId & I, SourceLocation RParenLoc) {
+  ReflectedConstruct RC = EvaluateReflection(*this, E);
+  if (!RC)
+    return ExprError();
+  
+  DeclarationName N1;
+  if (Decl *D = RC.getAsDeclaration()) {
+    // Get the declration name.
+    if (!isa<NamedDecl>(D)) {
+      Diag(E->getLocStart(), diag::err_reflection_not_named);
+      return ExprError();
+    }
+    NamedDecl *ND = cast<NamedDecl>(D);
+    N1 = ND->getDeclName();
+  } else if (Type *T = RC.getAsType()) {
+    // Only get the declaration name for classes.
+    //
+    // FIXME: Why only classes?
+    if (!T->isRecordType()) {
+      Diag(E->getLocStart(), diag::err_declname_not_an_identifer) 
+        << QualType(T, 0);
+      return ExprError();
+    }
+    CXXRecordDecl *C = T->getAsCXXRecordDecl();
+    N1 = C->getDeclName();
+  }
+
+  DeclarationName N2 = GetNameFromUnqualifiedId(I).getName();
+
+  if (N1 == N2)
+    llvm::outs() << "TRUE\n";
+  else
+    llvm::outs() << "FALSE\n";
+
+  // Build a declaration name form I.
+
+
+  return ExprError();
+}
+
 
 /// Returns the name of the class we're going to instantiate.
 ///
