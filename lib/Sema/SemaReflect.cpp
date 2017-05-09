@@ -211,16 +211,17 @@ ExprResult Sema::ActOnDeclnameExpression(SmallVectorImpl<Expr *>& Parts,
       if (!T.getTypePtr())
         llvm_unreachable("Undeduced value reflection");
     }
+    T = Context.getCanonicalType(T);
 
     SourceLocation ExprLoc = E->getLocStart();
 
     // Evaluate the sub-expression (depending on type) in order to compute
     // a string part that will constitute a declaration name.
     if (T->isConstantArrayType()) {
-      // Insert the string literal into the buffer.
+      // Check to see if the type is const char[N] or char[N].
       auto* ArrayTy = T->getAsArrayTypeUnsafe();
       QualType ElemTy = ArrayTy->getElementType();
-      if (!ElemTy->isCharType() || !ElemTy.isConstQualified())
+      if (!ElemTy->isCharType())
         return ExprError(
           Diag(ExprLoc, diag::err_declname_invalid_operand_type) << T);
 
@@ -229,8 +230,7 @@ ExprResult Sema::ActOnDeclnameExpression(SmallVectorImpl<Expr *>& Parts,
       Expr::EvalResult Result;
       if (!E->EvaluateAsLValue(Result, Context))
         // FIXME: This is not the right error.
-        return ExprError(
-          Diag(E->getLocStart(), diag::err_expr_not_ice) << 1);
+        return ExprError(Diag(ExprLoc, diag::err_expr_not_ice) << 1);
       
       // Extracting the string valkue from the LValue.
       //
@@ -248,20 +248,67 @@ ExprResult Sema::ActOnDeclnameExpression(SmallVectorImpl<Expr *>& Parts,
       }
     } else if (T->isIntegerType()) {
       // Insert the integer value of the literal into the buffer.
-      if (I == 0) {
-        return ExprError(
-          Diag(E->getLocStart(), diag::err_declname_with_integer_prefix));
-      }
+      if (I == 0)
+        return ExprError(Diag(ExprLoc, diag::err_declname_with_integer_prefix));
       llvm::APSInt N;
-      if (!E->EvaluateAsInt(N, Context)) {
-        return ExprError(
-          Diag(E->getLocStart(), diag::err_expr_not_ice) << 1);
-      }
+      if (!E->EvaluateAsInt(N, Context))
+        return ExprError(Diag(ExprLoc, diag::err_expr_not_ice) << 1);
       OS << N;
+    } else if (auto* Class = T->getAsCXXRecordDecl()) {
+      if (!isa<ClassTemplateSpecializationDecl>(Class))
+        return ValueReflectionError(*this, E);
+      ClassTemplateSpecializationDecl *Spec = 
+        cast<ClassTemplateSpecializationDecl>(Class);
+
+      // Make sure that this is actually a metaclass.
+      DeclContext* Owner = Spec->getDeclContext();
+      if (Owner->isInlineNamespace())
+        Owner = Owner->getParent();
+      if (!Owner->Equals(RequireCppxMetaNamespace(ExprLoc)))
+        return ExprError(Diag(ExprLoc, diag::err_not_a_reflection) << T);
+
+      const TemplateArgumentList& Args = Spec->getTemplateArgs();
+      if (Args.size() == 0)
+        return ValueReflectionError(*this, E);
+      const TemplateArgument &Arg = Args.get(0);
+      if (Arg.getKind() != TemplateArgument::Integral)
+        return ValueReflectionError(*this, E);
+      
+      // Decode the specialization argument.
+      llvm::APSInt Data = Arg.getAsIntegral();
+      std::pair<ReflectionKind, void *> Info =
+          ExplodeOpaqueValue(Data.getExtValue());
+
+      if (Info.first == RK_Decl) {
+        // If this is a named declaration, append its identifier.
+        Decl *D = (Decl *)Info.second;
+        if (!isa<NamedDecl>(D))
+          // FIXME: Improve diagnostics.
+          return ExprError(Diag(ExprLoc, diag::err_reflection_not_named));
+        NamedDecl *ND = cast<NamedDecl>(D);
+
+        // FIXME: What if D has a special name? For example operator==?
+        // What would we append in that case?
+        DeclarationName Name = ND->getDeclName();
+        if (!Name.isIdentifier())
+          return ExprError(
+            Diag(ExprLoc, diag::err_declname_not_an_identifer) << Name);
+        
+        OS << ND->getName();
+      } else if(Info.first == RK_Type) {
+        // If this is a class type, append its identifier.
+        Type *RT = (Type *)Info.second;
+        if (auto *RC = RT->getAsCXXRecordDecl())
+          OS << RC->getName();
+        else
+          return ExprError(
+            Diag(ExprLoc, diag::err_declname_not_an_identifer) << T);
+      }
+    } else {
+      return ExprError(
+        Diag(ExprLoc, diag::err_declname_invalid_operand_type) << T);
     }
   }
-
-  llvm::outs() << "GOT ID: " << Buf << '\n';
 
   return ExprError();
 

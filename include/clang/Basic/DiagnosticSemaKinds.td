@@ -8871,6 +8871,8 @@ def err_parameter_out_of_bounds : Error<
   "reflected parameter is out of bounds">;
 def err_invalid_reflection : Error<
   "reflection requires a %select{declaration|type|expression}0">;
+def err_not_a_reflection : Error<
+  "the type %0 does not reflect an entity">;
 def err_modifies_mem_spec_of_non_member : Error<
   "modifying the %select{access|virtual}0-specifier of a "
   "non-member declaration">;
@@ -8894,6 +8896,8 @@ def err_declname_with_integer_prefix : Error<
   "declaration name begins with an integer">;
 def err_declname_invalid_operand_type : Error<
   "cannot include expression of type %0 in a declaration name">;
+def err_declname_not_an_identifer : Error<
+  "declaration name %0 not is not an identifier">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {
