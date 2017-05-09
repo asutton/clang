@@ -169,8 +169,7 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, CXXScopeSpec &SS,
 /// a reflexpr expression.
 ExprResult Sema::ActOnCXXReflexprExpr(Expr *E, 
                                       SourceLocation LParenLoc, 
-                                      SourceLocation RParenLoc)
-{
+                                      SourceLocation RParenLoc) {
   assert(isa<ReflectionExpr>(E));
   ReflectionExpr *RE = cast<ReflectionExpr>(E);
   RE->setParenLocs(LParenLoc, RParenLoc);
@@ -178,11 +177,155 @@ ExprResult Sema::ActOnCXXReflexprExpr(Expr *E,
 }
 
 /// Diagnose a type reflection error and return a type error.
-static ExprResult ValueReflectionError(Sema& SemaRef, Expr *E)
-{
+static ExprResult ValueReflectionError(Sema& SemaRef, Expr *E) {
   SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_value)
     << E->getSourceRange();
   return ExprResult(true);
+}
+
+static bool AppendStringValue(Sema& S, llvm::raw_ostream& OS, 
+                              const APValue& Val) {
+  // Extracting the string valkue from the LValue.
+  //
+  // FIXME: We probably want something like EvaluateAsString in the Expr class.
+  APValue::LValueBase Base = Val.getLValueBase();
+  if (Base.is<const Expr *>()) {
+    const Expr *BaseExpr = Base.get<const Expr *>();
+    assert(isa<StringLiteral>(BaseExpr) && "Not a stirng literal");
+    const StringLiteral *Str = cast<StringLiteral>(BaseExpr);
+    OS << Str->getString();
+  } else {
+    llvm_unreachable("Use of string variable not implemented");
+    // const ValueDecl *D = Base.get<const ValueDecl *>();
+    // return Error(E->getMessage());
+  }
+}
+
+
+static bool AppendCharacterArray(Sema& S, llvm::raw_ostream &OS, Expr *E, 
+                                 QualType T) {
+  assert(T->isArrayType() && "Not an array type");
+  const ArrayType *ArrayTy = cast<ArrayType>(T.getTypePtr());
+
+  // Check that the type is 'const char[N]' or 'char[N]'.
+  QualType ElemTy = ArrayTy->getElementType();
+  if (!ElemTy->isCharType()) {
+    S.Diag(E->getLocStart(), diag::err_declname_invalid_operand_type) << T;
+    return true;
+  }
+
+  // Evaluate the expression.
+  Expr::EvalResult Result;
+  if (!E->EvaluateAsLValue(Result, S.Context)) {
+    // FIXME: Include notes in the diagnostics.
+    S.Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
+    return true;
+  }
+
+  return AppendStringValue(S, OS, Result.Val);
+}
+
+static bool AppendCharacterPointer(Sema& S, llvm::raw_ostream &OS, Expr *E, 
+                                   QualType T) {
+  assert(T->isPointerType() && "Not a pointer type");
+  const PointerType* PtrTy = cast<PointerType>(T.getTypePtr());
+
+  // Check for 'const char*'.
+  QualType ElemTy = PtrTy->getPointeeType();
+  if (!ElemTy->isCharType() || !ElemTy.isConstQualified()) {
+    S.Diag(E->getLocStart(), diag::err_declname_invalid_operand_type) << T;
+    return true;
+  }
+
+  // Try evaluating the expression as an rvalue and then extract the result.
+  Expr::EvalResult Result;
+  if (!E->EvaluateAsRValue(Result, S.Context)) {
+    // FIXME: This is not the right error.
+    S.Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
+    return true;
+  }
+
+  return AppendStringValue(S, OS, Result.Val);
+}
+
+static bool AppendInteger(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
+  llvm::APSInt N;
+  if (!E->EvaluateAsInt(N, S.Context)) {
+    S.Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
+    return true;
+  }
+  OS << N;
+  return false;
+}
+
+static bool
+AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
+  CXXRecordDecl *Class = T->getAsCXXRecordDecl();
+  assert(Class && "Not a class type");
+
+  // If the type is a reflection...
+  if (!isa<ClassTemplateSpecializationDecl>(Class)) {
+    ValueReflectionError(S, E);
+    return true;
+  }
+  ClassTemplateSpecializationDecl *Spec = 
+    cast<ClassTemplateSpecializationDecl>(Class);
+
+  // Make sure that this is actually a metaclass.
+  DeclContext* Owner = Spec->getDeclContext();
+  if (Owner->isInlineNamespace())
+    Owner = Owner->getParent();
+  if (!Owner->Equals(S.RequireCppxMetaNamespace(E->getLocStart()))) {
+    S.Diag(E->getLocStart(), diag::err_not_a_reflection) << T;
+    return true;
+  }
+
+  const TemplateArgumentList& Args = Spec->getTemplateArgs();
+  if (Args.size() == 0) {
+    ValueReflectionError(S, E);
+    return true;
+  }
+  const TemplateArgument &Arg = Args.get(0);
+  if (Arg.getKind() != TemplateArgument::Integral) {
+    ValueReflectionError(S, E);
+    return true;
+  }
+  
+  // Decode the specialization argument.
+  llvm::APSInt Data = Arg.getAsIntegral();
+  std::pair<ReflectionKind, void *> Info =
+      ExplodeOpaqueValue(Data.getExtValue());
+
+  if (Info.first == RK_Decl) {
+    // If this is a named declaration, append its identifier.
+    Decl *D = (Decl *)Info.second;
+    if (!isa<NamedDecl>(D)) {
+      // FIXME: Improve diagnostics.
+      S.Diag(E->getLocStart(), diag::err_reflection_not_named);
+      return true;
+    }
+    NamedDecl *ND = cast<NamedDecl>(D);
+
+    // FIXME: What if D has a special name? For example operator==?
+    // What would we append in that case?
+    DeclarationName Name = ND->getDeclName();
+    if (!Name.isIdentifier()) {
+      S.Diag(E->getLocStart(), diag::err_declname_not_an_identifer) << Name;
+      return true;
+    }
+    
+    OS << ND->getName();
+  } else if(Info.first == RK_Type) {
+    // If this is a class type, append its identifier.
+    Type *RT = (Type *)Info.second;
+    if (auto *RC = RT->getAsCXXRecordDecl())
+      OS << RC->getName();
+    else {
+      S.Diag(E->getLocStart(), diag::err_declname_not_an_identifer) << T;
+      return true;
+    }
+  }
+  return false;
 }
 
 /// Constructs a new identifier from the expressions in Parts.
@@ -219,113 +362,23 @@ bool Sema::BuildDeclnameId(SmallVectorImpl<Expr *>& Parts,
     // Evaluate the sub-expression (depending on type) in order to compute
     // a string part that will constitute a declaration name.
     if (T->isConstantArrayType()) {
-      // Check to see if the type is const char[N] or char[N].
-      auto* ArrayTy = T->getAsArrayTypeUnsafe();
-      QualType ElemTy = ArrayTy->getElementType();
-      if (!ElemTy->isCharType()) {
-        Diag(ExprLoc, diag::err_declname_invalid_operand_type) << T;
-        return true;
-      }
-
-      // This looks like an expression returning a string literal. Attempt
-      // to evaluate it.
-      Expr::EvalResult Result;
-      if (!E->EvaluateAsLValue(Result, Context)) {
-        // FIXME: This is not the right error.
-        Diag(ExprLoc, diag::err_expr_not_ice) << 1;
-        return true;
-      }
-      
-      // Extracting the string valkue from the LValue.
-      //
-      // FIXME: We want an EvaluateAsString in the Expr clas.
-      APValue::LValueBase Base = Result.Val.getLValueBase();
-      if (Base.is<const Expr *>()) {
-        const Expr *BaseExpr = Base.get<const Expr *>();
-        assert(isa<StringLiteral>(BaseExpr) && "Not a stirng literal");
-        const StringLiteral *Str = cast<StringLiteral>(BaseExpr);
-        OS << Str->getString();
-      } else {
-        llvm_unreachable("Use of string variable not implemented");
-        // const ValueDecl *D = Base.get<const ValueDecl *>();
-        // return Error(E->getMessage());
-      }
-    } else if (T->isIntegerType()) {
-      // Insert the integer value of the literal into the buffer.
+      AppendCharacterArray(*this, OS, E, T);
+    }
+    else if (T->isPointerType()) {
+      AppendCharacterPointer(*this, OS, E, T);
+    }
+    else if (T->isIntegerType()) {
       if (I == 0) {
+        // An identifier cannot start with an integer value.
         Diag(ExprLoc, diag::err_declname_with_integer_prefix);
         return true;
       }
-      llvm::APSInt N;
-      if (!E->EvaluateAsInt(N, Context)) {
-        Diag(ExprLoc, diag::err_expr_not_ice) << 1;
-        return true;
-      }
-      OS << N;
-    } else if (auto* Class = T->getAsCXXRecordDecl()) {
-      // If the type is a reflection...
-      if (!isa<ClassTemplateSpecializationDecl>(Class)) {
-        ValueReflectionError(*this, E);
-        return true;
-      }
-      ClassTemplateSpecializationDecl *Spec = 
-        cast<ClassTemplateSpecializationDecl>(Class);
-
-      // Make sure that this is actually a metaclass.
-      DeclContext* Owner = Spec->getDeclContext();
-      if (Owner->isInlineNamespace())
-        Owner = Owner->getParent();
-      if (!Owner->Equals(RequireCppxMetaNamespace(ExprLoc))) {
-        Diag(ExprLoc, diag::err_not_a_reflection) << T;
-        return true;
-      }
-
-      const TemplateArgumentList& Args = Spec->getTemplateArgs();
-      if (Args.size() == 0) {
-        ValueReflectionError(*this, E);
-        return true;
-      }
-      const TemplateArgument &Arg = Args.get(0);
-      if (Arg.getKind() != TemplateArgument::Integral) {
-        ValueReflectionError(*this, E);
-        return true;
-      }
-      
-      // Decode the specialization argument.
-      llvm::APSInt Data = Arg.getAsIntegral();
-      std::pair<ReflectionKind, void *> Info =
-          ExplodeOpaqueValue(Data.getExtValue());
-
-      if (Info.first == RK_Decl) {
-        // If this is a named declaration, append its identifier.
-        Decl *D = (Decl *)Info.second;
-        if (!isa<NamedDecl>(D)) {
-          // FIXME: Improve diagnostics.
-          Diag(ExprLoc, diag::err_reflection_not_named);
-          return true;
-        }
-        NamedDecl *ND = cast<NamedDecl>(D);
-
-        // FIXME: What if D has a special name? For example operator==?
-        // What would we append in that case?
-        DeclarationName Name = ND->getDeclName();
-        if (!Name.isIdentifier()) {
-          Diag(ExprLoc, diag::err_declname_not_an_identifer) << Name;
-          return true;
-        }
-        
-        OS << ND->getName();
-      } else if(Info.first == RK_Type) {
-        // If this is a class type, append its identifier.
-        Type *RT = (Type *)Info.second;
-        if (auto *RC = RT->getAsCXXRecordDecl())
-          OS << RC->getName();
-        else {
-          Diag(ExprLoc, diag::err_declname_not_an_identifer) << T;
-          return true;
-        }
-      }
-    } else {
+      AppendInteger(*this, OS, E, T);
+    }
+    else if (T->isRecordType()) {
+      AppendReflection(*this, OS, E, T);
+    }
+    else {
       Diag(ExprLoc, diag::err_declname_invalid_operand_type) << T;
       return true;
     }
@@ -333,9 +386,6 @@ bool Sema::BuildDeclnameId(SmallVectorImpl<Expr *>& Parts,
 
   IdentifierInfo *II = &PP.getIdentifierTable().get(Buf);
   Result.setIdentifier(II, KWLoc);
-
-  llvm::outs() << "HERE: " << II->getName() << '\n';
-
   return false;
 }
 
