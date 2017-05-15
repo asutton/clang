@@ -888,6 +888,17 @@ void DeclPrinter::VisitCXXRecordDecl(CXXRecordDecl *D) {
     Out << "__module_private__ ";
   Out << D->getKindName();
 
+  // Print the default-specifier.
+  if (D->isCompleteDefinition()) {
+    if (const CXXDefaultSpecifier *DefaultSpec = D->getDefaultSpec()) {
+      Out << " (";
+      Out << DefaultSpec->getType().getAsString(Policy);
+      if (DefaultSpec->isPackExpansion())
+        Out << "...";
+      Out << ")";
+    }
+  }
+
   prettyPrintAttributes(D);
 
   if (D->getIdentifier()) {
@@ -900,6 +911,9 @@ void DeclPrinter::VisitCXXRecordDecl(CXXRecordDecl *D) {
   }
 
   if (D->isCompleteDefinition()) {
+    if (D->isDefault())
+      Out << " default";
+
     // Print the base classes
     if (D->getNumBases()) {
       Out << " : ";

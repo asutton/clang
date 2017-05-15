@@ -1297,11 +1297,17 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
 ///                          identifier base-clause[opt]
 /// [GNU]   class-key attributes[opt] nested-name-specifier[opt]
 ///                          simple-template-id base-clause[opt]
+/// [Meta]  class-key '(' default-specifier ')' attributes[opt] base-clause[opt]
+/// [Meta]  class-key '(' default-specifier ')' attributes[opt]
+///                          nested-name-specifier[opt] class-name
+///                          base-clause[opt]
 ///       class-key:
 ///         'class'
 ///         'struct'
 ///         'union'
 /// [Meta]  nested-name-specifier[opt] metaclass-name
+/// [Meta] default-specifier:
+///          nested-name-specifier[opt] class-name
 ///
 ///       elaborated-type-specifier: [C++ dcl.type.elab]
 ///         class-key ::[opt] nested-name-specifier[opt] identifier
@@ -1360,6 +1366,35 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     (TemplateInfo.Kind == ParsedTemplateInfo::ExplicitInstantiation ||
      TemplateInfo.Kind == ParsedTemplateInfo::ExplicitSpecialization);
   SuppressAccessChecks diagsFromTag(*this, shouldDelayDiagsInTag);
+
+  // Parse the (optional) default-specifier.
+  // TODO: Add support for a list of default-specifiers?
+  SourceRange ParenRange;
+  TypeResult DefaultSpecType;
+  SourceRange DefaultSpecRange;
+  SourceLocation DefaultSpecEllipsisLoc;
+  if (getLangOpts().CPlusPlus && getLangOpts().Reflection &&
+      Tok.is(tok::l_paren)) {
+    SourceLocation DefaultSpecBeginLoc, DefaultSpecEndLoc;
+    BalancedDelimiterTracker T(*this, tok::l_paren);
+
+    T.consumeOpen();
+
+    // FIXME: Replace call to ParseBaseTypeSpecifier().
+    DefaultSpecType = ParseBaseTypeSpecifier(DefaultSpecBeginLoc,
+                                             DefaultSpecEndLoc);
+    DefaultSpecRange = SourceRange(DefaultSpecBeginLoc, DefaultSpecEndLoc);
+
+    if (DefaultSpecType.isInvalid())
+      SkipUntil(tok::r_paren, StopAtSemi | StopBeforeMatch);
+    else
+      // Parse the optional ellipsis (for a pack expansion).
+      TryConsumeToken(tok::ellipsis, DefaultSpecEllipsisLoc);
+
+    T.consumeClose();
+
+    ParenRange = T.getRange();
+  }
 
   ParsedAttributesWithRange attrs(AttrFactory);
   // If attributes exist after tag, parse them.
@@ -1599,8 +1634,12 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     TUK = Sema::TUK_Reference;
   else if (Tok.is(tok::l_brace) ||
            (getLangOpts().CPlusPlus && Tok.is(tok::colon)) ||
-           (isCXX11FinalKeyword() &&
-            (NextToken().is(tok::l_brace) || NextToken().is(tok::colon)))) {
+           (isCXX11FinalOrDefaultKeyword() &&
+            (NextToken().is(tok::l_brace) || NextToken().is(tok::colon))) ||
+           (isCXX11FinalKeyword() && getLangOpts().Reflection &&
+            NextToken().is(tok::kw_default) &&
+            (GetLookAheadToken(2).is(tok::l_brace) ||
+             GetLookAheadToken(2).is(tok::colon)))) {
     if (DS.isFriendSpecified()) {
       // C++ [class.friend]p2:
       //   A class shall not be defined in a friend declaration.
@@ -1615,30 +1654,42 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
       // Okay, this is a class definition.
       TUK = Sema::TUK_Definition;
     }
-  } else if (isCXX11FinalKeyword() && (NextToken().is(tok::l_square) ||
-                                       NextToken().is(tok::kw_alignas))) {
+  } else if (isCXX11FinalOrDefaultKeyword() &&
+             (NextToken().is(tok::l_square) ||
+              NextToken().is(tok::kw_alignas))) {
     // We can't tell if this is a definition or reference
-    // until we skipped the 'final' and C++11 attribute specifiers.
+    // until we skipped the 'final', 'default', and C++11 attribute specifiers.
     TentativeParsingAction PA(*this);
 
-    // Skip the 'final' keyword.
+    auto SkipCXX11Attributes = [&]() mutable {
+      while (true) {
+        if (Tok.is(tok::l_square) && NextToken().is(tok::l_square)) {
+          ConsumeBracket();
+          if (!SkipUntil(tok::r_square, StopAtSemi))
+            break;
+        } else if (Tok.is(tok::kw_alignas) && NextToken().is(tok::l_paren)) {
+          ConsumeToken();
+          ConsumeParen();
+          if (!SkipUntil(tok::r_paren, StopAtSemi))
+            break;
+        } else {
+          break;
+        }
+      }
+    };
+
+    // Skip the 'final' or 'default' keyword.
     ConsumeToken();
 
     // Skip C++11 attribute specifiers.
-    while (true) {
-      if (Tok.is(tok::l_square) && NextToken().is(tok::l_square)) {
-        ConsumeBracket();
-        if (!SkipUntil(tok::r_square, StopAtSemi))
-          break;
-      } else if (Tok.is(tok::kw_alignas) && NextToken().is(tok::l_paren)) {
-        ConsumeToken();
-        ConsumeParen();
-        if (!SkipUntil(tok::r_paren, StopAtSemi))
-          break;
-      } else {
-        break;
-      }
-    }
+    SkipCXX11Attributes();
+
+    // If there's a 'default' keyword following the 'final' keyword, skip it.
+    if (getLangOpts().Reflection && Tok.is(tok::kw_default))
+      ConsumeToken();
+
+    // Skip C++11 attribute specifiers.
+    SkipCXX11Attributes();
 
     if (Tok.isOneOf(tok::l_brace, tok::colon))
       TUK = Sema::TUK_Definition;
@@ -1707,6 +1758,15 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     else
       SkipUntil(tok::comma, StopAtSemi);
     return;
+  }
+
+  if (ParenRange.isValid()) {
+    // Require a definition when parsing a class with a default specifier.
+    if (TUK == Sema::TUK_Friend)
+      Diag(StartLoc, diag::err_friend_class_prototype)
+          << SourceRange(DS.getFriendSpecLoc());
+    else if (TUK != Sema::TUK_Definition)
+      Diag(StartLoc, diag::err_class_prototype_not_defined);
   }
 
   // Create the tag portion of the class or class template.
@@ -1880,13 +1940,20 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   if (TUK == Sema::TUK_Definition) {
     assert(Tok.is(tok::l_brace) ||
            (getLangOpts().CPlusPlus && Tok.is(tok::colon)) ||
-           isCXX11FinalKeyword());
+           isCXX11FinalOrDefaultKeyword());
+
+    if (!SkipBody.ShouldSkip && ParenRange.isValid() &&
+        !DefaultSpecType.isInvalid())
+      Actions.ActOnDefaultSpecifier(TagOrTempResult.get(), DefaultSpecRange,
+                                    DefaultSpecType.get(),
+                                    DefaultSpecEllipsisLoc);
+
     if (SkipBody.ShouldSkip)
       SkipCXXMemberSpecification(StartLoc, AttrFixitLoc, TagType,
                                  TagOrTempResult.get());
     else if (getLangOpts().CPlusPlus)
-      ParseCXXMemberSpecification(StartLoc, AttrFixitLoc, attrs, TagType,
-                                  TagOrTempResult.get());
+      ParseCXXMemberSpecification(StartLoc, AttrFixitLoc, ParenRange.isValid(),
+                                  attrs, TagType, TagOrTempResult.get());
     else
       ParseStructUnionBody(StartLoc, TagType, TagOrTempResult.get());
   }
@@ -2212,6 +2279,14 @@ bool Parser::isCXX11FinalKeyword() const {
   return Specifier == VirtSpecifiers::VS_Final ||
          Specifier == VirtSpecifiers::VS_GNU_Final || 
          Specifier == VirtSpecifiers::VS_Sealed;
+}
+
+/// Determine whether the next token is a C++11 \c final or Microsoft \c sealed
+/// contextual keyword or a \c default keyword.
+bool Parser::isCXX11FinalOrDefaultKeyword() const {
+  return isCXX11FinalKeyword() ||
+         (getLangOpts().CPlusPlus && getLangOpts().Reflection &&
+          Tok.is(tok::kw_default));
 }
 
 /// \brief Parse a C++ member-declarator up to, but not including, the optional
@@ -2928,15 +3003,25 @@ ExprResult Parser::ParseCXXMemberInitializer(Decl *D, bool IsFunction,
 void Parser::SkipCXXMemberSpecification(SourceLocation RecordLoc,
                                         SourceLocation AttrFixitLoc,
                                         unsigned TagType, Decl *TagDecl) {
-  // Skip the optional 'final' keyword.
-  if (getLangOpts().CPlusPlus && Tok.is(tok::identifier)) {
-    assert(isCXX11FinalKeyword() && "not a class definition");
-    ConsumeToken();
-
-    // Diagnose any C++11 attributes after 'final' keyword.
-    // We deliberately discard these attributes.
+  // Skip the optional 'final' and/or 'default' keywords.
+  if (getLangOpts().CPlusPlus) {
     ParsedAttributesWithRange Attrs(AttrFactory);
-    CheckMisplacedCXX11Attribute(Attrs, AttrFixitLoc);
+
+    if (Tok.is(tok::identifier)) {
+      assert(isCXX11FinalKeyword() && "not a class definition");
+      ConsumeToken();
+
+      // Diagnose any C++11 attributes after 'final' keyword.
+      // We deliberately discard these attributes.
+      CheckMisplacedCXX11Attribute(Attrs, AttrFixitLoc);
+    }
+
+    if (getLangOpts().Reflection && Tok.is(tok::kw_default)) {
+      ConsumeToken();
+
+      // Diagnose any C++11 attributes after 'default' keyword.
+      CheckMisplacedCXX11Attribute(Attrs, AttrFixitLoc);
+    }
 
     // This can only happen if we had malformed misplaced attributes;
     // we only get called if there is a colon or left-brace after the
@@ -3078,6 +3163,7 @@ Parser::DeclGroupPtrTy Parser::ParseCXXClassMemberDeclarationWithPragmas(
 ///
 void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
                                          SourceLocation AttrFixitLoc,
+                                         bool HasDefaultSpec,
                                          ParsedAttributesWithRange &Attrs,
                                          unsigned TagType, Decl *TagDecl) {
   assert((TagType == DeclSpec::TST_struct ||
@@ -3133,37 +3219,52 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   if (TagDecl)
     Actions.ActOnTagStartDefinition(getCurScope(), TagDecl);
 
-  SourceLocation FinalLoc;
+  SourceLocation FinalLoc, DefaultLoc;
   bool IsFinalSpelledSealed = false;
 
-  // Parse the optional 'final' keyword.
-  if (getLangOpts().CPlusPlus && Tok.is(tok::identifier)) {
-    VirtSpecifiers::Specifier Specifier = isCXX11VirtSpecifier(Tok);
-    assert((Specifier == VirtSpecifiers::VS_Final ||
-            Specifier == VirtSpecifiers::VS_GNU_Final || 
-            Specifier == VirtSpecifiers::VS_Sealed) &&
-           "not a class definition");
-    FinalLoc = ConsumeToken();
-    IsFinalSpelledSealed = Specifier == VirtSpecifiers::VS_Sealed;
+  // Parse the optional 'final' and/or 'default' keywords.
+  if (getLangOpts().CPlusPlus) {
+    if (Tok.is(tok::identifier)) {
+      VirtSpecifiers::Specifier Specifier = isCXX11VirtSpecifier(Tok);
+      assert((Specifier == VirtSpecifiers::VS_Final ||
+              Specifier == VirtSpecifiers::VS_GNU_Final || 
+              Specifier == VirtSpecifiers::VS_Sealed) &&
+             "not a class definition");
+      FinalLoc = ConsumeToken();
+      IsFinalSpelledSealed = Specifier == VirtSpecifiers::VS_Sealed;
 
-    if (TagType == DeclSpec::TST_interface)
-      Diag(FinalLoc, diag::err_override_control_interface)
-        << VirtSpecifiers::getSpecifierName(Specifier);
-    else if (Specifier == VirtSpecifiers::VS_Final)
-      Diag(FinalLoc, getLangOpts().CPlusPlus11
-                         ? diag::warn_cxx98_compat_override_control_keyword
-                         : diag::ext_override_control_keyword)
-        << VirtSpecifiers::getSpecifierName(Specifier);
-    else if (Specifier == VirtSpecifiers::VS_Sealed)
-      Diag(FinalLoc, diag::ext_ms_sealed_keyword);
-    else if (Specifier == VirtSpecifiers::VS_GNU_Final)
-      Diag(FinalLoc, diag::ext_warn_gnu_final);
+      if (TagType == DeclSpec::TST_interface)
+        Diag(FinalLoc, diag::err_override_control_interface)
+          << VirtSpecifiers::getSpecifierName(Specifier);
+      else if (Specifier == VirtSpecifiers::VS_Final)
+        Diag(FinalLoc, getLangOpts().CPlusPlus11
+                           ? diag::warn_cxx98_compat_override_control_keyword
+                           : diag::ext_override_control_keyword)
+          << VirtSpecifiers::getSpecifierName(Specifier);
+      else if (Specifier == VirtSpecifiers::VS_Sealed)
+        Diag(FinalLoc, diag::ext_ms_sealed_keyword);
+      else if (Specifier == VirtSpecifiers::VS_GNU_Final)
+        Diag(FinalLoc, diag::ext_warn_gnu_final);
 
-    // Parse any C++11 attributes after 'final' keyword.
-    // These attributes are not allowed to appear here,
-    // and the only possible place for them to appertain
-    // to the class would be between class-key and class-name.
-    CheckMisplacedCXX11Attribute(Attrs, AttrFixitLoc);
+      // Parse any C++11 attributes after 'final' keyword.
+      // These attributes are not allowed to appear here,
+      // and the only possible place for them to appertain
+      // to the class would be between class-key and class-name.
+      CheckMisplacedCXX11Attribute(Attrs, AttrFixitLoc);
+    }
+
+    if (getLangOpts().Reflection && Tok.is(tok::kw_default)) {
+      DefaultLoc = ConsumeToken();
+
+      if (TagType == DeclSpec::TST_interface || TagType == DeclSpec::TST_union)
+        Diag(DefaultLoc, diag::err_default_interface_or_union)
+            << (TagType == DeclSpec::TST_union);
+      if (TagType == DeclSpec::TST_metaclass || HasDefaultSpec)
+        Diag(DefaultLoc, diag::err_default_class_prototype);
+
+      // Parse any C++11 attributes after 'default' keyword.
+      CheckMisplacedCXX11Attribute(Attrs, AttrFixitLoc);
+    }
 
     // ParseClassSpecifier() does only a superficial check for attributes before
     // deciding to call this method.  For example, for
@@ -3227,7 +3328,7 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
 
   if (TagDecl)
     Actions.ActOnStartCXXMemberDeclarations(getCurScope(), TagDecl, FinalLoc,
-                                            IsFinalSpelledSealed,
+                                            DefaultLoc, IsFinalSpelledSealed,
                                             T.getOpenLocation());
 
   // C++ 11p3: Members of a class defined with the keyword class are private

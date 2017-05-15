@@ -1801,6 +1801,121 @@ ParsedType Sema::getMetaclassName(const IdentifierInfo &II,
   return ParsedType::make(T);
 }
 
+CXXDefaultSpecifier *Sema::CheckDefaultSpecifier(CXXRecordDecl *Class,
+                                                 SourceRange SpecifierRange,
+                                                 TypeSourceInfo *TInfo,
+                                                 SourceLocation EllipsisLoc) {
+  assert(getLangOpts().Reflection && "C++ reflection is not enabled");
+
+  QualType DefaultType = TInfo->getType();
+
+  if (Class->getMetaclass()) {
+    Diag(Class->getLocStart(), diag::err_metaclass_name_and_default_spec)
+        << SpecifierRange;
+    Class->setInvalidDecl();
+    return nullptr;
+  }
+
+  // FIXME: Should default specifiers be allowed on interfaces or unions?
+  if (Class->isInterface() || Class->isUnion()) {
+    Diag(Class->getLocStart(), diag::err_default_spec_on_interface_or_union)
+        << Class->isUnion() << SpecifierRange;
+    return nullptr;
+  }
+
+  if (EllipsisLoc.isValid() &&
+      !DefaultType->containsUnexpandedParameterPack()) {
+    Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
+        << TInfo->getTypeLoc().getSourceRange();
+    EllipsisLoc = SourceLocation();
+  }
+
+  SourceLocation DefaultLoc = TInfo->getTypeLoc().getBeginLoc();
+
+  if (DefaultType->isDependentType())
+    return new (Context) CXXDefaultSpecifier(SpecifierRange, TInfo,
+                                             EllipsisLoc);
+
+  // Default specifiers must be record types.
+  if (!DefaultType->isRecordType()) {
+    Diag(DefaultLoc, diag::err_default_spec_non_class) << SpecifierRange;
+    return nullptr;
+  }
+
+  // The class-name in a default-specifier should be a complete type.
+  if (RequireCompleteType(DefaultLoc, DefaultType,
+                          diag::err_incomplete_default_spec, SpecifierRange)) {
+    Class->setInvalidDecl();
+    return nullptr;
+  }
+
+  // If the default class is polymorphic or isn't empty, the new one is/isn't,
+  // too.
+  RecordDecl *DefaultDecl = DefaultType->getAs<RecordType>()->getDecl();
+  assert(DefaultDecl && "Record type has no declaration");
+  DefaultDecl = DefaultDecl->getDefinition();
+  assert(DefaultDecl &&
+         "Default type is not incomplete, but has no definition");
+  CXXRecordDecl *CXXDefaultDecl = cast<CXXRecordDecl>(DefaultDecl);
+  assert(CXXDefaultDecl && "Default type is not a C++ type");
+
+  // Default specifiers must be default classes.
+  if (!CXXDefaultDecl->isDefault()) {
+    Diag(DefaultLoc, diag::err_default_spec_non_default_class)
+        << CXXDefaultDecl->getDeclName() << SpecifierRange;
+    Diag(CXXDefaultDecl->getLocation(), diag::note_entity_declared_at)
+        << CXXDefaultDecl->getDeclName();
+    return nullptr;
+  }
+
+  // TODO: Should we worry about flexible array members?
+
+  if (DefaultDecl->isInvalidDecl())
+    Class->setInvalidDecl();
+
+  // Create the default specifier.
+  return new (Context) CXXDefaultSpecifier(SpecifierRange, TInfo, EllipsisLoc);
+}
+
+void Sema::ActOnDefaultSpecifier(Decl *ClassDecl, SourceRange SpecifierRange,
+                                 ParsedType DefaultType,
+                                 SourceLocation EllipsisLoc) {
+  if (!ClassDecl)
+    return;
+
+  AdjustDeclIfTemplate(ClassDecl);
+  CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(ClassDecl);
+  if (!Class)
+    return;
+
+  TypeSourceInfo *TInfo = nullptr;
+  GetTypeFromParser(DefaultType, &TInfo);
+
+  if (EllipsisLoc.isInvalid() &&
+      DiagnoseUnexpandedParameterPack(SpecifierRange.getBegin(), TInfo,
+                                      UPPC_DefaultType))
+    return;
+
+  if (CXXDefaultSpecifier *DefaultSpec =
+          CheckDefaultSpecifier(Class, SpecifierRange, TInfo, EllipsisLoc)) {
+    AttachDefaultSpecifier(Class, DefaultSpec);
+    return;
+  }
+
+  Class->setInvalidDecl();
+}
+
+bool Sema::AttachDefaultSpecifier(CXXRecordDecl *Class,
+                                  CXXDefaultSpecifier *DefaultSpec) {
+  assert(Class && "Expected non-null pointer to CXXRecordDecl");
+
+  if (!DefaultSpec)
+    return false;
+
+  Class->setDefaultSpec(DefaultSpec);
+  return false;
+}
+
 /// Returns \c true if a constexpr-declaration in declaration context \p DC
 /// would be represented using a function.
 static inline bool NeedsFunctionRepresentation(const DeclContext *DC) {

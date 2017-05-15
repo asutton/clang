@@ -292,7 +292,8 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
                                       "parsing metaclass body");
 
   // Parse the body of the metaclass.
-  ParseCXXMemberSpecification(DLoc, AttrFixItLoc, attrs, TagType, MetaclassDef);
+  ParseCXXMemberSpecification(DLoc, AttrFixItLoc, /*HasDefaultSpec=*/false,
+                              attrs, TagType, MetaclassDef);
 
   if (MetaclassDef->isInvalidDecl()) {
     Actions.ActOnMetaclassDefinitionError(getCurScope(), Metaclass);

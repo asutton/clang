@@ -1797,6 +1797,107 @@ bool Sema::SubstParmTypes(
       Loc, Params, nullptr, ExtParamInfos, ParamTypes, OutParams, ParamInfos);
 }
 
+/// \brief Perform substitution on the default specifier of the given class
+/// template specialization.
+///
+/// Produces a diagnostic and returns true on error, returns false and
+/// attaches the instantiated default classes to the class template
+/// specialization if successful.
+bool Sema::SubstDefaultSpecifier(
+    CXXRecordDecl *Instantiation, CXXRecordDecl *Pattern,
+    const MultiLevelTemplateArgumentList &TemplateArgs) {
+  // FIXME: Get rid of these unsightly goto statements.
+  bool Invalid = false;
+  CXXDefaultSpecifier *InstantiatedDefaultSpec;
+  if (const CXXDefaultSpecifier *DefaultSpec = Pattern->getDefaultSpec()) {
+    if (!DefaultSpec->getType()->isDependentType()) {
+      if (const CXXRecordDecl *RD =
+              DefaultSpec->getType()->getAsCXXRecordDecl()) {
+        if (RD->isInvalidDecl())
+          Instantiation->setInvalidDecl();
+      }
+      InstantiatedDefaultSpec = new (Context) CXXDefaultSpecifier(*DefaultSpec);
+      goto Finish;
+    }
+
+    SourceLocation EllipsisLoc;
+    TypeSourceInfo *DefaultTypeLoc;
+    if (DefaultSpec->isPackExpansion()) {
+      // This is a pack expansion. See whether we should expand it now, or
+      // wait until later.
+      SmallVector<UnexpandedParameterPack, 2> Unexpanded;
+      collectUnexpandedParameterPacks(
+          DefaultSpec->getTypeSourceInfo()->getTypeLoc(), Unexpanded);
+      bool ShouldExpand = false;
+      bool RetainExpansion = false;
+      Optional<unsigned> NumExpansions;
+      if (CheckParameterPacksForExpansion(DefaultSpec->getEllipsisLoc(),
+                                          DefaultSpec->getSourceRange(),
+                                          Unexpanded, TemplateArgs,
+                                          ShouldExpand, RetainExpansion,
+                                          NumExpansions)) {
+        Invalid = true;
+        goto Finish;
+      }
+
+      // If we should expand this pack expansion now, do so.
+      if (ShouldExpand) {
+        for (unsigned I = 0; I != *NumExpansions; ++I) {
+          Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(*this, I);
+
+          TypeSourceInfo *DefaultTypeLoc = SubstType(
+              DefaultSpec->getTypeSourceInfo(), TemplateArgs,
+              DefaultSpec->getSourceRange().getBegin(), DeclarationName());
+          if (!DefaultTypeLoc) {
+            Invalid = true;
+            continue;
+          }
+
+          if (CXXDefaultSpecifier *InstantiatedDefaultSpec2 =
+                  CheckDefaultSpecifier(Instantiation,
+                                        DefaultSpec->getSourceRange(),
+                                        DefaultTypeLoc, SourceLocation()))
+            InstantiatedDefaultSpec = InstantiatedDefaultSpec2;
+          else
+            Invalid = true;
+        }
+
+        goto Finish;
+      }
+
+      // The resulting default specifier will (still) be a pack expansion.
+      EllipsisLoc = DefaultSpec->getEllipsisLoc();
+      Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(*this, -1);
+      DefaultTypeLoc = SubstType(DefaultSpec->getTypeSourceInfo(), TemplateArgs,
+                                 DefaultSpec->getSourceRange().getBegin(),
+                                 DeclarationName());
+    } else {
+      DefaultTypeLoc = SubstType(DefaultSpec->getTypeSourceInfo(), TemplateArgs,
+                                 DefaultSpec->getSourceRange().getBegin(),
+                                 DeclarationName());
+    }
+
+    if (!DefaultTypeLoc) {
+      Invalid = true;
+      goto Finish;
+    }
+
+    if (CXXDefaultSpecifier *InstantiatedDefaultSpec2 =
+            CheckDefaultSpecifier(Instantiation, DefaultSpec->getSourceRange(),
+                                  DefaultTypeLoc, EllipsisLoc))
+      InstantiatedDefaultSpec = InstantiatedDefaultSpec2;
+    else
+      Invalid = true;
+  }
+
+Finish:
+  if (!Invalid &&
+      AttachDefaultSpecifier(Instantiation, InstantiatedDefaultSpec))
+    Invalid = true;
+
+  return Invalid;
+}
+
 /// \brief Perform substitution on the base class specifiers of the
 /// given class template specialization.
 ///
@@ -1999,6 +2100,10 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
 
   // FIXME: This loses the as-written tag kind for an explicit instantiation.
   Instantiation->setTagKind(Pattern->getTagKind());
+
+  // Do substitution on the default class specifier.
+  if (SubstDefaultSpecifier(Instantiation, Pattern, TemplateArgs))
+    Instantiation->setInvalidDecl();
 
   // Do substitution on the base class specifiers.
   if (SubstBaseSpecifiers(Instantiation, Pattern, TemplateArgs))

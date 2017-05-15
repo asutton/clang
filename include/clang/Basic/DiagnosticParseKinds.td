@@ -817,6 +817,16 @@ def warn_cxx14_compat_constexpr_on_lambda : Warning<
 def ext_constexpr_on_lambda_cxx1z : ExtWarn<
   "'constexpr' on lambda expressions is a C++1z extension">, InGroup<CXX1z>;
 
+// [Meta] Default classes
+def err_class_prototype_not_defined : Error<
+  "class prototype declaration must be a definition">;
+def err_friend_class_prototype : Error<
+  "cannot declare class prototype in a friend declaration">;
+def err_default_interface_or_union : Error<
+  "%select{interfaces|unions}0 cannot be marked 'default'">;
+def err_default_class_prototype : Error<
+  "class prototype cannot be marked 'default'">;
+
 // Availability attribute
 def err_expected_version : Error<
   "expected a version of the form 'major[.minor[.subminor]]'">;

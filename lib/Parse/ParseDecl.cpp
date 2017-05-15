@@ -3458,13 +3458,13 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
     case tok::kw_class:
     case tok::kw_struct:
     case tok::kw___interface:
-    case tok::kw_union: 
+    case tok::kw_union:
     case tok::annot_metaclass: {
       tok::TokenKind Kind = Tok.getKind();
 
       if (Kind == tok::annot_metaclass)
         DS.setMetaclass((Decl *)Tok.getAnnotationValue());
-      
+
       ConsumeToken();
 
       // These are attributes following class specifiers.

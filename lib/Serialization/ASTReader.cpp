@@ -8257,6 +8257,16 @@ void ASTReader::ReadUnresolvedSet(ModuleFile &F, LazyASTUnresolvedSet &Set,
   }
 }
 
+CXXDefaultSpecifier
+ASTReader::ReadCXXDefaultSpecifier(ModuleFile &F, const RecordData &Record,
+                                   unsigned &Idx) {
+  TypeSourceInfo *TInfo = GetTypeSourceInfo(F, Record, Idx);
+  SourceRange Range = ReadSourceRange(F, Record, Idx);
+  SourceLocation EllipsisLoc = ReadSourceLocation(F, Record, Idx);
+  CXXDefaultSpecifier Result(Range, TInfo, EllipsisLoc);
+  return Result;
+}
+
 CXXBaseSpecifier
 ASTReader::ReadCXXBaseSpecifier(ModuleFile &F,
                                 const RecordData &Record, unsigned &Idx) {

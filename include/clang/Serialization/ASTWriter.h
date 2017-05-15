@@ -41,6 +41,7 @@ class DeclarationName;
 class ASTContext;
 class Attr;
 class NestedNameSpecifier;
+class CXXDefaultSpecifier;
 class CXXBaseSpecifier;
 class CXXCtorInitializer;
 class FileEntry;
@@ -831,6 +832,9 @@ public:
 
   /// \brief Emit a CXXTemporary.
   void AddCXXTemporary(const CXXTemporary *Temp);
+
+  /// \brief Emit a C++ default specifier.
+  void AddCXXDefaultSpecifier(const CXXDefaultSpecifier &DefaultSpec);
 
   /// \brief Emit a C++ base specifier.
   void AddCXXBaseSpecifier(const CXXBaseSpecifier &Base);

@@ -1537,7 +1537,16 @@ void ASTDeclReader::ReadCXXDefinitionData(
   Data.ImplicitCopyAssignmentHasConstParam = Record.readInt();
   Data.HasDeclaredCopyConstructorWithConstParam = Record.readInt();
   Data.HasDeclaredCopyAssignmentWithConstParam = Record.readInt();
+  Data.IsDefault = Record.readInt();
   Data.ODRHash = Record.readInt();
+
+  if (Record.readInt()) {
+    // FIXME: Is this correct?
+    CXXDefaultSpecifier *DefaultSpec =
+        new (Record.getContext()) CXXDefaultSpecifier;
+    *DefaultSpec = Record.readCXXDefaultSpecifier();
+    Data.DefaultSpec = DefaultSpec;
+  }
 
   Data.NumBases = Record.readInt();
   if (Data.NumBases)
@@ -1668,6 +1677,7 @@ void ASTDeclReader::MergeDefinitionData(
   OR_FIELD(HasDeclaredCopyConstructorWithConstParam)
   OR_FIELD(HasDeclaredCopyAssignmentWithConstParam)
   MATCH_FIELD(IsLambda)
+  MATCH_FIELD(IsDefault)
   MATCH_FIELD(ODRHash)
 #undef OR_FIELD
 #undef MATCH_FIELD

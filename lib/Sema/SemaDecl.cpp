@@ -13749,6 +13749,7 @@ Decl *Sema::ActOnObjCContainerStartDefinition(Decl *IDecl) {
 
 void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
                                            SourceLocation FinalLoc,
+                                           SourceLocation DefaultLoc,
                                            bool IsFinalSpelledSealed,
                                            SourceLocation LBraceLoc) {
   AdjustDeclIfTemplate(TagD);
@@ -13762,6 +13763,9 @@ void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
   if (FinalLoc.isValid())
     Record->addAttr(new (Context)
                     FinalAttr(FinalLoc, Context, IsFinalSpelledSealed));
+
+  if (DefaultLoc.isValid())
+    Record->setDefault();
 
   // C++ [class]p2:
   //   [...] The class-name is also inserted into the scope of the

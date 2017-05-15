@@ -2112,6 +2112,7 @@ public:
   /// member declarations.
   void ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagDecl,
                                        SourceLocation FinalLoc,
+                                       SourceLocation DefaultLoc,
                                        bool IsFinalSpelledSealed,
                                        SourceLocation LBraceLoc);
 
@@ -6293,6 +6294,9 @@ public:
     /// \brief An arbitrary expression.
     UPPC_Expression = 0,
 
+    /// \brief The default (or "metaclass") type of a class type.
+    UPPC_DefaultType,
+
     /// \brief The base type of a class type.
     UPPC_BaseType,
 
@@ -7488,6 +7492,11 @@ public:
                        bool CXXDirectInit);
 
   bool
+  SubstDefaultSpecifier(CXXRecordDecl *Instantiation,
+                        CXXRecordDecl *Pattern,
+                        const MultiLevelTemplateArgumentList &TemplateArgs);
+
+  bool
   SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
                       CXXRecordDecl *Pattern,
                       const MultiLevelTemplateArgumentList &TemplateArgs);
@@ -8277,6 +8286,16 @@ public:
                               Scope *S, CXXScopeSpec *SS = nullptr,
                               bool WantNontrivialTypeSourceInfo = false,
                               IdentifierInfo **CorrectedII = nullptr);
+
+  CXXDefaultSpecifier *CheckDefaultSpecifier(CXXRecordDecl *Class,
+                                             SourceRange SpecifierRange,
+                                             TypeSourceInfo *TInfo,
+                                             SourceLocation EllipsisLoc);
+  void ActOnDefaultSpecifier(Decl *ClassDecl, SourceRange SpecifierRange,
+                             ParsedType DefaultType,
+                             SourceLocation EllipsisLoc);
+  bool AttachDefaultSpecifier(CXXRecordDecl *Class,
+                              CXXDefaultSpecifier *DefaultSpec);
 
   void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                               SmallVectorImpl<Decl *> &Fields);

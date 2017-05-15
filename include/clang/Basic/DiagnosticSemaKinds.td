@@ -1304,7 +1304,16 @@ def warn_weak_template_vtable : Warning<
 
 def ext_using_undefined_std : ExtWarn<
   "using directive refers to implicitly-defined namespace 'std'">;
-  
+
+// [Meta] Default classes
+def err_metaclass_name_and_default_spec : Error<
+  "default specifier on class declared as metaclass-name">;
+def err_default_spec_on_interface_or_union : Error<
+  "default specifier is not allowed on %select{an interface|a union}0">;
+def err_default_spec_non_class : Error<"default specifier must name a class">;
+def err_incomplete_default_spec : Error<"default specifier has incomplete type">;
+def err_default_spec_non_default_class : Error<"%0 is not marked 'default'">;
+
 // C++ exception specifications
 def err_exception_spec_in_typedef : Error<
   "exception specifications are not allowed in %select{typedefs|type aliases}0">;

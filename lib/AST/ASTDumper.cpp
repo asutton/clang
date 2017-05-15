@@ -1103,9 +1103,23 @@ void ASTDumper::VisitEnumDecl(const EnumDecl *D) {
 
 void ASTDumper::VisitRecordDecl(const RecordDecl *D) {
   OS << ' ' << D->getKindName();
+  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {
+    if (RD->isCompleteDefinition()) {
+      if (const CXXDefaultSpecifier *DefaultSpec = RD->getDefaultSpec()) {
+        dumpType(DefaultSpec->getType());
+        if (DefaultSpec->isPackExpansion())
+          OS << "...";
+      }
+    }
+  }
   dumpName(D);
   if (D->isModulePrivate())
     OS << " __module_private__";
+  // FIXME: Find a better place for 'default' keyword, instead of treating it
+  // like a declaration specifier.
+  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D))
+    if (RD->isCompleteDefinition() && RD->isDefault())
+      OS << " default";
   if (D->isCompleteDefinition())
     OS << " definition";
 }

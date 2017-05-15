@@ -2033,6 +2033,11 @@ public:
   void ReadUnresolvedSet(ModuleFile &F, LazyASTUnresolvedSet &Set,
                          const RecordData &Record, unsigned &Idx);
 
+  /// \brief Read a C++ default specifier.
+  CXXDefaultSpecifier ReadCXXDefaultSpecifier(ModuleFile &F,
+                                              const RecordData &Record,
+                                              unsigned &Idx);
+
   /// \brief Read a C++ base specifier.
   CXXBaseSpecifier ReadCXXBaseSpecifier(ModuleFile &F,
                                         const RecordData &Record,unsigned &Idx);
@@ -2416,6 +2421,11 @@ public:
   /// \brief Read a UnresolvedSet structure, advancing Idx.
   void readUnresolvedSet(LazyASTUnresolvedSet &Set) {
     return Reader->ReadUnresolvedSet(*F, Set, Record, Idx);
+  }
+
+  /// \brief Read a C++ default specifier, advancing Idx.
+  CXXDefaultSpecifier readCXXDefaultSpecifier() {
+    return Reader->ReadCXXDefaultSpecifier(*F, Record, Idx);
   }
 
   /// \brief Read a C++ base specifier, advancing Idx.

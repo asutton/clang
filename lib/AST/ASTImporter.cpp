@@ -2374,6 +2374,29 @@ bool ASTNodeImporter::ImportDefinition(RecordDecl *From, RecordDecl *To,
     ToData.HasDeclaredCopyAssignmentWithConstParam
       = FromData.HasDeclaredCopyAssignmentWithConstParam;
     ToData.IsLambda = FromData.IsLambda;
+    ToData.IsDefault = FromData.IsDefault;
+
+    CXXDefaultSpecifier *FromDefaultSpec = FromData.DefaultSpec;
+    if (FromDefaultSpec) {
+      QualType T = Importer.Import(FromDefaultSpec->getType());
+      if (T.isNull())
+        return true;
+
+      SourceLocation EllipsisLoc;
+      if (FromDefaultSpec->isPackExpansion())
+        EllipsisLoc = Importer.Import(FromDefaultSpec->getEllipsisLoc());
+
+      // Ensure that we have a definition for the default class.
+      ImportDefinitionIfNeeded(
+          FromDefaultSpec->getType()->getAsCXXRecordDecl());
+
+      CXXDefaultSpecifier *ToDefaultSpec =
+          new (Importer.getToContext()) CXXDefaultSpecifier(
+              Importer.Import(FromDefaultSpec->getSourceRange()),
+              Importer.Import(FromDefaultSpec->getTypeSourceInfo()),
+              EllipsisLoc);
+      ToData.DefaultSpec = ToDefaultSpec;
+    }
 
     SmallVector<CXXBaseSpecifier *, 4> Bases;
     for (const auto &Base1 : FromCXX->bases()) {

@@ -2340,6 +2340,7 @@ private:
                                           SourceLocation FriendLoc);
 
   bool isCXX11FinalKeyword() const;
+  bool isCXX11FinalOrDefaultKeyword() const;
 
   /// DeclaratorScopeObj - RAII object used in Parser::ParseDirectDeclarator to
   /// enter a new C++ declarator scope and exit it when the function is
@@ -2501,6 +2502,7 @@ private:
                                   Decl *TagDecl);
   void ParseCXXMemberSpecification(SourceLocation StartLoc,
                                    SourceLocation AttrFixitLoc,
+                                   bool HasDefaultSpec,
                                    ParsedAttributesWithRange &Attrs,
                                    unsigned TagType,
                                    Decl *TagDecl);

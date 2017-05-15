@@ -260,6 +260,60 @@ public:
   TypeSourceInfo *getTypeSourceInfo() const { return BaseTypeInfo; }
 };
 
+/// \brief Represents a "default" class (or "metaclass") that is associated with
+/// a C++ class.
+///
+/// For example:
+/// 
+/// \code
+/// class A default { };
+/// class (A) B { };
+/// \endcode
+/// 
+/// In the example, B has a CXXDefaultSpecifier for A.
+class CXXDefaultSpecifier {
+  /// \brief The source code range that covers the full default specifier.
+  SourceRange Range;
+
+  /// \brief The source location of the ellipsis, if this is a pack
+  /// expansion.
+  SourceLocation EllipsisLoc;
+
+  /// \brief The type of the default class.
+  ///
+  /// This will be a class, struct, or union (or a typedef of such).
+  TypeSourceInfo *DefaultTypeInfo;
+
+public:
+  CXXDefaultSpecifier() {}
+
+  CXXDefaultSpecifier(SourceRange R, TypeSourceInfo *TInfo,
+                      SourceLocation EllipsisLoc)
+      : Range(R), EllipsisLoc(EllipsisLoc), DefaultTypeInfo(TInfo) {}
+
+  /// \brief Retrieves the source range that contains the entire default
+  /// specifier.
+  SourceRange getSourceRange() const LLVM_READONLY { return Range; }
+  SourceLocation getLocStart() const LLVM_READONLY { return Range.getBegin(); }
+  SourceLocation getLocEnd() const LLVM_READONLY { return Range.getEnd(); }
+
+  /// \brief Determine whether this default specifier is a pack expansion.
+  bool isPackExpansion() const { return EllipsisLoc.isValid(); }
+
+  /// \brief For a pack expansion, determine the location of the ellipsis.
+  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
+
+  /// \brief Retrieves the type of the default class.
+  ///
+  /// This type will always be an unqualified class type.
+  QualType getType() const {
+    return DefaultTypeInfo->getType().getUnqualifiedType();
+  }
+
+  /// \brief Retrieves the type and source location of the default class.
+  TypeSourceInfo *getTypeSourceInfo() const { return DefaultTypeInfo; }
+};
+
 /// \brief Represents a C++ struct/union/class.
 class CXXRecordDecl : public RecordDecl {
 
@@ -460,6 +514,9 @@ class CXXRecordDecl : public RecordDecl {
     /// \brief Whether we are currently parsing base specifiers.
     unsigned IsParsingBaseSpecifiers : 1;
 
+    /// \brief Whether this class is a default class.
+    unsigned IsDefault : 1;
+
     /// \brief A hash of parts of the class to help in ODR checking.
     unsigned ODRHash;
 
@@ -489,6 +546,10 @@ class CXXRecordDecl : public RecordDecl {
     /// Each of the entries in this overload set is a CXXConversionDecl or a
     /// FunctionTemplateDecl.
     LazyASTUnresolvedSet VisibleConversions;
+
+    /// \brief If this is a class prototype, the "default" class (or
+    /// "metaclass") that is associated with this class.
+    CXXDefaultSpecifier *DefaultSpec;
 
     /// \brief The declaration which defines this record.
     CXXRecordDecl *Definition;
@@ -1751,6 +1812,17 @@ public:
   /// and evaluated, ultimately replacing this class with the generated one.
   void setMetaclass(MetaclassDecl *MD) { Metaclass = MD; }
 
+  /// \brief Returns \c true if this class was marked as "default".
+  bool isDefault() const { return data().IsDefault; }
+
+  /// \brief Set that this class was marked as "default".
+  void setDefault() { data().IsDefault = true; }
+  
+  CXXDefaultSpecifier *getDefaultSpec() const { return data().DefaultSpec; }
+  
+  void setDefaultSpec(CXXDefaultSpecifier *DefaultSpec) {
+    data().DefaultSpec = DefaultSpec;
+  }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) {

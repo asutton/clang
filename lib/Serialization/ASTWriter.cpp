@@ -5593,6 +5593,14 @@ void ASTRecordWriter::AddUnresolvedSet(const ASTUnresolvedSet &Set) {
   }
 }
 
+void ASTRecordWriter::AddCXXDefaultSpecifier(
+    const CXXDefaultSpecifier &DefaultSpec) {
+  AddTypeSourceInfo(DefaultSpec.getTypeSourceInfo());
+  AddSourceRange(DefaultSpec.getSourceRange());
+  AddSourceLocation(DefaultSpec.isPackExpansion() ? DefaultSpec.getEllipsisLoc()
+                                                  : SourceLocation());
+}
+
 // FIXME: Move this out of the main ASTRecordWriter interface.
 void ASTRecordWriter::AddCXXBaseSpecifier(const CXXBaseSpecifier &Base) {
   Record->push_back(Base.isVirtual());
@@ -5707,8 +5715,13 @@ void ASTRecordWriter::AddCXXDefinitionData(const CXXRecordDecl *D) {
   Record->push_back(Data.ImplicitCopyAssignmentHasConstParam);
   Record->push_back(Data.HasDeclaredCopyConstructorWithConstParam);
   Record->push_back(Data.HasDeclaredCopyAssignmentWithConstParam);
+  Record->push_back(Data.IsDefault);
   Record->push_back(Data.ODRHash);
   // IsLambda bit is already saved.
+
+  Record->push_back(Data.DefaultSpec != nullptr);
+  if (Data.DefaultSpec)
+    AddCXXDefaultSpecifier(*Data.DefaultSpec);
 
   Record->push_back(Data.NumBases);
   if (Data.NumBases > 0)
