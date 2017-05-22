@@ -8230,6 +8230,13 @@ public:
   // C++ Reflection [Meta]
   //
 
+  bool BuildDeclnameId(SmallVectorImpl<Expr *>& Parts, UnqualifiedId& Result,
+                       SourceLocation KWLoc, SourceLocation LParenLoc,
+                       SourceLocation RParenLoc);
+
+  ExprResult ActOnHasNameExpr(SourceLocation KWLoc, Expr *E, UnqualifiedId &I,
+                              SourceLocation RParenLoc);
+
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Expr *E);
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, TypeSourceInfo *TSI);
   ExprResult ActOnCXXReflectExpr(SourceLocation Loc, Declarator &D);
@@ -8240,9 +8247,8 @@ public:
   ExprResult BuildDeclReflection(SourceLocation Loc, Decl *D);
   ExprResult BuildTypeReflection(SourceLocation Loc, QualType T);
   TypeResult ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc, Expr *E);
-  ExprResult ActOnDeclnameExpression(Expr *E, SourceLocation KWLoc,
-                                     SourceLocation LParenLoc,
-                                     SourceLocation RParenLoc);
+
+
 
   NamespaceDecl *RequireCppxNamespace(SourceLocation Loc);
   NamespaceDecl *RequireCppxMetaNamespace(SourceLocation Loc);

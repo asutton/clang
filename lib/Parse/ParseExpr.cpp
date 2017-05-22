@@ -1292,8 +1292,12 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   }
 
   case tok::kw_operator: // [C++] id-expression: operator/conversion-function-id
+  case tok::kw_declname: // [Meta] id-expression: declname-id
     Res = ParseCXXIdExpression(isAddressOfOperand);
     break;
+
+  case tok::kw_hasname: // [Meta] hasname-expression
+    return ParseHasNameExpression();
 
   case tok::coloncolon: {
     // ::foo::bar -> global qualified name etc.   If TryAnnotateTypeOrScopeToken
@@ -1345,10 +1349,6 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
 
   case tok::kw_reflexpr: // [Meta] 'reflexpr' '(' ... ')'
     Res = ParseReflexprExpression();
-    break;
-
-  case tok::kw_declname: // [Meta] 'declname' '(' constant-expression ')'
-    Res = ParseDeclnameExpression();
     break;
 
   case tok::dollar:  // [Meta] '$' [id-expression | type-name | namespace-name]

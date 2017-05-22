@@ -390,9 +390,10 @@ KEYWORD(co_yield                    , KEYCOROUTINES)
 MODULES_KEYWORD(module)
 MODULES_KEYWORD(import)
 
-// Meta Keywords
+// [Meta] Keywords
 KEYWORD(reflexpr                    , KEYCXX)
 KEYWORD(declname                    , KEYCXX)
+KEYWORD(hasname                     , KEYCXX)
 
 // GNU Extensions (in impl-reserved namespace)
 KEYWORD(_Decimal32                  , KEYALL)

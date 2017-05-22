@@ -18,10 +18,10 @@
 
 using namespace clang;
 
-ExprResult Parser::ParseReflectOperand(SourceLocation OpLoc) {
-  // TODO: Actually look at the token following the '$'. We should be able
-  // to easily predict the parse.
-
+/// FIXME: This function is called from several parses. We need to provide more
+/// information in order to appropriately diagnose errors.
+ExprResult Parser::ParseReflectOperand(SourceLocation OpLoc)
+{
   CXXScopeSpec SS;
   ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false);
 
@@ -75,10 +75,12 @@ ExprResult Parser::ParseReflectExpression() {
 ///
 /// \verbatim
 ///   primary-expression:
-///      'reflexpr' '(' id-expression ')'
-///      'reflexpr' '(' type-id ')'
-///      'reflexpr' '(' nested-name-specifier[opt] namespace-name ')'
-/// \endverbatim
+///      'reflexpr' '(' reflection-id ')'
+///
+///   reflection-id:
+///      id-expression
+///      type-id
+///      nested-name-specifier[opt] namespace-name
 ExprResult Parser::ParseReflexprExpression() {
   assert(Tok.is(tok::kw_reflexpr));
   SourceLocation KeyLoc = ConsumeToken();
@@ -94,25 +96,65 @@ ExprResult Parser::ParseReflexprExpression() {
   return Result;
 }
 
-/// \brief Parse a \c declname expression.
+/// \brief Parse a declname-id
 ///
-/// \verbatim
-///   unary-expression:
-///      'declname' '(' constant-expression ')'
-/// \endverbatim
-ExprResult Parser::ParseDeclnameExpression() {
+///   unqualified-id:
+///      'declname' '(' id-concatenation-seq ')'
+///
+///   id-concatenation-seq:
+///       constant-expression
+///       id-concatenation-seq constant-expression
+///
+/// Returns true if parsing or semantic analysis fail.
+bool Parser::ParseDeclnameId(UnqualifiedId& Result) {
   assert(Tok.is(tok::kw_declname));
   SourceLocation KeyLoc = ConsumeToken();
 
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen_after, "declname"))
+    return true;
+  SmallVector<Expr *, 4> Parts;
+  while (Tok.isNot(tok::r_paren)) {
+    ExprResult Result = ParseConstantExpression();
+    if (Result.isInvalid())
+      return true;
+    Parts.push_back(Result.get());
+  }
+  if (T.consumeClose())
+    return true;
+
+  return Actions.BuildDeclnameId(Parts, Result, KeyLoc, 
+                                 T.getOpenLocation(), T.getCloseLocation());
+}
+
+/// Parse a has-name expression:
+///
+///   hasname-expression:
+///     'hasname' '(' reflection-expression ',' unqualified-id ')'
+///
+/// \todo Support qualified-ids in that space?
+ExprResult Parser::ParseHasNameExpression() {
+  assert(Tok.is(tok::kw_hasname) && "Expected hasname token");
+  SourceLocation KeyLoc = ConsumeToken();
+
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "declname"))
     return ExprError();
-  ExprResult Result = ParseConstantExpression();
-  T.consumeClose();
-  if (!Result.isInvalid())
-    Result = Actions.ActOnDeclnameExpression(
-        Result.get(), KeyLoc, T.getOpenLocation(), T.getCloseLocation());
-  return Result;
+  
+  ExprResult E = ParseConstantExpression();
+  if (E.isInvalid())
+    return ExprError();
+  ExpectAndConsume(tok::comma);
+  CXXScopeSpec SS;
+  ParsedType PT;
+  SourceLocation TempLoc;
+  UnqualifiedId I;
+  if (ParseUnqualifiedId(SS, false, true, true, false, PT, TempLoc, I))
+    return ExprError();
+  if (T.consumeClose())
+    return ExprError();
+
+  return Actions.ActOnHasNameExpr(KeyLoc, E.get(), I, T.getCloseLocation());
 }
 
 /// Parse a reflection type specifier.

@@ -2548,10 +2548,13 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ Reflection [Meta]
 
+  bool ParseDeclnameId(UnqualifiedId& Result);
+
+  ExprResult ParseHasNameExpression();
+
   ExprResult ParseReflectOperand(SourceLocation OpLoc);
   ExprResult ParseReflectExpression();
   ExprResult ParseReflexprExpression();
-  ExprResult ParseDeclnameExpression();
   TypeResult ParseTypeReflectionSpecifier(SourceLocation TypenameLoc,
                                           SourceLocation &EndLoc);
   ExprResult ParseReflectionTrait();

@@ -5373,7 +5373,7 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
     }
 
     if (Tok.isOneOf(tok::identifier, tok::kw_operator, tok::annot_template_id,
-                    tok::tilde)) {
+                    tok::tilde, tok::kw_declname)) {
       // We found something that indicates the start of an unqualified-id.
       // Parse that unqualified-id.
       bool AllowConstructorName;
