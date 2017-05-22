@@ -242,6 +242,7 @@ def warn_bad_character_encoding : ExtWarn<
   "illegal character encoding in character literal">,
   InGroup<InvalidSourceEncoding>;
 def err_lexing_string : Error<"failure when lexing a string">;
+def err_placeholder_in_source : Error<"editor placeholder in source file">;
 
 
 //===----------------------------------------------------------------------===//
@@ -502,12 +503,28 @@ def warn_pragma_diagnostic_invalid_token :
    InGroup<UnknownPragmas>;
 def warn_pragma_diagnostic_unknown_warning :
    ExtWarn<"unknown warning group '%0', ignored">,
-   InGroup<UnknownPragmas>;
+   InGroup<UnknownWarningOption>;
 // - #pragma __debug
 def warn_pragma_debug_unexpected_command : Warning<
   "unexpected debug command '%0'">, InGroup<IgnoredPragmas>;
 def warn_pragma_debug_missing_argument : Warning<
   "missing argument to debug command '%0'">, InGroup<IgnoredPragmas>;
+// #pragma module
+def err_pp_expected_module_name : Error<
+  "expected %select{identifier after '.' in |}0module name">;
+def err_pp_module_begin_wrong_module : Error<
+  "must specify '-fmodule-name=%0' to enter %select{|submodule of }1"
+  "this module%select{ (current module is %3)|}2">;
+def err_pp_module_begin_no_module_map : Error<
+  "no module map available for module %0">;
+def err_pp_module_begin_no_submodule : Error<
+  "submodule %0.%1 not declared in module map">;
+def err_pp_module_begin_without_module_end : Error<
+  "no matching '#pragma clang module end' for this "
+  "'#pragma clang module begin'">;
+def err_pp_module_end_without_module_begin : Error<
+  "no matching '#pragma clang module begin' for this "
+  "'#pragma clang module end'">;
 
 def err_defined_macro_name : Error<"'defined' cannot be used as a macro name">;
 def err_paste_at_start : Error<
@@ -594,8 +611,6 @@ def err_mmap_expected_mmap_file : Error<"expected a module map file name">;
 def err_mmap_module_redefinition : Error<
   "redefinition of module '%0'">;
 def note_mmap_prev_definition : Note<"previously defined here">;
-def err_mmap_umbrella_dir_not_found : Error<
-  "umbrella directory '%0' not found">;
 def err_mmap_umbrella_clash : Error<
   "umbrella for module '%0' already covers this directory">;
 def err_mmap_module_id : Error<
@@ -655,6 +670,9 @@ def note_implicit_top_level_module_import_here : Note<
   "submodule of top-level module '%0' implicitly imported here">;
 def warn_uncovered_module_header : Warning<
   "umbrella header for module '%0' does not include header '%1'">, 
+  InGroup<IncompleteUmbrella>;
+def warn_mmap_umbrella_dir_not_found : Warning<
+  "umbrella directory '%0' not found">,
   InGroup<IncompleteUmbrella>;
 def err_expected_id_building_module : Error<
   "expected a module name in '__building_module' expression">;

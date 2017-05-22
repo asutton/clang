@@ -16,7 +16,7 @@
 #include "CGObjCRuntime.h"
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
-#include "ConstantBuilder.h"
+#include "clang/CodeGen/ConstantInitBuilder.h"
 #include "clang/AST/DeclObjC.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/IR/CallSite.h"
@@ -266,7 +266,7 @@ static bool isSafeForCXXConstantCapture(QualType type) {
 static llvm::Constant *tryCaptureAsConstant(CodeGenModule &CGM,
                                             CodeGenFunction *CGF,
                                             const VarDecl *var) {
-  // Return if this is a function paramter. We shouldn't try to
+  // Return if this is a function parameter. We shouldn't try to
   // rematerialize default arguments of function parameters.
   if (isa<ParmVarDecl>(var))
     return nullptr;
@@ -619,7 +619,17 @@ static void enterBlockScope(CodeGenFunction &CGF, BlockDecl *block) {
 
     // Block captures count as local values and have imprecise semantics.
     // They also can't be arrays, so need to worry about that.
-    if (dtorKind == QualType::DK_objc_strong_lifetime) {
+    //
+    // For const-qualified captures, emit clang.arc.use to ensure the captured
+    // object doesn't get released while we are still depending on its validity
+    // within the block.
+    if (VT.isConstQualified() &&
+        VT.getObjCLifetime() == Qualifiers::OCL_Strong &&
+        CGF.CGM.getCodeGenOpts().OptimizationLevel != 0) {
+      assert(CGF.CGM.getLangOpts().ObjCAutoRefCount &&
+             "expected ObjC ARC to be enabled");
+      destroyer = CodeGenFunction::emitARCIntrinsicUse;
+    } else if (dtorKind == QualType::DK_objc_strong_lifetime) {
       destroyer = CodeGenFunction::destroyARCStrongImprecise;
     } else {
       destroyer = CGF.getDestroyer(dtorKind);
@@ -866,6 +876,13 @@ llvm::Value *CodeGenFunction::EmitBlockLiteral(const CGBlockInfo &blockInfo) {
     } else if (type->isReferenceType()) {
       Builder.CreateStore(src.getPointer(), blockField);
 
+    // If type is const-qualified, copy the value into the block field.
+    } else if (type.isConstQualified() &&
+               type.getObjCLifetime() == Qualifiers::OCL_Strong &&
+               CGM.getCodeGenOpts().OptimizationLevel != 0) {
+      llvm::Value *value = Builder.CreateLoad(src, "captured");
+      Builder.CreateStore(value, blockField);
+
     // If this is an ARC __strong block-pointer variable, don't do a
     // block copy.
     //
@@ -901,8 +918,9 @@ llvm::Value *CodeGenFunction::EmitBlockLiteral(const CGBlockInfo &blockInfo) {
       // FIXME: Pass a specific location for the expr init so that the store is
       // attributed to a reasonable location - otherwise it may be attributed to
       // locations of subexpressions in the initialization.
+      LValueBaseInfo BaseInfo(AlignmentSource::Decl, false);
       EmitExprAsInit(&l2r, &blockFieldPseudoVar,
-                     MakeAddrLValue(blockField, type, AlignmentSource::Decl),
+                     MakeAddrLValue(blockField, type, BaseInfo),
                      /*captured by init*/ false);
     }
 
@@ -944,9 +962,8 @@ llvm::Type *CodeGenModule::getBlockDescriptorType() {
   //   const char *signature;   // the block signature
   //   const char *layout;      // reserved
   // };
-  BlockDescriptorType =
-    llvm::StructType::create("struct.__block_descriptor",
-                             UnsignedLongTy, UnsignedLongTy, nullptr);
+  BlockDescriptorType = llvm::StructType::create(
+      "struct.__block_descriptor", UnsignedLongTy, UnsignedLongTy);
 
   // Now form a pointer to that.
   unsigned AddrSpace = 0;
@@ -970,9 +987,8 @@ llvm::Type *CodeGenModule::getGenericBlockLiteralType() {
   //   struct __block_descriptor *__descriptor;
   // };
   GenericBlockLiteralType =
-    llvm::StructType::create("struct.__block_literal_generic",
-                             VoidPtrTy, IntTy, IntTy, VoidPtrTy,
-                             BlockDescPtrTy, nullptr);
+      llvm::StructType::create("struct.__block_literal_generic", VoidPtrTy,
+                               IntTy, IntTy, VoidPtrTy, BlockDescPtrTy);
 
   return GenericBlockLiteralType;
 }
@@ -1373,23 +1389,102 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
   return fn;
 }
 
-/*
-    notes.push_back(HelperInfo());
-    HelperInfo &note = notes.back();
-    note.index = capture.getIndex();
-    note.RequiresCopying = (ci->hasCopyExpr() || BlockRequiresCopying(type));
-    note.cxxbar_import = ci->getCopyExpr();
+namespace {
 
-    if (ci->isByRef()) {
-      note.flag = BLOCK_FIELD_IS_BYREF;
-      if (type.isObjCGCWeak())
-        note.flag |= BLOCK_FIELD_IS_WEAK;
-    } else if (type->isBlockPointerType()) {
-      note.flag = BLOCK_FIELD_IS_BLOCK;
-    } else {
-      note.flag = BLOCK_FIELD_IS_OBJECT;
-    }
- */
+/// Represents a type of copy/destroy operation that should be performed for an
+/// entity that's captured by a block.
+enum class BlockCaptureEntityKind {
+  CXXRecord, // Copy or destroy
+  ARCWeak,
+  ARCStrong,
+  BlockObject, // Assign or release
+  None
+};
+
+/// Represents a captured entity that requires extra operations in order for
+/// this entity to be copied or destroyed correctly.
+struct BlockCaptureManagedEntity {
+  BlockCaptureEntityKind Kind;
+  BlockFieldFlags Flags;
+  const BlockDecl::Capture &CI;
+  const CGBlockInfo::Capture &Capture;
+
+  BlockCaptureManagedEntity(BlockCaptureEntityKind Type, BlockFieldFlags Flags,
+                            const BlockDecl::Capture &CI,
+                            const CGBlockInfo::Capture &Capture)
+      : Kind(Type), Flags(Flags), CI(CI), Capture(Capture) {}
+};
+
+} // end anonymous namespace
+
+static std::pair<BlockCaptureEntityKind, BlockFieldFlags>
+computeCopyInfoForBlockCapture(const BlockDecl::Capture &CI, QualType T,
+                               const LangOptions &LangOpts) {
+  if (CI.getCopyExpr()) {
+    assert(!CI.isByRef());
+    // don't bother computing flags
+    return std::make_pair(BlockCaptureEntityKind::CXXRecord, BlockFieldFlags());
+  }
+  BlockFieldFlags Flags;
+  if (CI.isByRef()) {
+    Flags = BLOCK_FIELD_IS_BYREF;
+    if (T.isObjCGCWeak())
+      Flags |= BLOCK_FIELD_IS_WEAK;
+    return std::make_pair(BlockCaptureEntityKind::BlockObject, Flags);
+  }
+  if (!T->isObjCRetainableType())
+    // For all other types, the memcpy is fine.
+    return std::make_pair(BlockCaptureEntityKind::None, Flags);
+
+  Flags = BLOCK_FIELD_IS_OBJECT;
+  bool isBlockPointer = T->isBlockPointerType();
+  if (isBlockPointer)
+    Flags = BLOCK_FIELD_IS_BLOCK;
+
+  // Special rules for ARC captures:
+  Qualifiers QS = T.getQualifiers();
+
+  // We need to register __weak direct captures with the runtime.
+  if (QS.getObjCLifetime() == Qualifiers::OCL_Weak)
+    return std::make_pair(BlockCaptureEntityKind::ARCWeak, Flags);
+
+  // We need to retain the copied value for __strong direct captures.
+  if (QS.getObjCLifetime() == Qualifiers::OCL_Strong) {
+    // If it's a block pointer, we have to copy the block and
+    // assign that to the destination pointer, so we might as
+    // well use _Block_object_assign.  Otherwise we can avoid that.
+    return std::make_pair(!isBlockPointer ? BlockCaptureEntityKind::ARCStrong
+                                          : BlockCaptureEntityKind::BlockObject,
+                          Flags);
+  }
+
+  // Non-ARC captures of retainable pointers are strong and
+  // therefore require a call to _Block_object_assign.
+  if (!QS.getObjCLifetime() && !LangOpts.ObjCAutoRefCount)
+    return std::make_pair(BlockCaptureEntityKind::BlockObject, Flags);
+
+  // Otherwise the memcpy is fine.
+  return std::make_pair(BlockCaptureEntityKind::None, Flags);
+}
+
+/// Find the set of block captures that need to be explicitly copied or destroy.
+static void findBlockCapturedManagedEntities(
+    const CGBlockInfo &BlockInfo, const LangOptions &LangOpts,
+    SmallVectorImpl<BlockCaptureManagedEntity> &ManagedCaptures,
+    llvm::function_ref<std::pair<BlockCaptureEntityKind, BlockFieldFlags>(
+        const BlockDecl::Capture &, QualType, const LangOptions &)>
+        Predicate) {
+  for (const auto &CI : BlockInfo.getBlockDecl()->captures()) {
+    const VarDecl *Variable = CI.getVariable();
+    const CGBlockInfo::Capture &Capture = BlockInfo.getCapture(Variable);
+    if (Capture.isConstant())
+      continue;
+
+    auto Info = Predicate(CI, Variable->getType(), LangOpts);
+    if (Info.first != BlockCaptureEntityKind::None)
+      ManagedCaptures.emplace_back(Info.first, Info.second, CI, Capture);
+  }
+}
 
 /// Generate the copy-helper function for a block closure object:
 ///   static void block_copy_helper(block_t *dst, block_t *src);
@@ -1449,78 +1544,28 @@ CodeGenFunction::GenerateCopyHelperFunction(const CGBlockInfo &blockInfo) {
   dst = Address(Builder.CreateLoad(dst), blockInfo.BlockAlign);
   dst = Builder.CreateBitCast(dst, structPtrTy, "block.dest");
 
-  const BlockDecl *blockDecl = blockInfo.getBlockDecl();
+  SmallVector<BlockCaptureManagedEntity, 4> CopiedCaptures;
+  findBlockCapturedManagedEntities(blockInfo, getLangOpts(), CopiedCaptures,
+                                   computeCopyInfoForBlockCapture);
 
-  for (const auto &CI : blockDecl->captures()) {
-    const VarDecl *variable = CI.getVariable();
-    QualType type = variable->getType();
-
-    const CGBlockInfo::Capture &capture = blockInfo.getCapture(variable);
-    if (capture.isConstant()) continue;
-
-    const Expr *copyExpr = CI.getCopyExpr();
-    BlockFieldFlags flags;
-
-    bool useARCWeakCopy = false;
-    bool useARCStrongCopy = false;
-
-    if (copyExpr) {
-      assert(!CI.isByRef());
-      // don't bother computing flags
-
-    } else if (CI.isByRef()) {
-      flags = BLOCK_FIELD_IS_BYREF;
-      if (type.isObjCGCWeak())
-        flags |= BLOCK_FIELD_IS_WEAK;
-
-    } else if (type->isObjCRetainableType()) {
-      flags = BLOCK_FIELD_IS_OBJECT;
-      bool isBlockPointer = type->isBlockPointerType();
-      if (isBlockPointer)
-        flags = BLOCK_FIELD_IS_BLOCK;
-
-      // Special rules for ARC captures:
-      Qualifiers qs = type.getQualifiers();
-
-      // We need to register __weak direct captures with the runtime.
-      if (qs.getObjCLifetime() == Qualifiers::OCL_Weak) {
-        useARCWeakCopy = true;
-
-      // We need to retain the copied value for __strong direct captures.
-      } else if (qs.getObjCLifetime() == Qualifiers::OCL_Strong) {
-        // If it's a block pointer, we have to copy the block and
-        // assign that to the destination pointer, so we might as
-        // well use _Block_object_assign.  Otherwise we can avoid that.
-        if (!isBlockPointer)
-          useARCStrongCopy = true;
-
-      // Non-ARC captures of retainable pointers are strong and
-      // therefore require a call to _Block_object_assign.
-      } else if (!qs.getObjCLifetime() && !getLangOpts().ObjCAutoRefCount) {
-        // fall through
-
-      // Otherwise the memcpy is fine.
-      } else {
-        continue;
-      }
-
-    // For all other types, the memcpy is fine.
-    } else {
-      continue;
-    }
+  for (const auto &CopiedCapture : CopiedCaptures) {
+    const BlockDecl::Capture &CI = CopiedCapture.CI;
+    const CGBlockInfo::Capture &capture = CopiedCapture.Capture;
+    BlockFieldFlags flags = CopiedCapture.Flags;
 
     unsigned index = capture.getIndex();
     Address srcField = Builder.CreateStructGEP(src, index, capture.getOffset());
     Address dstField = Builder.CreateStructGEP(dst, index, capture.getOffset());
 
     // If there's an explicit copy expression, we do that.
-    if (copyExpr) {
-      EmitSynthesizedCXXCopyCtor(dstField, srcField, copyExpr);
-    } else if (useARCWeakCopy) {
+    if (CI.getCopyExpr()) {
+      assert(CopiedCapture.Kind == BlockCaptureEntityKind::CXXRecord);
+      EmitSynthesizedCXXCopyCtor(dstField, srcField, CI.getCopyExpr());
+    } else if (CopiedCapture.Kind == BlockCaptureEntityKind::ARCWeak) {
       EmitARCCopyWeak(dstField, srcField);
     } else {
       llvm::Value *srcValue = Builder.CreateLoad(srcField, "blockcopy.src");
-      if (useARCStrongCopy) {
+      if (CopiedCapture.Kind == BlockCaptureEntityKind::ARCStrong) {
         // At -O0, store null into the destination field (so that the
         // storeStrong doesn't over-release) and then call storeStrong.
         // This is a workaround to not having an initStrong call.
@@ -1541,6 +1586,7 @@ CodeGenFunction::GenerateCopyHelperFunction(const CGBlockInfo &blockInfo) {
           cast<llvm::Instruction>(dstField.getPointer())->eraseFromParent();
         }
       } else {
+        assert(CopiedCapture.Kind == BlockCaptureEntityKind::BlockObject);
         srcValue = Builder.CreateBitCast(srcValue, VoidPtrTy);
         llvm::Value *dstAddr =
           Builder.CreateBitCast(dstField.getPointer(), VoidPtrTy);
@@ -1548,6 +1594,7 @@ CodeGenFunction::GenerateCopyHelperFunction(const CGBlockInfo &blockInfo) {
           dstAddr, srcValue, llvm::ConstantInt::get(Int32Ty, flags.getBitMask())
         };
 
+        const VarDecl *variable = CI.getVariable();
         bool copyCanThrow = false;
         if (CI.isByRef() && variable->getType()->getAsCXXRecordDecl()) {
           const Expr *copyExpr =
@@ -1569,6 +1616,52 @@ CodeGenFunction::GenerateCopyHelperFunction(const CGBlockInfo &blockInfo) {
   FinishFunction();
 
   return llvm::ConstantExpr::getBitCast(Fn, VoidPtrTy);
+}
+
+static std::pair<BlockCaptureEntityKind, BlockFieldFlags>
+computeDestroyInfoForBlockCapture(const BlockDecl::Capture &CI, QualType T,
+                                  const LangOptions &LangOpts) {
+  BlockFieldFlags Flags;
+  if (CI.isByRef()) {
+    Flags = BLOCK_FIELD_IS_BYREF;
+    if (T.isObjCGCWeak())
+      Flags |= BLOCK_FIELD_IS_WEAK;
+    return std::make_pair(BlockCaptureEntityKind::BlockObject, Flags);
+  }
+
+  if (const CXXRecordDecl *Record = T->getAsCXXRecordDecl()) {
+    if (Record->hasTrivialDestructor())
+      return std::make_pair(BlockCaptureEntityKind::None, BlockFieldFlags());
+    return std::make_pair(BlockCaptureEntityKind::CXXRecord, BlockFieldFlags());
+  }
+
+  // Other types don't need to be destroy explicitly.
+  if (!T->isObjCRetainableType())
+    return std::make_pair(BlockCaptureEntityKind::None, Flags);
+
+  Flags = BLOCK_FIELD_IS_OBJECT;
+  if (T->isBlockPointerType())
+    Flags = BLOCK_FIELD_IS_BLOCK;
+
+  // Special rules for ARC captures.
+  Qualifiers QS = T.getQualifiers();
+
+  // Use objc_storeStrong for __strong direct captures; the
+  // dynamic tools really like it when we do this.
+  if (QS.getObjCLifetime() == Qualifiers::OCL_Strong)
+    return std::make_pair(BlockCaptureEntityKind::ARCStrong, Flags);
+
+  // Support __weak direct captures.
+  if (QS.getObjCLifetime() == Qualifiers::OCL_Weak)
+    return std::make_pair(BlockCaptureEntityKind::ARCWeak, Flags);
+
+  // Non-ARC captures are strong, and we need to use
+  // _Block_object_dispose.
+  if (!QS.hasObjCLifetime() && !LangOpts.ObjCAutoRefCount)
+    return std::make_pair(BlockCaptureEntityKind::BlockObject, Flags);
+
+  // Otherwise, we have nothing to do.
+  return std::make_pair(BlockCaptureEntityKind::None, Flags);
 }
 
 /// Generate the destroy-helper function for a block closure object:
@@ -1620,79 +1713,39 @@ CodeGenFunction::GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo) {
   src = Address(Builder.CreateLoad(src), blockInfo.BlockAlign);
   src = Builder.CreateBitCast(src, structPtrTy, "block");
 
-  const BlockDecl *blockDecl = blockInfo.getBlockDecl();
-
   CodeGenFunction::RunCleanupsScope cleanups(*this);
 
-  for (const auto &CI : blockDecl->captures()) {
-    const VarDecl *variable = CI.getVariable();
-    QualType type = variable->getType();
+  SmallVector<BlockCaptureManagedEntity, 4> DestroyedCaptures;
+  findBlockCapturedManagedEntities(blockInfo, getLangOpts(), DestroyedCaptures,
+                                   computeDestroyInfoForBlockCapture);
 
-    const CGBlockInfo::Capture &capture = blockInfo.getCapture(variable);
-    if (capture.isConstant()) continue;
-
-    BlockFieldFlags flags;
-    const CXXDestructorDecl *dtor = nullptr;
-
-    bool useARCWeakDestroy = false;
-    bool useARCStrongDestroy = false;
-
-    if (CI.isByRef()) {
-      flags = BLOCK_FIELD_IS_BYREF;
-      if (type.isObjCGCWeak())
-        flags |= BLOCK_FIELD_IS_WEAK;
-    } else if (const CXXRecordDecl *record = type->getAsCXXRecordDecl()) {
-      if (record->hasTrivialDestructor())
-        continue;
-      dtor = record->getDestructor();
-    } else if (type->isObjCRetainableType()) {
-      flags = BLOCK_FIELD_IS_OBJECT;
-      if (type->isBlockPointerType())
-        flags = BLOCK_FIELD_IS_BLOCK;
-
-      // Special rules for ARC captures.
-      Qualifiers qs = type.getQualifiers();
-
-      // Use objc_storeStrong for __strong direct captures; the
-      // dynamic tools really like it when we do this.
-      if (qs.getObjCLifetime() == Qualifiers::OCL_Strong) {
-        useARCStrongDestroy = true;
-
-      // Support __weak direct captures.
-      } else if (qs.getObjCLifetime() == Qualifiers::OCL_Weak) {
-        useARCWeakDestroy = true;
-
-      // Non-ARC captures are strong, and we need to use _Block_object_dispose.
-      } else if (!qs.hasObjCLifetime() && !getLangOpts().ObjCAutoRefCount) {
-        // fall through
-
-      // Otherwise, we have nothing to do.
-      } else {
-        continue;
-      }
-    } else {
-      continue;
-    }
+  for (const auto &DestroyedCapture : DestroyedCaptures) {
+    const BlockDecl::Capture &CI = DestroyedCapture.CI;
+    const CGBlockInfo::Capture &capture = DestroyedCapture.Capture;
+    BlockFieldFlags flags = DestroyedCapture.Flags;
 
     Address srcField =
       Builder.CreateStructGEP(src, capture.getIndex(), capture.getOffset());
 
-    // If there's an explicit copy expression, we do that.
-    if (dtor) {
-      PushDestructorCleanup(dtor, srcField);
+    // If the captured record has a destructor then call it.
+    if (DestroyedCapture.Kind == BlockCaptureEntityKind::CXXRecord) {
+      const auto *Dtor =
+          CI.getVariable()->getType()->getAsCXXRecordDecl()->getDestructor();
+      PushDestructorCleanup(Dtor, srcField);
 
-    // If this is a __weak capture, emit the release directly.
-    } else if (useARCWeakDestroy) {
+      // If this is a __weak capture, emit the release directly.
+    } else if (DestroyedCapture.Kind == BlockCaptureEntityKind::ARCWeak) {
       EmitARCDestroyWeak(srcField);
 
     // Destroy strong objects with a call if requested.
-    } else if (useARCStrongDestroy) {
+    } else if (DestroyedCapture.Kind == BlockCaptureEntityKind::ARCStrong) {
       EmitARCDestroyStrong(srcField, ARCImpreciseLifetime);
 
     // Otherwise we call _Block_object_dispose.  It wouldn't be too
     // hard to just emit this as a cleanup if we wanted to make sure
     // that things were done in reverse.
     } else {
+      assert(DestroyedCapture.Kind == BlockCaptureEntityKind::BlockObject);
       llvm::Value *value = Builder.CreateLoad(srcField);
       value = Builder.CreateBitCast(value, VoidPtrTy);
       BuildBlockRelease(value, flags);

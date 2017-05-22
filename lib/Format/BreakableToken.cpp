@@ -41,7 +41,8 @@ static bool IsBlank(char C) {
 }
 
 static StringRef getLineCommentIndentPrefix(StringRef Comment) {
-  static const char *const KnownPrefixes[] = {"///", "//", "//!"};
+  static const char *const KnownPrefixes[] = {
+      "///<", "//!<", "///", "//", "//!"};
   StringRef LongestPrefix;
   for (StringRef KnownPrefix : KnownPrefixes) {
     if (Comment.startswith(KnownPrefix)) {
@@ -77,6 +78,14 @@ static BreakableToken::Split getCommentSplit(StringRef Text,
   }
 
   StringRef::size_type SpaceOffset = Text.find_last_of(Blanks, MaxSplitBytes);
+
+  // Do not split before a number followed by a dot: this would be interpreted
+  // as a numbered list, which would prevent re-flowing in subsequent passes.
+  static llvm::Regex kNumberedListRegexp = llvm::Regex("^[1-9][0-9]?\\.");
+  if (SpaceOffset != StringRef::npos &&
+      kNumberedListRegexp.match(Text.substr(SpaceOffset).ltrim(Blanks)))
+    SpaceOffset = Text.find_last_of(Blanks, SpaceOffset);
+
   if (SpaceOffset == StringRef::npos ||
       // Don't break at leading whitespace.
       Text.find_last_not_of(Blanks, SpaceOffset) == StringRef::npos) {
@@ -186,7 +195,7 @@ BreakableSingleLineToken::BreakableSingleLineToken(
     const FormatStyle &Style)
     : BreakableToken(Tok, InPPDirective, Encoding, Style),
       StartColumn(StartColumn), Prefix(Prefix), Postfix(Postfix) {
-  assert(Tok.TokenText.endswith(Postfix));
+  assert(Tok.TokenText.startswith(Prefix) && Tok.TokenText.endswith(Postfix));
   Line = Tok.TokenText.substr(
       Prefix.size(), Tok.TokenText.size() - Prefix.size() - Postfix.size());
 }
@@ -200,7 +209,8 @@ BreakableStringLiteral::BreakableStringLiteral(
 
 BreakableToken::Split
 BreakableStringLiteral::getSplit(unsigned LineIndex, unsigned TailOffset,
-                                 unsigned ColumnLimit) const {
+                                 unsigned ColumnLimit,
+                                 llvm::Regex &CommentPragmasRegex) const {
   return getStringSplit(Line.substr(TailOffset),
                         StartColumn + Prefix.size() + Postfix.size(),
                         ColumnLimit, Style.TabWidth, Encoding);
@@ -209,33 +219,28 @@ BreakableStringLiteral::getSplit(unsigned LineIndex, unsigned TailOffset,
 void BreakableStringLiteral::insertBreak(unsigned LineIndex,
                                          unsigned TailOffset, Split Split,
                                          WhitespaceManager &Whitespaces) {
-  unsigned LeadingSpaces = StartColumn;
-  // The '@' of an ObjC string literal (@"Test") does not become part of the
-  // string token.
-  // FIXME: It might be a cleaner solution to merge the tokens as a
-  // precomputation step.
-  if (Prefix.startswith("@"))
-    --LeadingSpaces;
   Whitespaces.replaceWhitespaceInToken(
       Tok, Prefix.size() + TailOffset + Split.first, Split.second, Postfix,
-      Prefix, InPPDirective, 1, LeadingSpaces);
+      Prefix, InPPDirective, 1, StartColumn);
 }
 
 BreakableComment::BreakableComment(const FormatToken &Token,
                                    unsigned StartColumn,
-                                   unsigned OriginalStartColumn,
-                                   bool FirstInLine, bool InPPDirective,
+                                   bool InPPDirective,
                                    encoding::Encoding Encoding,
                                    const FormatStyle &Style)
     : BreakableToken(Token, InPPDirective, Encoding, Style),
-      StartColumn(StartColumn), OriginalStartColumn(OriginalStartColumn),
-      FirstInLine(FirstInLine) {}
+      StartColumn(StartColumn) {}
 
 unsigned BreakableComment::getLineCount() const { return Lines.size(); }
 
-BreakableToken::Split BreakableComment::getSplit(unsigned LineIndex,
-                                                 unsigned TailOffset,
-                                                 unsigned ColumnLimit) const {
+BreakableToken::Split
+BreakableComment::getSplit(unsigned LineIndex, unsigned TailOffset,
+                           unsigned ColumnLimit,
+                           llvm::Regex &CommentPragmasRegex) const {
+  // Don't break lines matching the comment pragmas regex.
+  if (CommentPragmasRegex.match(Content[LineIndex]))
+    return Split(StringRef::npos, 0);
   return getCommentSplit(Content[LineIndex].substr(TailOffset),
                          getContentStartColumn(LineIndex, TailOffset),
                          ColumnLimit, Style.TabWidth, Encoding);
@@ -302,8 +307,9 @@ const FormatToken &BreakableComment::tokenAt(unsigned LineIndex) const {
 static bool mayReflowContent(StringRef Content) {
   Content = Content.trim(Blanks);
   // Lines starting with '@' commonly have special meaning.
-  static const SmallVector<StringRef, 4> kSpecialMeaningPrefixes = {
-      "@", "TODO", "FIXME", "XXX"};
+  // Lines starting with '-', '-#', '+' or '*' are bulleted/numbered lists.
+  static const SmallVector<StringRef, 8> kSpecialMeaningPrefixes = {
+      "@", "TODO", "FIXME", "XXX", "-# ", "- ", "+ ", "* " };
   bool hasSpecialMeaningPrefix = false;
   for (StringRef Prefix : kSpecialMeaningPrefixes) {
     if (Content.startswith(Prefix)) {
@@ -311,6 +317,14 @@ static bool mayReflowContent(StringRef Content) {
       break;
     }
   }
+
+  // Numbered lists may also start with a number followed by '.'
+  // To avoid issues if a line starts with a number which is actually the end
+  // of a previous line, we only consider numbers with up to 2 digits.
+  static llvm::Regex kNumberedListRegexp = llvm::Regex("^[1-9][0-9]?\\. ");
+  hasSpecialMeaningPrefix = hasSpecialMeaningPrefix ||
+                            kNumberedListRegexp.match(Content);
+
   // Simple heuristic for what to reflow: content should contain at least two
   // characters and either the first or second character must be
   // non-punctuation.
@@ -325,8 +339,7 @@ BreakableBlockComment::BreakableBlockComment(
     const FormatToken &Token, unsigned StartColumn,
     unsigned OriginalStartColumn, bool FirstInLine, bool InPPDirective,
     encoding::Encoding Encoding, const FormatStyle &Style)
-    : BreakableComment(Token, StartColumn, OriginalStartColumn, FirstInLine,
-                       InPPDirective, Encoding, Style) {
+    : BreakableComment(Token, StartColumn, InPPDirective, Encoding, Style) {
   assert(Tok.is(TT_BlockComment) &&
          "block comment section must start with a block comment");
 
@@ -664,8 +677,7 @@ BreakableLineCommentSection::BreakableLineCommentSection(
     const FormatToken &Token, unsigned StartColumn,
     unsigned OriginalStartColumn, bool FirstInLine, bool InPPDirective,
     encoding::Encoding Encoding, const FormatStyle &Style)
-    : BreakableComment(Token, StartColumn, OriginalStartColumn, FirstInLine,
-                       InPPDirective, Encoding, Style) {
+    : BreakableComment(Token, StartColumn, InPPDirective, Encoding, Style) {
   assert(Tok.is(TT_LineComment) &&
          "line comment section must start with a line comment");
   FormatToken *LineTok = nullptr;
@@ -698,6 +710,10 @@ BreakableLineCommentSection::BreakableLineCommentSection(
           Prefix[i] = "/// ";
         else if (Prefix[i] == "//!")
           Prefix[i] = "//! ";
+        else if (Prefix[i] == "///<")
+          Prefix[i] = "///< ";
+        else if (Prefix[i] == "//!<")
+          Prefix[i] = "//!< ";
       }
 
       Tokens[i] = LineTok;

@@ -34,6 +34,7 @@ class DeclarationName;
 class DependentDiagnostic;
 class EnumDecl;
 class ExportDecl;
+class ExternalSourceSymbolAttr;
 class FunctionDecl;
 class FunctionType;
 enum Linkage : unsigned char;
@@ -332,15 +333,15 @@ private:
   bool AccessDeclContextSanity() const;
 
 protected:
-
   Decl(Kind DK, DeclContext *DC, SourceLocation L)
-    : NextInContextAndBits(), DeclCtx(DC),
-      Loc(L), DeclKind(DK), InvalidDecl(0),
-      HasAttrs(false), Implicit(false), Used(false), Referenced(false),
-      Access(AS_none), FromASTFile(0), Hidden(DC && cast<Decl>(DC)->Hidden),
-      IdentifierNamespace(getIdentifierNamespaceForKind(DK)),
-      CacheValidAndLinkage(0)
-  {
+      : NextInContextAndBits(), DeclCtx(DC), Loc(L), DeclKind(DK),
+        InvalidDecl(0), HasAttrs(false), Implicit(false), Used(false),
+        Referenced(false), Access(AS_none), FromASTFile(0),
+        Hidden(DC && cast<Decl>(DC)->Hidden &&
+               (!cast<Decl>(DC)->isFromASTFile() ||
+                hasLocalOwningModuleStorage())),
+        IdentifierNamespace(getIdentifierNamespaceForKind(DK)),
+        CacheValidAndLinkage(0) {
     if (StatisticsEnabled) add(DK);
   }
 
@@ -562,6 +563,10 @@ public:
     NextInContextAndBits.setInt(Bits);
   }
 
+  /// \brief Looks on this and related declarations for an applicable
+  /// external source symbol attribute.
+  ExternalSourceSymbolAttr *getExternalSourceSymbolAttr() const;
+
   /// \brief Whether this declaration was marked as being private to the
   /// module in which it was defined.
   bool isModulePrivate() const {
@@ -615,6 +620,14 @@ public:
   AvailabilityResult
   getAvailability(std::string *Message = nullptr,
                   VersionTuple EnclosingVersion = VersionTuple()) const;
+
+  /// \brief Retrieve the version of the target platform in which this
+  /// declaration was introduced.
+  ///
+  /// \returns An empty version tuple if this declaration has no 'introduced'
+  /// availability attributes, or the version tuple that's specified in the
+  /// attribute otherwise.
+  VersionTuple getVersionIntroduced() const;
 
   /// \brief Determine whether this declaration is marked 'deprecated'.
   ///
@@ -690,12 +703,29 @@ public:
   Module *getLocalOwningModule() const {
     if (isFromASTFile() || !Hidden)
       return nullptr;
+
+    assert(hasLocalOwningModuleStorage() &&
+           "hidden local decl but no local module storage");
     return reinterpret_cast<Module *const *>(this)[-1];
   }
   void setLocalOwningModule(Module *M) {
     assert(!isFromASTFile() && Hidden && hasLocalOwningModuleStorage() &&
            "should not have a cached owning module");
     reinterpret_cast<Module **>(this)[-1] = M;
+  }
+
+  Module *getOwningModule() const {
+    return isFromASTFile() ? getImportedOwningModule() : getLocalOwningModule();
+  }
+
+  /// \brief Determine whether this declaration is hidden from name lookup.
+  bool isHidden() const { return Hidden; }
+
+  /// \brief Set whether this declaration is hidden from name lookup.
+  void setHidden(bool Hide) {
+    assert((!Hide || isFromASTFile() || hasLocalOwningModuleStorage()) &&
+           "declaration with no owning module can't be hidden");
+    Hidden = Hide;
   }
 
   unsigned getIdentifierNamespace() const {
@@ -1029,7 +1059,7 @@ public:
   void dump() const;
   // Same as dump(), but forces color printing.
   void dumpColor() const;
-  void dump(raw_ostream &Out) const;
+  void dump(raw_ostream &Out, bool Deserialize = false) const;
 
   /// \brief Looks through the Decl's underlying type to extract a FunctionType
   /// when possible. Will return null if the type underlying the Decl does not
@@ -1814,7 +1844,8 @@ public:
 
   void dumpDeclContext() const;
   void dumpLookups() const;
-  void dumpLookups(llvm::raw_ostream &OS, bool DumpDecls = false) const;
+  void dumpLookups(llvm::raw_ostream &OS, bool DumpDecls = false,
+                   bool Deserialize = false) const;
 
 private:
   void reconcileExternalVisibleStorage() const;

@@ -48,11 +48,15 @@ namespace format {
   TYPE(FunctionTypeLParen) \
   TYPE(ImplicitStringLiteral) \
   TYPE(InheritanceColon) \
+  TYPE(InheritanceComma) \
   TYPE(InlineASMBrace) \
   TYPE(InlineASMColon) \
   TYPE(JavaAnnotation) \
   TYPE(JsComputedPropertyName) \
+  TYPE(JsExponentiation) \
+  TYPE(JsExponentiationEqual) \
   TYPE(JsFatArrow) \
+  TYPE(JsNonNullAssertion) \
   TYPE(JsTypeColon) \
   TYPE(JsTypeOperator) \
   TYPE(JsTypeOptionalQuestion) \
@@ -455,6 +459,8 @@ struct FormatToken {
   /// \brief Returns \c true if this tokens starts a block-type list, i.e. a
   /// list that should be indented with a block indent.
   bool opensBlockOrBlockTypeList(const FormatStyle &Style) const {
+    if (is(TT_TemplateString) && opensScope())
+      return true;
     return is(TT_ArrayInitializerLSquare) ||
            (is(tok::l_brace) &&
             (BlockKind == BK_Block || is(TT_DictLiteral) ||
@@ -463,6 +469,8 @@ struct FormatToken {
 
   /// \brief Same as opensBlockOrBlockTypeList, but for the closing token.
   bool closesBlockOrBlockTypeList(const FormatStyle &Style) const {
+    if (is(TT_TemplateString) && closesScope())
+      return true;
     return MatchingParen && MatchingParen->opensBlockOrBlockTypeList(Style);
   }
 
@@ -611,10 +619,12 @@ struct AdditionalKeywords {
     kw_finally = &IdentTable.get("finally");
     kw_from = &IdentTable.get("from");
     kw_function = &IdentTable.get("function");
+    kw_get = &IdentTable.get("get");
     kw_import = &IdentTable.get("import");
     kw_is = &IdentTable.get("is");
     kw_let = &IdentTable.get("let");
     kw_module = &IdentTable.get("module");
+    kw_set = &IdentTable.get("set");
     kw_type = &IdentTable.get("type");
     kw_var = &IdentTable.get("var");
     kw_yield = &IdentTable.get("yield");
@@ -669,10 +679,12 @@ struct AdditionalKeywords {
   IdentifierInfo *kw_finally;
   IdentifierInfo *kw_from;
   IdentifierInfo *kw_function;
+  IdentifierInfo *kw_get;
   IdentifierInfo *kw_import;
   IdentifierInfo *kw_is;
   IdentifierInfo *kw_let;
   IdentifierInfo *kw_module;
+  IdentifierInfo *kw_set;
   IdentifierInfo *kw_type;
   IdentifierInfo *kw_var;
   IdentifierInfo *kw_yield;

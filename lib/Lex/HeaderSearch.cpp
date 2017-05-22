@@ -172,8 +172,10 @@ std::string HeaderSearch::getModuleFileName(StringRef ModuleName,
     //
     // To avoid false-negatives, we form as canonical a path as we can, and map
     // to lower-case in case we're on a case-insensitive file system.
-   auto *Dir =
-        FileMgr.getDirectory(llvm::sys::path::parent_path(ModuleMapPath));
+    std::string Parent = llvm::sys::path::parent_path(ModuleMapPath);
+    if (Parent.empty())
+      Parent = ".";
+    auto *Dir = FileMgr.getDirectory(Parent);
     if (!Dir)
       return std::string();
     auto DirName = FileMgr.getCanonicalName(Dir);
@@ -622,7 +624,10 @@ const FileEntry *HeaderSearch::LookupFile(
     ArrayRef<std::pair<const FileEntry *, const DirectoryEntry *>> Includers,
     SmallVectorImpl<char> *SearchPath, SmallVectorImpl<char> *RelativePath,
     Module *RequestingModule, ModuleMap::KnownHeader *SuggestedModule,
-    bool SkipCache, bool BuildSystemModule) {
+    bool *IsMapped, bool SkipCache, bool BuildSystemModule) {
+  if (IsMapped)
+    *IsMapped = false;
+
   if (SuggestedModule)
     *SuggestedModule = ModuleMap::KnownHeader();
     
@@ -752,8 +757,11 @@ const FileEntry *HeaderSearch::LookupFile(
   if (!SkipCache && CacheLookup.StartIdx == i+1) {
     // Skip querying potentially lots of directories for this lookup.
     i = CacheLookup.HitIdx;
-    if (CacheLookup.MappedName)
+    if (CacheLookup.MappedName) {
       Filename = CacheLookup.MappedName;
+      if (IsMapped)
+        *IsMapped = true;
+    }
   } else {
     // Otherwise, this is the first query, or the previous query didn't match
     // our search start.  We will fill in our found location below, so prime the
@@ -774,6 +782,8 @@ const FileEntry *HeaderSearch::LookupFile(
     if (HasBeenMapped) {
       CacheLookup.MappedName =
           copyString(Filename, LookupFileCache.getAllocator());
+      if (IsMapped)
+        *IsMapped = true;
     }
     if (!FE) continue;
 
@@ -837,7 +847,7 @@ const FileEntry *HeaderSearch::LookupFile(
       const FileEntry *FE =
           LookupFile(ScratchFilename, IncludeLoc, /*isAngled=*/true, FromDir,
                      CurDir, Includers.front(), SearchPath, RelativePath,
-                     RequestingModule, SuggestedModule);
+                     RequestingModule, SuggestedModule, IsMapped);
 
       if (checkMSVCHeaderSearch(Diags, MSFE, FE, IncludeLoc)) {
         if (SuggestedModule)
@@ -1315,7 +1325,8 @@ static const FileEntry *getPrivateModuleMap(const FileEntry *File,
   return FileMgr.getFile(PrivateFilename);
 }
 
-bool HeaderSearch::loadModuleMapFile(const FileEntry *File, bool IsSystem) {
+bool HeaderSearch::loadModuleMapFile(const FileEntry *File, bool IsSystem,
+                                     FileID ID, unsigned *Offset) {
   // Find the directory for the module. For frameworks, that may require going
   // up from the 'Modules' directory.
   const DirectoryEntry *Dir = nullptr;
@@ -1334,7 +1345,7 @@ bool HeaderSearch::loadModuleMapFile(const FileEntry *File, bool IsSystem) {
     }
   }
 
-  switch (loadModuleMapFileImpl(File, IsSystem, Dir)) {
+  switch (loadModuleMapFileImpl(File, IsSystem, Dir, ID, Offset)) {
   case LMM_AlreadyLoaded:
   case LMM_NewlyLoaded:
     return false;
@@ -1347,7 +1358,8 @@ bool HeaderSearch::loadModuleMapFile(const FileEntry *File, bool IsSystem) {
 
 HeaderSearch::LoadModuleMapResult
 HeaderSearch::loadModuleMapFileImpl(const FileEntry *File, bool IsSystem,
-                                    const DirectoryEntry *Dir) {
+                                    const DirectoryEntry *Dir, FileID ID,
+                                    unsigned *Offset) {
   assert(File && "expected FileEntry");
 
   // Check whether we've already loaded this module map, and mark it as being
@@ -1356,7 +1368,7 @@ HeaderSearch::loadModuleMapFileImpl(const FileEntry *File, bool IsSystem,
   if (!AddResult.second)
     return AddResult.first->second ? LMM_AlreadyLoaded : LMM_InvalidModuleMap;
 
-  if (ModMap.parseModuleMapFile(File, IsSystem, Dir)) {
+  if (ModMap.parseModuleMapFile(File, IsSystem, Dir, ID, Offset)) {
     LoadedModuleMaps[File] = false;
     return LMM_InvalidModuleMap;
   }

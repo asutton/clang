@@ -51,6 +51,7 @@ class DiagnosticsEngine;
 class FileEntry;
 class FileManager;
 class HeaderSearch;
+class MemoryBufferCache;
 class Preprocessor;
 class PCHContainerOperations;
 class PCHContainerReader;
@@ -84,6 +85,7 @@ private:
   IntrusiveRefCntPtr<DiagnosticsEngine>   Diagnostics;
   IntrusiveRefCntPtr<FileManager>         FileMgr;
   IntrusiveRefCntPtr<SourceManager>       SourceMgr;
+  IntrusiveRefCntPtr<MemoryBufferCache>   PCMCache;
   std::unique_ptr<HeaderSearch>           HeaderInfo;
   IntrusiveRefCntPtr<TargetInfo>          Target;
   std::shared_ptr<Preprocessor>           PP;
@@ -417,7 +419,6 @@ private:
   
   explicit ASTUnit(bool MainFileIsAST);
 
-  void CleanTemporaryFiles();
   bool Parse(std::shared_ptr<PCHContainerOperations> PCHContainerOps,
              std::unique_ptr<llvm::MemoryBuffer> OverrideMainBuffer);
 
@@ -527,11 +528,6 @@ public:
 
   ASTMutationListener *getASTMutationListener();
   ASTDeserializationListener *getDeserializationListener();
-
-  /// \brief Add a temporary file that the ASTUnit depends on.
-  ///
-  /// This file will be erased when the ASTUnit is destroyed.
-  void addTemporaryFile(StringRef TempFile);
 
   bool getOnlyLocalDecls() const { return OnlyLocalDecls; }
 

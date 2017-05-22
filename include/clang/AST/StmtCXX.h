@@ -478,6 +478,7 @@ class CoroutineBodyStmt final
     Allocate,      ///< Coroutine frame memory allocation.
     Deallocate,    ///< Coroutine frame memory deallocation.
     ReturnValue,   ///< Return value for thunk function.
+    ReturnStmtOnAllocFailure, ///< Return statement if allocation failed.
     FirstParamMove ///< First offset for move construction of parameter copies.
   };
   unsigned NumParams;
@@ -501,6 +502,7 @@ public:
     Expr *Allocate = nullptr;
     Expr *Deallocate = nullptr;
     Stmt *ReturnValue = nullptr;
+    Stmt *ReturnStmtOnAllocFailure = nullptr;
     ArrayRef<Stmt *> ParamMoves;
   };
 
@@ -510,6 +512,10 @@ private:
 
 public:
   static CoroutineBodyStmt *Create(const ASTContext &C, CtorArgs const &Args);
+
+  bool hasDependentPromiseType() const {
+    return getPromiseDecl()->getType()->isDependentType();
+  }
 
   /// \brief Retrieve the body of the coroutine as written. This will be either
   /// a CompoundStmt or a TryStmt.
@@ -539,24 +545,28 @@ public:
   }
 
   Expr *getAllocate() const {
-    return cast<Expr>(getStoredStmts()[SubStmt::Allocate]);
+    return cast_or_null<Expr>(getStoredStmts()[SubStmt::Allocate]);
   }
   Expr *getDeallocate() const {
-    return cast<Expr>(getStoredStmts()[SubStmt::Deallocate]);
+    return cast_or_null<Expr>(getStoredStmts()[SubStmt::Deallocate]);
   }
 
   Expr *getReturnValueInit() const {
-    return cast<Expr>(getStoredStmts()[SubStmt::ReturnValue]);
+    return cast_or_null<Expr>(getStoredStmts()[SubStmt::ReturnValue]);
+  }
+  Stmt *getReturnStmtOnAllocFailure() const {
+    return getStoredStmts()[SubStmt::ReturnStmtOnAllocFailure];
   }
   ArrayRef<Stmt const *> getParamMoves() const {
     return {getStoredStmts() + SubStmt::FirstParamMove, NumParams};
   }
 
   SourceLocation getLocStart() const LLVM_READONLY {
-    return getBody()->getLocStart();
+    return getBody() ? getBody()->getLocStart()
+            : getPromiseDecl()->getLocStart();
   }
   SourceLocation getLocEnd() const LLVM_READONLY {
-    return getBody()->getLocEnd();
+    return getBody() ? getBody()->getLocEnd() : getPromiseDecl()->getLocEnd();
   }
 
   child_range children() {
@@ -586,10 +596,14 @@ class CoreturnStmt : public Stmt {
   enum SubStmt { Operand, PromiseCall, Count };
   Stmt *SubStmts[SubStmt::Count];
 
+  bool IsImplicit : 1;
+
   friend class ASTStmtReader;
 public:
-  CoreturnStmt(SourceLocation CoreturnLoc, Stmt *Operand, Stmt *PromiseCall)
-      : Stmt(CoreturnStmtClass), CoreturnLoc(CoreturnLoc) {
+  CoreturnStmt(SourceLocation CoreturnLoc, Stmt *Operand, Stmt *PromiseCall,
+               bool IsImplicit = false)
+      : Stmt(CoreturnStmtClass), CoreturnLoc(CoreturnLoc),
+        IsImplicit(IsImplicit) {
     SubStmts[SubStmt::Operand] = Operand;
     SubStmts[SubStmt::PromiseCall] = PromiseCall;
   }
@@ -606,6 +620,9 @@ public:
   Expr *getPromiseCall() const {
     return static_cast<Expr*>(SubStmts[PromiseCall]);
   }
+
+  bool isImplicit() const { return IsImplicit; }
+  void setIsImplicit(bool value = true) { IsImplicit = value; }
 
   SourceLocation getLocStart() const LLVM_READONLY { return CoreturnLoc; }
   SourceLocation getLocEnd() const LLVM_READONLY {

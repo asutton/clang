@@ -14,6 +14,7 @@
 #ifndef LLVM_CLANG_LIB_SEMA_TREETRANSFORM_H
 #define LLVM_CLANG_LIB_SEMA_TREETRANSFORM_H
 
+#include "CoroutineStmtBuilder.h"
 #include "TypeLocBuilder.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclObjC.h"
@@ -1362,16 +1363,28 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  StmtResult RebuildCoreturnStmt(SourceLocation CoreturnLoc, Expr *Result) {
-    return getSema().BuildCoreturnStmt(CoreturnLoc, Result);
+  StmtResult RebuildCoreturnStmt(SourceLocation CoreturnLoc, Expr *Result,
+                                 bool IsImplicit) {
+    return getSema().BuildCoreturnStmt(CoreturnLoc, Result, IsImplicit);
   }
 
   /// \brief Build a new co_await expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildCoawaitExpr(SourceLocation CoawaitLoc, Expr *Result) {
-    return getSema().BuildCoawaitExpr(CoawaitLoc, Result);
+  ExprResult RebuildCoawaitExpr(SourceLocation CoawaitLoc, Expr *Result,
+                                bool IsImplicit) {
+    return getSema().BuildResolvedCoawaitExpr(CoawaitLoc, Result, IsImplicit);
+  }
+
+  /// \brief Build a new co_await expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildDependentCoawaitExpr(SourceLocation CoawaitLoc,
+                                         Expr *Result,
+                                         UnresolvedLookupExpr *Lookup) {
+    return getSema().BuildUnresolvedCoawaitExpr(CoawaitLoc, Result, Lookup);
   }
 
   /// \brief Build a new co_yield expression.
@@ -1380,6 +1393,10 @@ public:
   /// Subclasses may override this routine to provide different behavior.
   ExprResult RebuildCoyieldExpr(SourceLocation CoyieldLoc, Expr *Result) {
     return getSema().BuildCoyieldExpr(CoyieldLoc, Result);
+  }
+
+  StmtResult RebuildCoroutineBodyStmt(CoroutineBodyStmt::CtorArgs Args) {
+    return getSema().BuildCoroutineBodyStmt(Args);
   }
 
   // [Meta]
@@ -2264,6 +2281,9 @@ public:
 
     Base = BaseResult.get();
     QualType BaseType = Base->getType();
+
+    if (isArrow && !BaseType->isPointerType())
+      return ExprError();
 
     // FIXME: this involves duplicating earlier analysis in a lot of
     // cases; we should avoid this when possible.
@@ -3913,7 +3933,9 @@ bool TreeTransform<Derived>::TransformTemplateArgument(
   case TemplateArgument::Expression: {
     // Template argument expressions are constant expressions.
     EnterExpressionEvaluationContext Unevaluated(
-        getSema(), Uneval ? Sema::Unevaluated : Sema::ConstantEvaluated);
+        getSema(), Uneval
+                       ? Sema::ExpressionEvaluationContext::Unevaluated
+                       : Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
     Expr *InputExpr = Input.getSourceExpression();
     if (!InputExpr) InputExpr = Input.getArgument().getAsExpr();
@@ -4618,8 +4640,8 @@ TreeTransform<Derived>::TransformConstantArrayType(TypeLocBuilder &TLB,
 
   Expr *Size = TL.getSizeExpr();
   if (Size) {
-    EnterExpressionEvaluationContext Unevaluated(SemaRef,
-                                                 Sema::ConstantEvaluated);
+    EnterExpressionEvaluationContext Unevaluated(
+        SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
     Size = getDerived().TransformExpr(Size).template getAs<Expr>();
     Size = SemaRef.ActOnConstantExpression(Size).get();
   }
@@ -4667,8 +4689,8 @@ TreeTransform<Derived>::TransformVariableArrayType(TypeLocBuilder &TLB,
 
   ExprResult SizeResult;
   {
-    EnterExpressionEvaluationContext Context(SemaRef,
-                                             Sema::PotentiallyEvaluated);
+    EnterExpressionEvaluationContext Context(
+        SemaRef, Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
     SizeResult = getDerived().TransformExpr(T->getSizeExpr());
   }
   if (SizeResult.isInvalid())
@@ -4712,8 +4734,8 @@ TreeTransform<Derived>::TransformDependentSizedArrayType(TypeLocBuilder &TLB,
     return QualType();
 
   // Array bounds are constant expressions.
-  EnterExpressionEvaluationContext Unevaluated(SemaRef,
-                                               Sema::ConstantEvaluated);
+  EnterExpressionEvaluationContext Unevaluated(
+      SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   // Prefer the expression from the TypeLoc;  the other may have been uniqued.
   Expr *origSize = TL.getSizeExpr();
@@ -4762,8 +4784,8 @@ QualType TreeTransform<Derived>::TransformDependentSizedExtVectorType(
     return QualType();
 
   // Vector sizes are constant expressions.
-  EnterExpressionEvaluationContext Unevaluated(SemaRef,
-                                               Sema::ConstantEvaluated);
+  EnterExpressionEvaluationContext Unevaluated(
+      SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   ExprResult Size = getDerived().TransformExpr(T->getSizeExpr());
   Size = SemaRef.ActOnConstantExpression(Size);
@@ -5230,8 +5252,8 @@ bool TreeTransform<Derived>::TransformExceptionSpec(
 
   // Instantiate a dynamic noexcept expression, if any.
   if (ESI.Type == EST_ComputedNoexcept) {
-    EnterExpressionEvaluationContext Unevaluated(getSema(),
-                                                 Sema::ConstantEvaluated);
+    EnterExpressionEvaluationContext Unevaluated(
+        getSema(), Sema::ExpressionEvaluationContext::ConstantEvaluated);
     ExprResult NoexceptExpr = getDerived().TransformExpr(ESI.NoexceptExpr);
     if (NoexceptExpr.isInvalid())
       return true;
@@ -5398,8 +5420,9 @@ template<typename Derived>
 QualType TreeTransform<Derived>::TransformTypeOfExprType(TypeLocBuilder &TLB,
                                                       TypeOfExprTypeLoc TL) {
   // typeof expressions are not potentially evaluated contexts
-  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated,
-                                               Sema::ReuseLambdaContextDecl);
+  EnterExpressionEvaluationContext Unevaluated(
+      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated,
+      Sema::ReuseLambdaContextDecl);
 
   ExprResult E = getDerived().TransformExpr(TL.getUnderlyingExpr());
   if (E.isInvalid())
@@ -5456,8 +5479,9 @@ QualType TreeTransform<Derived>::TransformDecltypeType(TypeLocBuilder &TLB,
   const DecltypeType *T = TL.getTypePtr();
 
   // decltype expressions are not potentially evaluated contexts
-  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated,
-                                               nullptr, /*IsDecltype=*/ true);
+  EnterExpressionEvaluationContext Unevaluated(
+      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated, nullptr,
+      /*IsDecltype=*/true);
 
   ExprResult E = getDerived().TransformExpr(T->getUnderlyingExpr());
   if (E.isInvalid())
@@ -6432,8 +6456,8 @@ StmtResult
 TreeTransform<Derived>::TransformCaseStmt(CaseStmt *S) {
   ExprResult LHS, RHS;
   {
-    EnterExpressionEvaluationContext Unevaluated(SemaRef,
-                                                 Sema::ConstantEvaluated);
+    EnterExpressionEvaluationContext Unevaluated(
+        SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
     // Transform the left-hand case value.
     LHS = getDerived().TransformExpr(S->getLHS());
@@ -6894,9 +6918,99 @@ TreeTransform<Derived>::TransformMSAsmStmt(MSAsmStmt *S) {
 template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCoroutineBodyStmt(CoroutineBodyStmt *S) {
-  // The coroutine body should be re-formed by the caller if necessary.
-  // FIXME: The coroutine body is always rebuilt by ActOnFinishFunctionBody
-  return getDerived().TransformStmt(S->getBody());
+  auto *ScopeInfo = SemaRef.getCurFunction();
+  auto *FD = cast<FunctionDecl>(SemaRef.CurContext);
+  assert(FD && ScopeInfo && !ScopeInfo->CoroutinePromise &&
+         ScopeInfo->NeedsCoroutineSuspends &&
+         ScopeInfo->CoroutineSuspends.first == nullptr &&
+         ScopeInfo->CoroutineSuspends.second == nullptr &&
+         "expected clean scope info");
+
+  // Set that we have (possibly-invalid) suspend points before we do anything
+  // that may fail.
+  ScopeInfo->setNeedsCoroutineSuspends(false);
+
+  // The new CoroutinePromise object needs to be built and put into the current
+  // FunctionScopeInfo before any transformations or rebuilding occurs.
+  auto *Promise = SemaRef.buildCoroutinePromise(FD->getLocation());
+  if (!Promise)
+    return StmtError();
+  getDerived().transformedLocalDecl(S->getPromiseDecl(), Promise);
+  ScopeInfo->CoroutinePromise = Promise;
+
+  // Transform the implicit coroutine statements we built during the initial
+  // parse.
+  StmtResult InitSuspend = getDerived().TransformStmt(S->getInitSuspendStmt());
+  if (InitSuspend.isInvalid())
+    return StmtError();
+  StmtResult FinalSuspend =
+      getDerived().TransformStmt(S->getFinalSuspendStmt());
+  if (FinalSuspend.isInvalid())
+    return StmtError();
+  ScopeInfo->setCoroutineSuspends(InitSuspend.get(), FinalSuspend.get());
+  assert(isa<Expr>(InitSuspend.get()) && isa<Expr>(FinalSuspend.get()));
+
+  StmtResult BodyRes = getDerived().TransformStmt(S->getBody());
+  if (BodyRes.isInvalid())
+    return StmtError();
+
+  CoroutineStmtBuilder Builder(SemaRef, *FD, *ScopeInfo, BodyRes.get());
+  if (Builder.isInvalid())
+    return StmtError();
+
+  Expr *ReturnObject = S->getReturnValueInit();
+  assert(ReturnObject && "the return object is expected to be valid");
+  ExprResult Res = getDerived().TransformInitializer(ReturnObject,
+                                                     /*NoCopyInit*/ false);
+  if (Res.isInvalid())
+    return StmtError();
+  Builder.ReturnValue = Res.get();
+
+  if (S->hasDependentPromiseType()) {
+    assert(!Promise->getType()->isDependentType() &&
+           "the promise type must no longer be dependent");
+    assert(!S->getFallthroughHandler() && !S->getExceptionHandler() &&
+           !S->getReturnStmtOnAllocFailure() && !S->getDeallocate() &&
+           "these nodes should not have been built yet");
+    if (!Builder.buildDependentStatements())
+      return StmtError();
+  } else {
+    if (auto *OnFallthrough = S->getFallthroughHandler()) {
+      StmtResult Res = getDerived().TransformStmt(OnFallthrough);
+      if (Res.isInvalid())
+        return StmtError();
+      Builder.OnFallthrough = Res.get();
+    }
+
+    if (auto *OnException = S->getExceptionHandler()) {
+      StmtResult Res = getDerived().TransformStmt(OnException);
+      if (Res.isInvalid())
+        return StmtError();
+      Builder.OnException = Res.get();
+    }
+
+    if (auto *OnAllocFailure = S->getReturnStmtOnAllocFailure()) {
+      StmtResult Res = getDerived().TransformStmt(OnAllocFailure);
+      if (Res.isInvalid())
+        return StmtError();
+      Builder.ReturnStmtOnAllocFailure = Res.get();
+    }
+
+    // Transform any additional statements we may have already built
+    assert(S->getAllocate() && S->getDeallocate() &&
+           "allocation and deallocation calls must already be built");
+    ExprResult AllocRes = getDerived().TransformExpr(S->getAllocate());
+    if (AllocRes.isInvalid())
+      return StmtError();
+    Builder.Allocate = AllocRes.get();
+
+    ExprResult DeallocRes = getDerived().TransformExpr(S->getDeallocate());
+    if (DeallocRes.isInvalid())
+      return StmtError();
+    Builder.Deallocate = DeallocRes.get();
+  }
+
+  return getDerived().RebuildCoroutineBodyStmt(Builder);
 }
 
 template<typename Derived>
@@ -6909,7 +7023,8 @@ TreeTransform<Derived>::TransformCoreturnStmt(CoreturnStmt *S) {
 
   // Always rebuild; we don't know if this needs to be injected into a new
   // context or if the promise type has changed.
-  return getDerived().RebuildCoreturnStmt(S->getKeywordLoc(), Result.get());
+  return getDerived().RebuildCoreturnStmt(S->getKeywordLoc(), Result.get(),
+                                          S->isImplicit());
 }
 
 template<typename Derived>
@@ -6922,7 +7037,29 @@ TreeTransform<Derived>::TransformCoawaitExpr(CoawaitExpr *E) {
 
   // Always rebuild; we don't know if this needs to be injected into a new
   // context or if the promise type has changed.
-  return getDerived().RebuildCoawaitExpr(E->getKeywordLoc(), Result.get());
+  return getDerived().RebuildCoawaitExpr(E->getKeywordLoc(), Result.get(),
+                                         E->isImplicit());
+}
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformDependentCoawaitExpr(DependentCoawaitExpr *E) {
+  ExprResult OperandResult = getDerived().TransformInitializer(E->getOperand(),
+                                                        /*NotCopyInit*/ false);
+  if (OperandResult.isInvalid())
+    return ExprError();
+
+  ExprResult LookupResult = getDerived().TransformUnresolvedLookupExpr(
+          E->getOperatorCoawaitLookup());
+
+  if (LookupResult.isInvalid())
+    return ExprError();
+
+  // Always rebuild; we don't know if this needs to be injected into a new
+  // context or if the promise type has changed.
+  return getDerived().RebuildDependentCoawaitExpr(
+      E->getKeywordLoc(), OperandResult.get(),
+      cast<UnresolvedLookupExpr>(LookupResult.get()));
 }
 
 template<typename Derived>
@@ -8972,8 +9109,9 @@ TreeTransform<Derived>::TransformUnaryExprOrTypeTraitExpr(
   // C++0x [expr.sizeof]p1:
   //   The operand is either an expression, which is an unevaluated operand
   //   [...]
-  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated,
-                                               Sema::ReuseLambdaContextDecl);
+  EnterExpressionEvaluationContext Unevaluated(
+      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated,
+      Sema::ReuseLambdaContextDecl);
 
   // Try to recover if we have something like sizeof(T::X) where X is a type.
   // Notably, there must be *exactly* one set of parens if X is a type.
@@ -9185,7 +9323,7 @@ TreeTransform<Derived>::TransformBinaryOperator(BinaryOperator *E) {
     return E;
 
   Sema::FPContractStateRAII FPContractState(getSema());
-  getSema().FPFeatures.fp_contract = E->isFPContractable();
+  getSema().FPFeatures = E->getFPFeatures();
 
   return getDerived().RebuildBinaryOperator(E->getOperatorLoc(), E->getOpcode(),
                                             LHS.get(), RHS.get());
@@ -9665,7 +9803,7 @@ TreeTransform<Derived>::TransformCXXOperatorCallExpr(CXXOperatorCallExpr *E) {
     return SemaRef.MaybeBindToTemporary(E);
 
   Sema::FPContractStateRAII FPContractState(getSema());
-  getSema().FPFeatures.fp_contract = E->isFPContractable();
+  getSema().FPFeatures = E->getFPFeatures();
 
   return getDerived().RebuildCXXOperatorCallExpr(E->getOperator(),
                                                  E->getOperatorLoc(),
@@ -9809,8 +9947,9 @@ TreeTransform<Derived>::TransformCXXTypeidExpr(CXXTypeidExpr *E) {
   // after we perform semantic analysis.  We speculatively assume it is
   // unevaluated; it will get fixed later if the subexpression is in fact
   // potentially evaluated.
-  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated,
-                                               Sema::ReuseLambdaContextDecl);
+  EnterExpressionEvaluationContext Unevaluated(
+      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated,
+      Sema::ReuseLambdaContextDecl);
 
   ExprResult SubExpr = getDerived().TransformExpr(E->getExprOperand());
   if (SubExpr.isInvalid())
@@ -9845,7 +9984,8 @@ TreeTransform<Derived>::TransformCXXUuidofExpr(CXXUuidofExpr *E) {
                                              E->getLocEnd());
   }
 
-  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+  EnterExpressionEvaluationContext Unevaluated(
+      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);
 
   ExprResult SubExpr = getDerived().TransformExpr(E->getExprOperand());
   if (SubExpr.isInvalid())
@@ -10459,7 +10599,8 @@ TreeTransform<Derived>::TransformArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {
 
   ExprResult SubExpr;
   {
-    EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+    EnterExpressionEvaluationContext Unevaluated(
+        SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);
     SubExpr = getDerived().TransformExpr(E->getDimensionExpression());
     if (SubExpr.isInvalid())
       return ExprError();
@@ -10480,7 +10621,8 @@ ExprResult
 TreeTransform<Derived>::TransformExpressionTraitExpr(ExpressionTraitExpr *E) {
   ExprResult SubExpr;
   {
-    EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+    EnterExpressionEvaluationContext Unevaluated(
+        SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);
     SubExpr = getDerived().TransformExpr(E->getQueriedExpression());
     if (SubExpr.isInvalid())
       return ExprError();
@@ -10716,8 +10858,8 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
        C != CEnd; ++C) {
     if (!E->isInitCapture(C))
       continue;
-    EnterExpressionEvaluationContext EEEC(getSema(),
-                                          Sema::PotentiallyEvaluated);
+    EnterExpressionEvaluationContext EEEC(
+        getSema(), Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
     ExprResult NewExprInitResult = getDerived().TransformInitializer(
         C->getCapturedVar()->getInit(),
         C->getCapturedVar()->getInitStyle() == VarDecl::CallInit);
@@ -10793,7 +10935,8 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
     auto *P = NewCallOperator->getParamDecl(I);
     if (P->hasUninstantiatedDefaultArg()) {
       EnterExpressionEvaluationContext Eval(
-          getSema(), Sema::PotentiallyEvaluatedIfUsed, P);
+          getSema(),
+          Sema::ExpressionEvaluationContext::PotentiallyEvaluatedIfUsed, P);
       ExprResult R = getDerived().TransformExpr(
           E->getCallOperator()->getParamDecl(I)->getDefaultArg());
       P->setDefaultArg(R.get());
@@ -10933,7 +11076,8 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
 
   // Enter a new evaluation context to insulate the lambda from any
   // cleanups from the enclosing full-expression.
-  getSema().PushExpressionEvaluationContext(Sema::PotentiallyEvaluated);
+  getSema().PushExpressionEvaluationContext(
+      Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
 
   // Instantiate the body of the lambda expression.
   StmtResult Body =
@@ -11169,7 +11313,8 @@ TreeTransform<Derived>::TransformUnresolvedMemberExpr(UnresolvedMemberExpr *Old)
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXNoexceptExpr(CXXNoexceptExpr *E) {
-  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+  EnterExpressionEvaluationContext Unevaluated(
+      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);
   ExprResult SubExpr = getDerived().TransformExpr(E->getOperand());
   if (SubExpr.isInvalid())
     return ExprError();
@@ -11202,7 +11347,8 @@ TreeTransform<Derived>::TransformSizeOfPackExpr(SizeOfPackExpr *E) {
   if (!E->isValueDependent())
     return E;
 
-  EnterExpressionEvaluationContext Unevaluated(getSema(), Sema::Unevaluated);
+  EnterExpressionEvaluationContext Unevaluated(
+      getSema(), Sema::ExpressionEvaluationContext::Unevaluated);
 
   ArrayRef<TemplateArgument> PackArgs;
   TemplateArgument ArgStorage;

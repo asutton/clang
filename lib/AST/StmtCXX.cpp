@@ -161,6 +161,8 @@ CoroutineBodyStmt::CoroutineBodyStmt(CoroutineBodyStmt::CtorArgs const &Args)
   SubStmts[CoroutineBodyStmt::Allocate] = Args.Allocate;
   SubStmts[CoroutineBodyStmt::Deallocate] = Args.Deallocate;
   SubStmts[CoroutineBodyStmt::ReturnValue] = Args.ReturnValue;
+  SubStmts[CoroutineBodyStmt::ReturnStmtOnAllocFailure] =
+      Args.ReturnStmtOnAllocFailure;
   std::copy(Args.ParamMoves.begin(), Args.ParamMoves.end(),
             const_cast<Stmt **>(getParamMoves().data()));
 }
@@ -172,3 +174,4 @@ CXXInjectionStmt::CXXInjectionStmt(ASTContext &Cxt, SourceLocation Arrow,
       RBraceLoc(RB), NumToks(TokArray.size()), Toks(new (Cxt) Token[NumToks]) {
   std::copy(TokArray.begin(), TokArray.end(), Toks);
 }
+

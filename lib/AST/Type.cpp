@@ -2023,20 +2023,8 @@ bool QualType::isCXX98PODType(const ASTContext &Context) const {
   if ((*this)->isIncompleteType())
     return false;
 
-  if (Context.getLangOpts().ObjCAutoRefCount) {
-    switch (getObjCLifetime()) {
-    case Qualifiers::OCL_ExplicitNone:
-      return true;
-      
-    case Qualifiers::OCL_Strong:
-    case Qualifiers::OCL_Weak:
-    case Qualifiers::OCL_Autoreleasing:
-      return false;
-
-    case Qualifiers::OCL_None:
-      break;
-    }        
-  }
+  if (hasNonTrivialObjCLifetime())
+    return false;
   
   QualType CanonicalType = getTypePtr()->CanonicalType;
   switch (CanonicalType->getTypeClass()) {
@@ -2085,22 +2073,8 @@ bool QualType::isTrivialType(const ASTContext &Context) const {
   if ((*this)->isIncompleteType())
     return false;
   
-  if (Context.getLangOpts().ObjCAutoRefCount) {
-    switch (getObjCLifetime()) {
-    case Qualifiers::OCL_ExplicitNone:
-      return true;
-      
-    case Qualifiers::OCL_Strong:
-    case Qualifiers::OCL_Weak:
-    case Qualifiers::OCL_Autoreleasing:
-      return false;
-      
-    case Qualifiers::OCL_None:
-      if ((*this)->isObjCLifetimeType())
-        return false;
-      break;
-    }        
-  }
+  if (hasNonTrivialObjCLifetime())
+    return false;
   
   QualType CanonicalType = getTypePtr()->CanonicalType;
   if (CanonicalType->isDependentType())
@@ -2137,33 +2111,16 @@ bool QualType::isTriviallyCopyableType(const ASTContext &Context) const {
   if ((*this)->isArrayType())
     return Context.getBaseElementType(*this).isTriviallyCopyableType(Context);
 
-  if (Context.getLangOpts().ObjCAutoRefCount) {
-    switch (getObjCLifetime()) {
-    case Qualifiers::OCL_ExplicitNone:
-      return true;
-      
-    case Qualifiers::OCL_Strong:
-    case Qualifiers::OCL_Weak:
-    case Qualifiers::OCL_Autoreleasing:
-      return false;
-      
-    case Qualifiers::OCL_None:
-      if ((*this)->isObjCLifetimeType())
-        return false;
-      break;
-    }        
-  }
+  if (hasNonTrivialObjCLifetime())
+    return false;
 
-  // C++11 [basic.types]p9
+  // C++11 [basic.types]p9 - See Core 2094
   //   Scalar types, trivially copyable class types, arrays of such types, and
-  //   non-volatile const-qualified versions of these types are collectively
+  //   cv-qualified versions of these types are collectively
   //   called trivially copyable types.
 
   QualType CanonicalType = getCanonicalType();
   if (CanonicalType->isDependentType())
-    return false;
-
-  if (CanonicalType.isVolatileQualified())
     return false;
 
   // Return false for incomplete types after skipping any incomplete array types
@@ -2188,7 +2145,11 @@ bool QualType::isTriviallyCopyableType(const ASTContext &Context) const {
   return false;
 }
 
-
+bool QualType::isNonWeakInMRRWithObjCWeak(const ASTContext &Context) const {
+  return !Context.getLangOpts().ObjCAutoRefCount &&
+         Context.getLangOpts().ObjCWeak &&
+         getObjCLifetime() != Qualifiers::OCL_Weak;
+}
 
 bool Type::isLiteralType(const ASTContext &Ctx) const {
   if (isDependentType())
@@ -2298,20 +2259,8 @@ bool QualType::isCXX11PODType(const ASTContext &Context) const {
   if (ty->isDependentType())
     return false;
 
-  if (Context.getLangOpts().ObjCAutoRefCount) {
-    switch (getObjCLifetime()) {
-    case Qualifiers::OCL_ExplicitNone:
-      return true;
-      
-    case Qualifiers::OCL_Strong:
-    case Qualifiers::OCL_Weak:
-    case Qualifiers::OCL_Autoreleasing:
-      return false;
-
-    case Qualifiers::OCL_None:
-      break;
-    }        
-  }
+  if (hasNonTrivialObjCLifetime())
+    return false;
 
   // C++11 [basic.types]p9:
   //   Scalar types, POD classes, arrays of such types, and cv-qualified
@@ -3585,7 +3534,7 @@ Optional<NullabilityKind> Type::getNullability(const ASTContext &context) const 
   } while (true);
 }
 
-bool Type::canHaveNullability() const {
+bool Type::canHaveNullability(bool ResultIfUnknown) const {
   QualType type = getCanonicalTypeInternal();
   
   switch (type->getTypeClass()) {
@@ -3613,7 +3562,8 @@ bool Type::canHaveNullability() const {
   case Type::SubstTemplateTypeParmPack:
   case Type::DependentName:
   case Type::DependentTemplateSpecialization:
-    return true;
+  case Type::Auto:
+    return ResultIfUnknown;
 
   // Dependent template specializations can instantiate to pointer
   // types unless they're known to be specializations of a class
@@ -3625,12 +3575,7 @@ bool Type::canHaveNullability() const {
       if (isa<ClassTemplateDecl>(templateDecl))
         return false;
     }
-    return true;
-
-  // auto is considered dependent when it isn't deduced.
-  case Type::Auto:
-  case Type::DeducedTemplateSpecialization:
-    return !cast<DeducedType>(type.getTypePtr())->isDeduced();
+    return ResultIfUnknown;
 
   case Type::Builtin:
     switch (cast<BuiltinType>(type.getTypePtr())->getKind()) {
@@ -3649,7 +3594,7 @@ bool Type::canHaveNullability() const {
     case BuiltinType::PseudoObject:
     case BuiltinType::UnknownAny:
     case BuiltinType::ARCUnbridgedCast:
-      return true;
+      return ResultIfUnknown;
 
     case BuiltinType::Void:
     case BuiltinType::ObjCId:
@@ -3668,6 +3613,7 @@ bool Type::canHaveNullability() const {
     case BuiltinType::OMPArraySection:
       return false;
     }
+    llvm_unreachable("unknown builtin type");
 
   // Non-pointer types.
   case Type::Complex:
@@ -3683,6 +3629,7 @@ bool Type::canHaveNullability() const {
   case Type::FunctionProto:
   case Type::FunctionNoProto:
   case Type::Record:
+  case Type::DeducedTemplateSpecialization:
   case Type::Enum:
   case Type::InjectedClassName:
   case Type::PackExpansion:

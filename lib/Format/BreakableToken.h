@@ -90,7 +90,8 @@ public:
   /// \p LineIndex, if previously broken at \p TailOffset. If possible, do not
   /// violate \p ColumnLimit.
   virtual Split getSplit(unsigned LineIndex, unsigned TailOffset,
-                         unsigned ColumnLimit) const = 0;
+                         unsigned ColumnLimit,
+                         llvm::Regex &CommentPragmasRegex) const = 0;
 
   /// \brief Emits the previously retrieved \p Split via \p Whitespaces.
   virtual void insertBreak(unsigned LineIndex, unsigned TailOffset, Split Split,
@@ -117,10 +118,9 @@ public:
   ///
   /// A result having offset == StringRef::npos means that no piece of the line
   /// needs to be reformatted before any breaks are made.
-  virtual Split getSplitBefore(unsigned LineIndex,
-                               unsigned PreviousEndColumn,
+  virtual Split getSplitBefore(unsigned LineIndex, unsigned PreviousEndColumn,
                                unsigned ColumnLimit,
-                               llvm::Regex& CommentPragmasRegex) const {
+                               llvm::Regex &CommentPragmasRegex) const {
     return Split(StringRef::npos, 0);
   }
 
@@ -129,10 +129,10 @@ public:
   /// \p SplitBefore has been reformatted, but before any breaks are made to
   /// this line.
   virtual unsigned getLineLengthAfterSplitBefore(unsigned LineIndex,
-                                         unsigned TailOffset,
-                                         unsigned PreviousEndColumn,
-                                         unsigned ColumnLimit,
-                                         Split SplitBefore) const {
+                                                 unsigned TailOffset,
+                                                 unsigned PreviousEndColumn,
+                                                 unsigned ColumnLimit,
+                                                 Split SplitBefore) const {
     return getLineLengthAfterSplit(LineIndex, TailOffset, StringRef::npos);
   }
 
@@ -141,8 +141,7 @@ public:
   /// whitespace range \p SplitBefore.
   virtual void replaceWhitespaceBefore(unsigned LineIndex,
                                        unsigned PreviousEndColumn,
-                                       unsigned ColumnLimit,
-                                       Split SplitBefore,
+                                       unsigned ColumnLimit, Split SplitBefore,
                                        WhitespaceManager &Whitespaces) {}
 
   /// \brief Updates the next token of \p State to the next token after this
@@ -198,8 +197,8 @@ public:
                          bool InPPDirective, encoding::Encoding Encoding,
                          const FormatStyle &Style);
 
-  Split getSplit(unsigned LineIndex, unsigned TailOffset,
-                 unsigned ColumnLimit) const override;
+  Split getSplit(unsigned LineIndex, unsigned TailOffset, unsigned ColumnLimit,
+                 llvm::Regex &CommentPragmasRegex) const override;
   void insertBreak(unsigned LineIndex, unsigned TailOffset, Split Split,
                    WhitespaceManager &Whitespaces) override;
   void compressWhitespace(unsigned LineIndex, unsigned TailOffset, Split Split,
@@ -210,19 +209,16 @@ class BreakableComment : public BreakableToken {
 protected:
   /// \brief Creates a breakable token for a comment.
   ///
-  /// \p StartColumn specifies the column in which the comment will start
-  /// after formatting, while \p OriginalStartColumn specifies in which
-  /// column the comment started before formatting.
-  /// If the comment starts a line after formatting, set \p FirstInLine to true.
+  /// \p StartColumn specifies the column in which the comment will start after
+  /// formatting.
   BreakableComment(const FormatToken &Token, unsigned StartColumn,
-                   unsigned OriginalStartColumn, bool FirstInLine,
                    bool InPPDirective, encoding::Encoding Encoding,
                    const FormatStyle &Style);
 
 public:
   unsigned getLineCount() const override;
-  Split getSplit(unsigned LineIndex, unsigned TailOffset,
-                 unsigned ColumnLimit) const override;
+  Split getSplit(unsigned LineIndex, unsigned TailOffset, unsigned ColumnLimit,
+                 llvm::Regex &CommentPragmasRegex) const override;
   void compressWhitespace(unsigned LineIndex, unsigned TailOffset, Split Split,
                           WhitespaceManager &Whitespaces) override;
 
@@ -275,13 +271,6 @@ protected:
   // The intended start column of the first line of text from this section.
   unsigned StartColumn;
 
-  // The original start column of the first line of text from this section.
-  unsigned OriginalStartColumn;
-
-  // Whether the first token of this section is the first token in its unwrapped
-  // line.
-  bool FirstInLine;
-
   // The prefix to use in front a line that has been reflown up.
   // For example, when reflowing the second line after the first here:
   // // comment 1
@@ -300,8 +289,7 @@ public:
                         bool InPPDirective, encoding::Encoding Encoding,
                         const FormatStyle &Style);
 
-  unsigned getLineLengthAfterSplit(unsigned LineIndex,
-                                   unsigned TailOffset,
+  unsigned getLineLengthAfterSplit(unsigned LineIndex, unsigned TailOffset,
                                    StringRef::size_type Length) const override;
   void insertBreak(unsigned LineIndex, unsigned TailOffset, Split Split,
                    WhitespaceManager &Whitespaces) override;
@@ -314,8 +302,7 @@ public:
                                          unsigned ColumnLimit,
                                          Split SplitBefore) const override;
   void replaceWhitespaceBefore(unsigned LineIndex, unsigned PreviousEndColumn,
-                               unsigned ColumnLimit,
-                               Split SplitBefore,
+                               unsigned ColumnLimit, Split SplitBefore,
                                WhitespaceManager &Whitespaces) override;
   bool mayReflow(unsigned LineIndex,
                  llvm::Regex &CommentPragmasRegex) const override;
@@ -333,8 +320,7 @@ private:
 
   // Computes the end column if the full Content from LineIndex gets reflown
   // after PreviousEndColumn.
-  unsigned getReflownColumn(StringRef Content,
-                            unsigned LineIndex,
+  unsigned getReflownColumn(StringRef Content, unsigned LineIndex,
                             unsigned PreviousEndColumn) const;
 
   unsigned getContentStartColumn(unsigned LineIndex,
@@ -371,22 +357,22 @@ public:
                               bool InPPDirective, encoding::Encoding Encoding,
                               const FormatStyle &Style);
 
-  unsigned getLineLengthAfterSplit(unsigned LineIndex,
-                                   unsigned TailOffset,
+  unsigned getLineLengthAfterSplit(unsigned LineIndex, unsigned TailOffset,
                                    StringRef::size_type Length) const override;
   void insertBreak(unsigned LineIndex, unsigned TailOffset, Split Split,
                    WhitespaceManager &Whitespaces) override;
   Split getSplitBefore(unsigned LineIndex, unsigned PreviousEndColumn,
                        unsigned ColumnLimit,
                        llvm::Regex &CommentPragmasRegex) const override;
-  unsigned getLineLengthAfterSplitBefore(unsigned LineIndex, unsigned TailOffset,
+  unsigned getLineLengthAfterSplitBefore(unsigned LineIndex,
+                                         unsigned TailOffset,
                                          unsigned PreviousEndColumn,
                                          unsigned ColumnLimit,
                                          Split SplitBefore) const override;
   void replaceWhitespaceBefore(unsigned LineIndex, unsigned PreviousEndColumn,
                                unsigned ColumnLimit, Split SplitBefore,
                                WhitespaceManager &Whitespaces) override;
-  void updateNextToken(LineState& State) const override;
+  void updateNextToken(LineState &State) const override;
   bool mayReflow(unsigned LineIndex,
                  llvm::Regex &CommentPragmasRegex) const override;
 

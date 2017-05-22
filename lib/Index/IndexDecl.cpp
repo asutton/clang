@@ -14,6 +14,13 @@
 using namespace clang;
 using namespace index;
 
+#define TRY_DECL(D,CALL_EXPR)                                                  \
+  do {                                                                         \
+    if (!IndexCtx.shouldIndex(D)) return true;                                 \
+    if (!CALL_EXPR)                                                            \
+      return false;                                                            \
+  } while (0)
+
 #define TRY_TO(CALL_EXPR)                                                      \
   do {                                                                         \
     if (!CALL_EXPR)                                                            \
@@ -43,6 +50,22 @@ public:
     const ObjCMethodDecl *MD = Container->getMethod(D->getSelector(),
                                                     D->isInstanceMethod());
     return MD && !MD->isImplicit() && MD->isThisDeclarationADefinition();
+  }
+
+  void handleTemplateArgumentLoc(const TemplateArgumentLoc &TALoc,
+                                 const NamedDecl *Parent,
+                                 const DeclContext *DC) {
+    const TemplateArgumentLocInfo &LocInfo = TALoc.getLocInfo();
+    switch (TALoc.getArgument().getKind()) {
+    case TemplateArgument::Expression:
+      IndexCtx.indexBody(LocInfo.getAsExpr(), Parent, DC);
+      break;
+    case TemplateArgument::Type:
+      IndexCtx.indexTypeSourceInfo(LocInfo.getAsTypeSourceInfo(), Parent, DC);
+      break;
+    default:
+      break;
+    }
   }
 
   void handleDeclarator(const DeclaratorDecl *D,
@@ -75,6 +98,17 @@ public:
           }
         }
       }
+    } else {
+      // Index the default parameter value for function definitions.
+      if (const auto *FD = dyn_cast<FunctionDecl>(D)) {
+        if (FD->isThisDeclarationADefinition()) {
+          for (const auto *PV : FD->parameters()) {
+            if (PV->hasDefaultArg() && !PV->hasUninstantiatedDefaultArg() &&
+                !PV->hasUnparsedDefaultArg())
+              IndexCtx.indexBody(PV->getDefaultArg(), D);
+          }
+        }
+      }
     }
   }
 
@@ -98,11 +132,29 @@ public:
     if (MethodLoc.isInvalid())
       MethodLoc = D->getLocation();
 
+    SourceLocation AttrLoc;
+
+    // check for (getter=/setter=)
+    if (AssociatedProp) {
+      bool isGetter = !D->param_size();
+      AttrLoc = isGetter ?
+        AssociatedProp->getGetterNameLoc():
+        AssociatedProp->getSetterNameLoc();
+    }
+
     SymbolRoleSet Roles = (SymbolRoleSet)SymbolRole::Dynamic;
-    if (D->isImplicit())
-      Roles |= (SymbolRoleSet)SymbolRole::Implicit;
-    if (!IndexCtx.handleDecl(D, MethodLoc, Roles, Relations))
-      return false;
+    if (D->isImplicit()) {
+      if (AttrLoc.isValid()) {
+        MethodLoc = AttrLoc;
+      } else {
+        Roles |= (SymbolRoleSet)SymbolRole::Implicit;
+      }
+    } else if (AttrLoc.isValid()) {
+      IndexCtx.handleReference(D, AttrLoc, cast<NamedDecl>(D->getDeclContext()),
+                               D->getDeclContext(), 0);
+    }
+
+    TRY_DECL(D, IndexCtx.handleDecl(D, MethodLoc, Roles, Relations));
     IndexCtx.indexTypeSourceInfo(D->getReturnTypeSourceInfo(), D);
     bool hasIBActionAndFirst = D->hasAttr<IBActionAttr>();
     for (const auto *I : D->parameters()) {
@@ -119,6 +171,51 @@ public:
     return true;
   }
 
+  /// Gather the declarations which the given declaration \D overrides in a
+  /// pseudo-override manner.
+  ///
+  /// Pseudo-overrides occur when a class template specialization declares
+  /// a declaration that has the same name as a similar declaration in the
+  /// non-specialized template.
+  void
+  gatherTemplatePseudoOverrides(const NamedDecl *D,
+                                SmallVectorImpl<SymbolRelation> &Relations) {
+    if (!IndexCtx.getLangOpts().CPlusPlus)
+      return;
+    const auto *CTSD =
+        dyn_cast<ClassTemplateSpecializationDecl>(D->getLexicalDeclContext());
+    if (!CTSD)
+      return;
+    llvm::PointerUnion<ClassTemplateDecl *,
+                       ClassTemplatePartialSpecializationDecl *>
+        Template = CTSD->getSpecializedTemplateOrPartial();
+    if (const auto *CTD = Template.dyn_cast<ClassTemplateDecl *>()) {
+      const CXXRecordDecl *Pattern = CTD->getTemplatedDecl();
+      bool TypeOverride = isa<TypeDecl>(D);
+      for (const NamedDecl *ND : Pattern->lookup(D->getDeclName())) {
+        if (const auto *CTD = dyn_cast<ClassTemplateDecl>(ND))
+          ND = CTD->getTemplatedDecl();
+        if (ND->isImplicit())
+          continue;
+        // Types can override other types.
+        if (!TypeOverride) {
+          if (ND->getKind() != D->getKind())
+            continue;
+        } else if (!isa<TypeDecl>(ND))
+          continue;
+        if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
+          const auto *DFD = cast<FunctionDecl>(D);
+          // Function overrides are approximated using the number of parameters.
+          if (FD->getStorageClass() != DFD->getStorageClass() ||
+              FD->getNumParams() != DFD->getNumParams())
+            continue;
+        }
+        Relations.emplace_back(
+            SymbolRoleSet(SymbolRole::RelationSpecializationOf), ND);
+      }
+    }
+  }
+
   bool VisitFunctionDecl(const FunctionDecl *D) {
     if (D->isDeleted())
       return true;
@@ -133,12 +230,19 @@ public:
         Relations.emplace_back((unsigned)SymbolRole::RelationOverrideOf, *I);
       }
     }
+    gatherTemplatePseudoOverrides(D, Relations);
+    if (const auto *Base = D->getPrimaryTemplate())
+      Relations.push_back(
+          SymbolRelation(SymbolRoleSet(SymbolRole::RelationSpecializationOf),
+                         Base->getTemplatedDecl()));
 
-    if (!IndexCtx.handleDecl(D, Roles, Relations))
-      return false;
+    TRY_DECL(D, IndexCtx.handleDecl(D, Roles, Relations));
     handleDeclarator(D);
 
     if (const CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D)) {
+      IndexCtx.handleReference(Ctor->getParent(), Ctor->getLocation(),
+                               Ctor->getParent(), Ctor->getDeclContext());
+
       // Constructor initializers.
       for (const auto *Init : Ctor->inits()) {
         if (Init->isWritten()) {
@@ -149,6 +253,18 @@ public:
           IndexCtx.indexBody(Init->getInit(), D, D);
         }
       }
+    } else if (const CXXDestructorDecl *Dtor = dyn_cast<CXXDestructorDecl>(D)) {
+      if (auto TypeNameInfo = Dtor->getNameInfo().getNamedTypeInfo()) {
+        IndexCtx.handleReference(Dtor->getParent(),
+                                 TypeNameInfo->getTypeLoc().getLocStart(),
+                                 Dtor->getParent(), Dtor->getDeclContext());
+      }
+    }
+    // Template specialization arguments.
+    if (const ASTTemplateArgumentListInfo *TemplateArgInfo =
+            D->getTemplateSpecializationArgsAsWritten()) {
+      for (const auto &Arg : TemplateArgInfo->arguments())
+        handleTemplateArgumentLoc(Arg, D, D->getLexicalDeclContext());
     }
 
     if (D->isThisDeclarationADefinition()) {
@@ -161,16 +277,18 @@ public:
   }
 
   bool VisitVarDecl(const VarDecl *D) {
-    if (!IndexCtx.handleDecl(D))
-      return false;
+    SmallVector<SymbolRelation, 4> Relations;
+    gatherTemplatePseudoOverrides(D, Relations);
+    TRY_DECL(D, IndexCtx.handleDecl(D, SymbolRoleSet(), Relations));
     handleDeclarator(D);
     IndexCtx.indexBody(D->getInit(), D);
     return true;
   }
 
   bool VisitFieldDecl(const FieldDecl *D) {
-    if (!IndexCtx.handleDecl(D))
-      return false;
+    SmallVector<SymbolRelation, 4> Relations;
+    gatherTemplatePseudoOverrides(D, Relations);
+    TRY_DECL(D, IndexCtx.handleDecl(D, SymbolRoleSet(), Relations));
     handleDeclarator(D);
     if (D->isBitField())
       IndexCtx.indexBody(D->getBitWidth(), D);
@@ -184,8 +302,7 @@ public:
       // handled in VisitObjCPropertyImplDecl
       return true;
     }
-    if (!IndexCtx.handleDecl(D))
-      return false;
+    TRY_DECL(D, IndexCtx.handleDecl(D));
     handleDeclarator(D);
     return true;
   }
@@ -196,16 +313,18 @@ public:
   }
 
   bool VisitEnumConstantDecl(const EnumConstantDecl *D) {
-    if (!IndexCtx.handleDecl(D))
-      return false;
+    TRY_DECL(D, IndexCtx.handleDecl(D));
     IndexCtx.indexBody(D->getInitExpr(), D);
     return true;
   }
 
   bool VisitTypedefNameDecl(const TypedefNameDecl *D) {
-    if (!IndexCtx.handleDecl(D))
-      return false;
-    IndexCtx.indexTypeSourceInfo(D->getTypeSourceInfo(), D);
+    if (!D->isTransparentTag()) {
+      SmallVector<SymbolRelation, 4> Relations;
+      gatherTemplatePseudoOverrides(D, Relations);
+      TRY_DECL(D, IndexCtx.handleDecl(D, SymbolRoleSet(), Relations));
+      IndexCtx.indexTypeSourceInfo(D->getTypeSourceInfo(), D);
+    }
     return true;
   }
 
@@ -213,7 +332,9 @@ public:
     // Non-free standing tags are handled in indexTypeSourceInfo.
     if (D->isFreeStanding()) {
       if (D->isThisDeclarationADefinition()) {
-        IndexCtx.indexTagDecl(D);
+        SmallVector<SymbolRelation, 4> Relations;
+        gatherTemplatePseudoOverrides(D, Relations);
+        IndexCtx.indexTagDecl(D, Relations);
       } else {
         auto *Parent = dyn_cast<NamedDecl>(D->getDeclContext());
         return IndexCtx.handleReference(D, D->getLocation(), Parent,
@@ -225,14 +346,17 @@ public:
   }
 
   bool handleReferencedProtocols(const ObjCProtocolList &ProtList,
-                                 const ObjCContainerDecl *ContD) {
+                                 const ObjCContainerDecl *ContD,
+                                 SourceLocation SuperLoc) {
     ObjCInterfaceDecl::protocol_loc_iterator LI = ProtList.loc_begin();
     for (ObjCInterfaceDecl::protocol_iterator
          I = ProtList.begin(), E = ProtList.end(); I != E; ++I, ++LI) {
       SourceLocation Loc = *LI;
       ObjCProtocolDecl *PD = *I;
-      TRY_TO(IndexCtx.handleReference(PD, Loc, ContD, ContD,
-          SymbolRoleSet(),
+      SymbolRoleSet roles{};
+      if (Loc == SuperLoc)
+        roles |= (SymbolRoleSet)SymbolRole::Implicit;
+      TRY_TO(IndexCtx.handleReference(PD, Loc, ContD, ContD, roles,
           SymbolRelation{(unsigned)SymbolRole::RelationBaseOf, ContD}));
     }
     return true;
@@ -240,13 +364,27 @@ public:
 
   bool VisitObjCInterfaceDecl(const ObjCInterfaceDecl *D) {
     if (D->isThisDeclarationADefinition()) {
-      TRY_TO(IndexCtx.handleDecl(D));
+      TRY_DECL(D, IndexCtx.handleDecl(D));
+      SourceLocation SuperLoc = D->getSuperClassLoc();
       if (auto *SuperD = D->getSuperClass()) {
-        TRY_TO(IndexCtx.handleReference(SuperD, D->getSuperClassLoc(), D, D,
-            SymbolRoleSet(),
+        bool hasSuperTypedef = false;
+        if (auto *TInfo = D->getSuperClassTInfo()) {
+          if (auto *TT = TInfo->getType()->getAs<TypedefType>()) {
+            if (auto *TD = TT->getDecl()) {
+              hasSuperTypedef = true;
+              TRY_TO(IndexCtx.handleReference(TD, SuperLoc, D, D,
+                                              SymbolRoleSet()));
+            }
+          }
+        }
+        SymbolRoleSet superRoles{};
+        if (hasSuperTypedef)
+          superRoles |= (SymbolRoleSet)SymbolRole::Implicit;
+        TRY_TO(IndexCtx.handleReference(SuperD, SuperLoc, D, D, superRoles,
             SymbolRelation{(unsigned)SymbolRole::RelationBaseOf, D}));
       }
-      TRY_TO(handleReferencedProtocols(D->getReferencedProtocols(), D));
+      TRY_TO(handleReferencedProtocols(D->getReferencedProtocols(), D,
+                                       SuperLoc));
       TRY_TO(IndexCtx.indexDeclContext(D));
     } else {
       return IndexCtx.handleReference(D, D->getLocation(), nullptr,
@@ -257,8 +395,9 @@ public:
 
   bool VisitObjCProtocolDecl(const ObjCProtocolDecl *D) {
     if (D->isThisDeclarationADefinition()) {
-      TRY_TO(IndexCtx.handleDecl(D));
-      TRY_TO(handleReferencedProtocols(D->getReferencedProtocols(), D));
+      TRY_DECL(D, IndexCtx.handleDecl(D));
+      TRY_TO(handleReferencedProtocols(D->getReferencedProtocols(), D,
+                                       /*superLoc=*/SourceLocation()));
       TRY_TO(IndexCtx.indexDeclContext(D));
     } else {
       return IndexCtx.handleReference(D, D->getLocation(), nullptr,
@@ -275,8 +414,7 @@ public:
     if (Class->isImplicitInterfaceDecl())
       IndexCtx.handleDecl(Class);
 
-    if (!IndexCtx.handleDecl(D))
-      return false;
+    TRY_DECL(D, IndexCtx.handleDecl(D));
 
     // Visit implicit @synthesize property implementations first as their
     // location is reported at the name of the @implementation block. This
@@ -295,6 +433,8 @@ public:
   }
 
   bool VisitObjCCategoryDecl(const ObjCCategoryDecl *D) {
+    if (!IndexCtx.shouldIndex(D))
+      return true;
     const ObjCInterfaceDecl *C = D->getClassInterface();
     if (!C)
       return true;
@@ -306,7 +446,8 @@ public:
     if (!CategoryLoc.isValid())
       CategoryLoc = D->getLocation();
     TRY_TO(IndexCtx.handleDecl(D, CategoryLoc));
-    TRY_TO(handleReferencedProtocols(D->getReferencedProtocols(), D));
+    TRY_TO(handleReferencedProtocols(D->getReferencedProtocols(), D,
+                                     /*superLoc=*/SourceLocation()));
     TRY_TO(IndexCtx.indexDeclContext(D));
     return true;
   }
@@ -322,8 +463,7 @@ public:
     SourceLocation CategoryLoc = D->getCategoryNameLoc();
     if (!CategoryLoc.isValid())
       CategoryLoc = D->getLocation();
-    if (!IndexCtx.handleDecl(D, CategoryLoc))
-      return false;
+    TRY_DECL(D, IndexCtx.handleDecl(D, CategoryLoc));
     IndexCtx.indexDeclContext(D);
     return true;
   }
@@ -345,8 +485,7 @@ public:
     if (ObjCMethodDecl *MD = D->getSetterMethodDecl())
       if (MD->getLexicalDeclContext() == D->getLexicalDeclContext())
         handleObjCMethod(MD, D);
-    if (!IndexCtx.handleDecl(D))
-      return false;
+    TRY_DECL(D, IndexCtx.handleDecl(D));
     if (IBOutletCollectionAttr *attr = D->getAttr<IBOutletCollectionAttr>())
       IndexCtx.indexTypeSourceInfo(attr->getInterfaceLoc(), D,
                                    D->getLexicalDeclContext(), false, true);
@@ -367,24 +506,23 @@ public:
       Loc = Container->getLocation();
       Roles |= (SymbolRoleSet)SymbolRole::Implicit;
     }
-    if (!IndexCtx.handleDecl(D, Loc, Roles, Relations))
-      return false;
+    TRY_DECL(D, IndexCtx.handleDecl(D, Loc, Roles, Relations));
 
     if (D->getPropertyImplementation() == ObjCPropertyImplDecl::Dynamic)
       return true;
 
     assert(D->getPropertyImplementation() == ObjCPropertyImplDecl::Synthesize);
+    SymbolRoleSet AccessorMethodRoles =
+      SymbolRoleSet(SymbolRole::Dynamic) | SymbolRoleSet(SymbolRole::Implicit);
     if (ObjCMethodDecl *MD = PD->getGetterMethodDecl()) {
       if (MD->isPropertyAccessor() &&
           !hasUserDefined(MD, Container))
-        IndexCtx.handleDecl(MD, Loc, SymbolRoleSet(SymbolRole::Implicit), {},
-                            Container);
+        IndexCtx.handleDecl(MD, Loc, AccessorMethodRoles, {}, Container);
     }
     if (ObjCMethodDecl *MD = PD->getSetterMethodDecl()) {
       if (MD->isPropertyAccessor() &&
           !hasUserDefined(MD, Container))
-        IndexCtx.handleDecl(MD, Loc, SymbolRoleSet(SymbolRole::Implicit), {},
-                            Container);
+        IndexCtx.handleDecl(MD, Loc, AccessorMethodRoles, {}, Container);
     }
     if (ObjCIvarDecl *IvarD = D->getPropertyIvarDecl()) {
       if (IvarD->getSynthesize()) {
@@ -402,8 +540,7 @@ public:
         } else if (D->getLocation() == IvarLoc) {
           IvarRoles = (SymbolRoleSet)SymbolRole::Implicit;
         }
-        if(!IndexCtx.handleDecl(IvarD, IvarLoc, IvarRoles))
-          return false;
+        TRY_DECL(IvarD, IndexCtx.handleDecl(IvarD, IvarLoc, IvarRoles));
       } else {
         IndexCtx.handleReference(IvarD, D->getPropertyIvarDeclLoc(), nullptr,
                                  D->getDeclContext(), SymbolRoleSet());
@@ -413,9 +550,16 @@ public:
   }
 
   bool VisitNamespaceDecl(const NamespaceDecl *D) {
-    if (!IndexCtx.handleDecl(D))
-      return false;
+    TRY_DECL(D, IndexCtx.handleDecl(D));
     IndexCtx.indexDeclContext(D);
+    return true;
+  }
+
+  bool VisitNamespaceAliasDecl(const NamespaceAliasDecl *D) {
+    TRY_DECL(D, IndexCtx.handleDecl(D));
+    IndexCtx.indexNestedNameSpecifierLoc(D->getQualifierLoc(), D);
+    IndexCtx.handleReference(D->getAliasedNamespace(), D->getTargetNameLoc(), D,
+                             D->getLexicalDeclContext());
     return true;
   }
 
@@ -435,8 +579,12 @@ public:
     const DeclContext *DC = D->getDeclContext()->getRedeclContext();
     const NamedDecl *Parent = dyn_cast<NamedDecl>(DC);
 
-    IndexCtx.indexNestedNameSpecifierLoc(D->getQualifierLoc(), Parent,
-                                         D->getLexicalDeclContext());
+    // NNS for the local 'using namespace' directives is visited by the body
+    // visitor.
+    if (!D->getParentFunctionOrMethod())
+      IndexCtx.indexNestedNameSpecifierLoc(D->getQualifierLoc(), Parent,
+                                           D->getLexicalDeclContext());
+
     return IndexCtx.handleReference(D->getNominatedNamespaceAsWritten(),
                                     D->getLocation(), Parent,
                                     D->getLexicalDeclContext(),
@@ -447,8 +595,21 @@ public:
                                            ClassTemplateSpecializationDecl *D) {
     // FIXME: Notify subsequent callbacks if info comes from implicit
     // instantiation.
-    if (D->isThisDeclarationADefinition())
-      IndexCtx.indexTagDecl(D);
+    if (D->isThisDeclarationADefinition()) {
+      llvm::PointerUnion<ClassTemplateDecl *,
+                         ClassTemplatePartialSpecializationDecl *>
+          Template = D->getSpecializedTemplateOrPartial();
+      const Decl *SpecializationOf =
+          Template.is<ClassTemplateDecl *>()
+              ? (Decl *)Template.get<ClassTemplateDecl *>()
+              : Template.get<ClassTemplatePartialSpecializationDecl *>();
+      IndexCtx.indexTagDecl(
+          D, SymbolRelation(SymbolRoleSet(SymbolRole::RelationSpecializationOf),
+                            SpecializationOf));
+    }
+    if (TypeSourceInfo *TSI = D->getTypeAsWritten())
+      IndexCtx.indexTypeSourceInfo(TSI, /*Parent=*/nullptr,
+                                   D->getLexicalDeclContext());
     return true;
   }
 

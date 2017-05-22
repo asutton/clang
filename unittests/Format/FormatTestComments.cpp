@@ -29,24 +29,25 @@ FormatStyle getGoogleStyle() { return getGoogleStyle(FormatStyle::LK_Cpp); }
 
 class FormatTestComments : public ::testing::Test {
 protected:
-  enum IncompleteCheck {
-    IC_ExpectComplete,
-    IC_ExpectIncomplete,
-    IC_DoNotCheck
+  enum StatusCheck {
+    SC_ExpectComplete,
+    SC_ExpectIncomplete,
+    SC_DoNotCheck
   };
 
   std::string format(llvm::StringRef Code,
                      const FormatStyle &Style = getLLVMStyle(),
-                     IncompleteCheck CheckIncomplete = IC_ExpectComplete) {
+                     StatusCheck CheckComplete = SC_ExpectComplete) {
     DEBUG(llvm::errs() << "---\n");
     DEBUG(llvm::errs() << Code << "\n\n");
     std::vector<tooling::Range> Ranges(1, tooling::Range(0, Code.size()));
-    bool IncompleteFormat = false;
+    FormattingAttemptStatus Status;
     tooling::Replacements Replaces =
-        reformat(Style, Code, Ranges, "<stdin>", &IncompleteFormat);
-    if (CheckIncomplete != IC_DoNotCheck) {
-      bool ExpectedIncompleteFormat = CheckIncomplete == IC_ExpectIncomplete;
-      EXPECT_EQ(ExpectedIncompleteFormat, IncompleteFormat) << Code << "\n\n";
+        reformat(Style, Code, Ranges, "<stdin>", &Status);
+    if (CheckComplete != SC_DoNotCheck) {
+      bool ExpectedCompleteFormat = CheckComplete == SC_ExpectComplete;
+      EXPECT_EQ(ExpectedCompleteFormat, Status.FormatComplete)
+          << Code << "\n\n";
     }
     ReplacementCount = Replaces.size();
     auto Result = applyAllReplacements(Code, Replaces);
@@ -73,7 +74,7 @@ protected:
   /// \brief Verify that clang-format does not crash on the given input.
   void verifyNoCrash(llvm::StringRef Code,
                      const FormatStyle &Style = getLLVMStyle()) {
-    format(Code, Style, IC_DoNotCheck);
+    format(Code, Style, SC_DoNotCheck);
   }
 
   int ReplacementCount;
@@ -1019,6 +1020,38 @@ TEST_F(FormatTestComments, SplitsLongLinesInCommentsInPreprocessor) {
                    getLLVMStyleWithColumns(20)));
 }
 
+TEST_F(FormatTestComments, KeepsTrailingPPCommentsAndSectionCommentsSeparate) {
+  verifyFormat("#ifdef A // line about A\n"
+               "// section comment\n"
+               "#endif",
+               getLLVMStyleWithColumns(80));
+  verifyFormat("#ifdef A // line 1 about A\n"
+               "         // line 2 about A\n"
+               "// section comment\n"
+               "#endif",
+               getLLVMStyleWithColumns(80));
+  EXPECT_EQ("#ifdef A // line 1 about A\n"
+            "         // line 2 about A\n"
+            "// section comment\n"
+            "#endif",
+            format("#ifdef A // line 1 about A\n"
+                   "          // line 2 about A\n"
+                   "// section comment\n"
+                   "#endif",
+                   getLLVMStyleWithColumns(80)));
+  verifyFormat("int f() {\n"
+               "  int i;\n"
+               "#ifdef A // comment about A\n"
+               "  // section comment 1\n"
+               "  // section comment 2\n"
+               "  i = 2;\n"
+               "#else // comment about #else\n"
+               "  // section comment 3\n"
+               "  i = 4;\n"
+               "#endif\n"
+               "}", getLLVMStyleWithColumns(80));
+}
+
 TEST_F(FormatTestComments, CommentsInStaticInitializers) {
   EXPECT_EQ(
       "static SomeType type = {aaaaaaaaaaaaaaaaaaaa, /* comment */\n"
@@ -1196,6 +1229,16 @@ TEST_F(FormatTestComments, ReflowsComments) {
             " * long long */",
             format("/* long long long long\n"
                    " * long */",
+                   getLLVMStyleWithColumns(20)));
+  EXPECT_EQ("///< long long long\n"
+            "///< long long\n",
+            format("///< long long long long\n"
+                   "///< long\n",
+                   getLLVMStyleWithColumns(20)));
+  EXPECT_EQ("//!< long long long\n"
+            "//!< long long\n",
+            format("//!< long long long long\n"
+                   "//!< long\n",
                    getLLVMStyleWithColumns(20)));
 
   // Don't bring leading whitespace up while reflowing.
@@ -1534,7 +1577,7 @@ TEST_F(FormatTestComments, ReflowsComments) {
                    " *\n"
                    " * long */",
                    getLLVMStyleWithColumns(20)));
-  
+
   // Don't reflow lines having content that is a single character.
   EXPECT_EQ("// long long long\n"
             "// long\n"
@@ -1559,7 +1602,7 @@ TEST_F(FormatTestComments, ReflowsComments) {
             format("// long long long long\n"
                    "// @param arg",
                    getLLVMStyleWithColumns(20)));
-  
+
   // Don't reflow lines starting with 'TODO'.
   EXPECT_EQ("// long long long\n"
             "// long\n"
@@ -1626,6 +1669,69 @@ TEST_F(FormatTestComments, ReflowsComments) {
             "//  long",
             format("// long long long long\n"
                    "//  long",
+                   getLLVMStyleWithColumns(20)));
+
+  // Don't reflow separate bullets in list
+  EXPECT_EQ("// - long long long\n"
+            "// long\n"
+            "// - long",
+            format("// - long long long long\n"
+                   "// - long",
+                   getLLVMStyleWithColumns(20)));
+  EXPECT_EQ("// * long long long\n"
+            "// long\n"
+            "// * long",
+            format("// * long long long long\n"
+                   "// * long",
+                   getLLVMStyleWithColumns(20)));
+  EXPECT_EQ("// + long long long\n"
+            "// long\n"
+            "// + long",
+            format("// + long long long long\n"
+                   "// + long",
+                   getLLVMStyleWithColumns(20)));
+  EXPECT_EQ("// 1. long long long\n"
+            "// long\n"
+            "// 2. long",
+            format("// 1. long long long long\n"
+                   "// 2. long",
+                   getLLVMStyleWithColumns(20)));
+  EXPECT_EQ("// -# long long long\n"
+            "// long\n"
+            "// -# long",
+            format("// -# long long long long\n"
+                   "// -# long",
+                   getLLVMStyleWithColumns(20)));
+
+  EXPECT_EQ("// - long long long\n"
+            "// long long long\n"
+            "// - long",
+            format("// - long long long long\n"
+                   "// long long\n"
+                   "// - long",
+                   getLLVMStyleWithColumns(20)));
+  EXPECT_EQ("// - long long long\n"
+            "// long long long\n"
+            "// long\n"
+            "// - long",
+            format("// - long long long long\n"
+                   "// long long long\n"
+                   "// - long",
+                   getLLVMStyleWithColumns(20)));
+
+  // Large number (>2 digits) are not list items
+  EXPECT_EQ("// long long long\n"
+            "// long 1024. long.",
+            format("// long long long long\n"
+                   "// 1024. long.",
+                   getLLVMStyleWithColumns(20)));
+
+  // Do not break before number, to avoid introducing a non-reflowable doxygen
+  // list item.
+  EXPECT_EQ("// long long\n"
+            "// long 10. long.",
+            format("// long long long 10.\n"
+                   "// long.",
                    getLLVMStyleWithColumns(20)));
 
   // Don't break or reflow after implicit string literals.
@@ -1801,6 +1907,22 @@ TEST_F(FormatTestComments, IgnoresIf0Contents) {
                    "#endif\n"
                    "Five\n"
                    "};"));
+
+  // Ignore stuff in SWIG-blocks.
+  EXPECT_EQ("#ifdef SWIG\n"
+            "}{)(&*(^%%#%@! fsadj f;ldjs ,:;| <<<>>>][)(][\n"
+            "#endif\n"
+            "void f() {}",
+            format("#ifdef SWIG\n"
+                   "}{)(&*(^%%#%@! fsadj f;ldjs ,:;| <<<>>>][)(][\n"
+                   "#endif\n"
+                   "void f(  ) {  }"));
+  EXPECT_EQ("#ifndef SWIG\n"
+            "void f() {}\n"
+            "#endif",
+            format("#ifndef SWIG\n"
+                   "void f(      ) {       }\n"
+                   "#endif"));
 }
 
 TEST_F(FormatTestComments, DontCrashOnBlockComments) {
@@ -2002,7 +2124,7 @@ TEST_F(FormatTestComments, AlignTrailingComments) {
             format("#define MACRO(V)\\\n"
                    "V(Rt2)  /* one more char */ \\\n"
                    "V(Rs) /* than here  */    \\\n"
-                   "/* comment 3 */         \\\n",
+                   "/* comment 3 */\n",
                    getLLVMStyleWithColumns(40)));
   EXPECT_EQ("int i = f(abc, // line 1\n"
             "          d,   // line 2\n"

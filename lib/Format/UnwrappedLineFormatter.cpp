@@ -611,7 +611,8 @@ public:
     LineState State = Indenter->getInitialState(FirstIndent, &Line, DryRun);
     while (State.NextToken) {
       formatChildren(State, /*Newline=*/false, DryRun, Penalty);
-      Indenter->addTokenToState(State, /*Newline=*/false, DryRun);
+      Indenter->addTokenToState(
+          State, /*Newline=*/State.NextToken->MustBreakBefore, DryRun);
     }
     return Penalty;
   }
@@ -835,8 +836,11 @@ UnwrappedLineFormatter::format(const SmallVectorImpl<AnnotatedLine *> &Lines,
     bool ShouldFormat = TheLine.Affected || FixIndentation;
     // We cannot format this line; if the reason is that the line had a
     // parsing error, remember that.
-    if (ShouldFormat && TheLine.Type == LT_Invalid && IncompleteFormat)
-      *IncompleteFormat = true;
+    if (ShouldFormat && TheLine.Type == LT_Invalid && Status) {
+      Status->FormatComplete = false;
+      Status->Line =
+          SourceMgr.getSpellingLineNumber(TheLine.First->Tok.getLocation());
+    }
 
     if (ShouldFormat && TheLine.Type != LT_Invalid) {
       if (!DryRun)
@@ -908,7 +912,7 @@ void UnwrappedLineFormatter::formatFirstToken(const AnnotatedLine &Line,
   if (RootToken.is(tok::eof)) {
     unsigned Newlines = std::min(RootToken.NewlinesBefore, 1u);
     Whitespaces->replaceWhitespace(RootToken, Newlines, /*Spaces=*/0,
-                                   /*TargetColumn=*/0);
+                                   /*StartOfTokenColumn=*/0);
     return;
   }
   unsigned Newlines =
