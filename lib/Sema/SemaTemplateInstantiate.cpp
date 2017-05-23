@@ -354,12 +354,12 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
     ArrayRef<TemplateArgument> TemplateArgs, SourceRange InstantiationRange)
     : InstantiatingTemplate(
           SemaRef, 
-          ActiveTemplateInstantiation::ForLoopInstantiation,
+          CodeSynthesisContext::ForLoopInstantiation,
           PointOfInstantiation, InstantiationRange, nullptr, nullptr,
           TemplateArgs) {
   // Set the loop on the active instantiation.
-  ActiveTemplateInstantiation& Inst = 
-    SemaRef.ActiveTemplateInstantiations.back();
+  CodeSynthesisContext& Inst = 
+    SemaRef.CodeSynthesisContexts.back();
   Inst.Loop = S;      
 }
 
@@ -636,7 +636,7 @@ void Sema::PrintInstantiationStack() {
         << Active->InstantiationRange;
       break;
 
-    case ActiveTemplateInstantiation::ForLoopInstantiation:
+    case CodeSynthesisContext::ForLoopInstantiation:
       // FIXME: Provide more context about the loop body error.
       Diags.Report(Active->PointOfInstantiation, 
                    diag::note_loop_body_instantiation_here);

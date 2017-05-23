@@ -6996,7 +6996,7 @@ public:
       ExceptionSpecInstantiation,
 
       /// We are instantiating the body of a range-based loop over a tuple.
-      ForLoopInstantiation
+      ForLoopInstantiation,
 
       /// We are declaring an implicit special member function.
       DeclaringSpecialMember,

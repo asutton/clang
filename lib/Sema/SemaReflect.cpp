@@ -2147,7 +2147,8 @@ void Sema::ActOnStartConstexprDecl(Scope *S, Decl *D) {
   else {
     LambdaScopeInfo *LSI = cast<LambdaScopeInfo>(FunctionScopes.back());
     PushDeclContext(S, LSI->CallOperator);
-    PushExpressionEvaluationContext(PotentiallyEvaluated);
+    PushExpressionEvaluationContext(
+        ExpressionEvaluationContext::PotentiallyEvaluated);
   }
 }
 
@@ -2218,9 +2219,11 @@ bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E) {
   ImplicitCastExpr *Cast =
       ImplicitCastExpr::Create(Context, PtrTy, CK_FunctionToPointerDecay, Ref,
                                /*BasePath=*/nullptr, VK_RValue);
-  CallExpr *Call = new (Context) CXXOperatorCallExpr(
-      Context, OO_Call, Cast, {E}, Context.VoidTy, VK_RValue, SourceLocation(),
-      /*fpContractible=*/false);
+  CallExpr *Call = new (Context) CXXOperatorCallExpr(Context, OO_Call,
+                                                     Cast, {E}, Context.VoidTy, 
+                                                     VK_RValue, 
+                                                     SourceLocation(),
+                                                     FPOptions());
   return EvaluateConstexprDeclCall(CD, Call);
 }
 

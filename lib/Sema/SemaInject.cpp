@@ -221,9 +221,11 @@ Decl *MetaclassInjector::TransformVarDecl(VarDecl *D) {
 
     if (D->getInit()) {
       if (R->isStaticDataMember() && !D->isOutOfLine())
-        SemaRef.PushExpressionEvaluationContext(Sema::ConstantEvaluated, D);
+        SemaRef.PushExpressionEvaluationContext(
+          Sema::ExpressionEvaluationContext::ConstantEvaluated, D);
       else
-        SemaRef.PushExpressionEvaluationContext(Sema::PotentiallyEvaluated, D);
+        SemaRef.PushExpressionEvaluationContext(
+          Sema::ExpressionEvaluationContext::PotentiallyEvaluated, D);
 
       // Transform the initializer.
       ExprResult Init;
@@ -395,7 +397,7 @@ void MetaclassInjector::TransformFunctionDefinition(FunctionDecl *D,
     // Set up the semantic context needed to translate the function. We don't
     // use PushDeclContext() because we don't have a scope.
     EnterExpressionEvaluationContext EvalContext(SemaRef,
-                                                 Sema::PotentiallyEvaluated);
+                       Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
     SemaRef.ActOnStartOfFunctionDef(nullptr, R);
     Sema::ContextRAII SavedContext(SemaRef, R);
     StmtResult Body = TransformStmt(S);

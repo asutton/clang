@@ -11,10 +11,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "RAIIObjectsForParser.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
+#include "clang/Parse/RAIIObjectsForParser.h"
 #include "clang/Sema/PrettyDeclStackTrace.h"
 
 using namespace clang;
