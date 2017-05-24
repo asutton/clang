@@ -1148,4 +1148,10 @@ def err_for_co_await_not_range_for : Error<
   "'co_await' modifier can only be applied to range-based for loop">;
 }
 
+// [Meta]
+let CategoryName = "Metaprogramming Issue" in {
+def err_expected_injection : Error<"expected injection">;
+} // end of metaprogramming issues
+
+
 } // end of Parser diagnostics
