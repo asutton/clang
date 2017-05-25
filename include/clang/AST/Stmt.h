@@ -101,6 +101,12 @@ protected:
     unsigned IsConstexpr : 1;
   };
 
+  class InjectionStmtBitfields {
+    friend class CXXInjectionStmt;
+    unsigned : NumStmtBits;
+    unsigned InjectionKind : 4;
+  };
+
   class ExprBitfields {
     friend class Expr;
     friend class DeclRefExpr; // computeDependence
@@ -265,6 +271,7 @@ protected:
     StmtBitfields StmtBits;
     CompoundStmtBitfields CompoundStmtBits;
     IfStmtBitfields IfStmtBits;
+    InjectionStmtBitfields InjectionStmtBits;
     ExprBitfields ExprBits;
     CharacterLiteralBitfields CharacterLiteralBits;
     FloatingLiteralBitfields FloatingLiteralBits;

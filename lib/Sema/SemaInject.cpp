@@ -23,6 +23,25 @@
 using namespace clang;
 using namespace sema;
 
+StmtResult Sema::ActOnCXXBlockInjection(SourceLocation ArrowLoc, Stmt *S) {
+  /// FIXME: Is there any checking that we need to apply to the statements
+  /// of this block?
+  return new (Context) CXXInjectionStmt(ArrowLoc, IK_Block, S);
+}
+
+StmtResult Sema::ActOnCXXClassInjection(SourceLocation ArrowLoc, Decl *D) {
+  /// FIXME: Is there any checking that we need to apply to the members of
+  /// this class?
+  return new (Context) CXXInjectionStmt(ArrowLoc, IK_Class, D);
+}
+
+StmtResult Sema::ActOnCXXNamespaceInjection(SourceLocation ArrowLoc, Decl *D) {
+  /// FIXME: Is there any checking that we need to apply to the members of
+  /// this namespace?
+  return new (Context) CXXInjectionStmt(ArrowLoc, IK_Namespace, D);
+}
+
+#if 0
 /// Injects declarations from a C++ metaclass definition into another class,
 /// by replacing all references to the metaclass type with that of the
 /// target type.
@@ -520,3 +539,5 @@ ArrayRef<Token> Sema::GetTokensToInject(Stmt *S) {
   assert(isa<CXXInjectionStmt>(S));
   return cast<CXXInjectionStmt>(S)->getTokens();
 }
+
+#endif

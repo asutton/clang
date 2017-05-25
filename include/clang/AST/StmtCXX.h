@@ -641,31 +641,73 @@ public:
   }
 };
 
-/// Represents a C++ injection statement of the form '-> { tokens }'.
+/// \brief Determines the kind of injected content.
+///
+/// \todo If the values of this field exceed 16 bits, then change the bit width
+/// in Stmt::InjectionStmtBitfields.
+enum InjectionKind
+{
+  IK_Block,
+  IK_Class,
+  IK_Namespace,
+};
+
+/// Represents a C++ injection statement.
 class CXXInjectionStmt : public Stmt {
+  /// \brief The location of the '->'  token.
   SourceLocation ArrowLoc;
-  SourceLocation LBraceLoc;
-  SourceLocation RBraceLoc;
-  unsigned NumToks;
-  Token *Toks;
+  
+  /// \brief The injected content. The specific kind depends on the injection
+  /// kind (see InjectionKind).
+  union {
+    Stmt *InjectedStmt;
+    Decl *InjectedDecl;
+  };
 
 public:
-  CXXInjectionStmt(ASTContext &Cxt, SourceLocation Arrow, SourceLocation LB,
-                   SourceLocation RB, ArrayRef<Token> Toks);
+  CXXInjectionStmt(SourceLocation AL, InjectionKind IK, Stmt *S)
+      : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), InjectedStmt(S) {
+    assert(IK == IK_Block && "injection is not a statement");
+    InjectionStmtBits.InjectionKind = IK;
+  }
+  
+  CXXInjectionStmt(SourceLocation AL, InjectionKind IK, Decl *D)
+      : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), InjectedDecl(D) {
+    assert(IK > IK_Block && "injection is not a declaration");
+    InjectionStmtBits.InjectionKind = IK;
+  }
 
   explicit CXXInjectionStmt(EmptyShell Empty)
-      : Stmt(CXXInjectionStmtClass, Empty), ArrowLoc(), LBraceLoc(),
-        RBraceLoc(), NumToks(0), Toks(nullptr) {}
+      : Stmt(CXXInjectionStmtClass, Empty), ArrowLoc() {}
 
+  /// \brief Returns the location of the injected arrow.
   SourceLocation getArrowLoc() const { return ArrowLoc; }
-  SourceLocation getLBraceLoc() const { return LBraceLoc; }
-  SourceLocation getRBraceLoc() const { return RBraceLoc; }
 
-  /// \brief Returns the unparsed tokens of the injection.
-  ArrayRef<Token> getTokens() const { return ArrayRef<Token>(Toks, NumToks); }
+  /// \brief Returns the kind of injection.
+  InjectionKind getInjectionKind() const { 
+    return (InjectionKind)InjectionStmtBits.InjectionKind; 
+  }
+
+  /// \brief Returns true if the injection is a compound statement.
+  bool isBlock() const { return getInjectionKind() == IK_Block; }
+
+  /// \brief Returns true if the injection is a class definition.
+  bool isClass() const { return getInjectionKind() == IK_Class; }
+  
+  /// \brief Returns true if the injection is a namespace definition.
+  bool isNamespace() const { return getInjectionKind() == IK_Namespace; }
+
+  /// \brief Returns the injected compound statement.
+  CompoundStmt *getBlock() const;
+
+  /// \brief Returns the injected class definition.
+  CXXRecordDecl *getClass() const;
+
+  /// \brief Returns the injected namespace definition.
+  NamespaceDecl *getNamespace() const;
 
   SourceLocation getLocStart() const LLVM_READONLY { return ArrowLoc; }
-  SourceLocation getLocEnd() const LLVM_READONLY { return RBraceLoc; }
+  SourceLocation getLocEnd() const LLVM_READONLY;
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXInjectionStmtClass;

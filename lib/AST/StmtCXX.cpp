@@ -167,11 +167,28 @@ CoroutineBodyStmt::CoroutineBodyStmt(CoroutineBodyStmt::CtorArgs const &Args)
             const_cast<Stmt **>(getParamMoves().data()));
 }
 
-CXXInjectionStmt::CXXInjectionStmt(ASTContext &Cxt, SourceLocation Arrow,
-                                   SourceLocation LB, SourceLocation RB,
-                                   ArrayRef<Token> TokArray)
-    : Stmt(CXXInjectionStmtClass), ArrowLoc(Arrow), LBraceLoc(LB),
-      RBraceLoc(RB), NumToks(TokArray.size()), Toks(new (Cxt) Token[NumToks]) {
-  std::copy(TokArray.begin(), TokArray.end(), Toks);
+CompoundStmt *CXXInjectionStmt::getBlock() const {
+  assert(isBlock() && "injection is not a block");
+  return cast<CompoundStmt>(InjectedStmt);
 }
 
+CXXRecordDecl *CXXInjectionStmt::getClass() const {
+  assert(isClass() && "injection is not a class");
+  return cast<CXXRecordDecl>(InjectedDecl);
+}
+
+NamespaceDecl *CXXInjectionStmt::getNamespace() const {
+  assert(isNamespace() && "injection is not a namespace");
+  return cast<NamespaceDecl>(InjectedDecl);
+}
+
+SourceLocation CXXInjectionStmt::getLocEnd() const {
+  switch (getInjectionKind()) {
+  case IK_Block:
+    return getBlock()->getLocEnd();
+  case IK_Class:
+    return getClass()->getBraceRange().getEnd();
+  case IK_Namespace:
+    return getNamespace()->getRBraceLoc();
+  }
+}

@@ -2624,7 +2624,11 @@ private:
   DeclGroupPtrTy ParseConstexprDeclaration();
 
   StmtResult ParseCXXInjectionStmt();
+  StmtResult ParseCXXBlockInjection(SourceLocation ArrowLoc);
+  StmtResult ParseCXXClassInjection(SourceLocation ArrowLoc);
+  StmtResult ParseCXXNamespaceInjection(SourceLocation ArrowLoc);
 
+#if 0
   void InjectTokens(Stmt *Injection, CachedTokens &Toks);
   void ParseInjectedNamespaceMember(Stmt *Injection);
   void ParseInjectedClassMember(Stmt *Injection);
@@ -2648,6 +2652,7 @@ private:
   /// The state of this result can generally be ignored when it is null or
   /// invalid.
   StmtResult InjectedStmts;
+#endif
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

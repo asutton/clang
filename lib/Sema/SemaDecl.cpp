@@ -14720,7 +14720,9 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
   if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
     if (MetaclassDecl *Metaclass = Class->getMetaclass()) {
       SmallVector<Decl *, 32> InjectedFields;
-      InjectMetaclassMembers(Metaclass, Class, InjectedFields);
+      
+      // FIXME: Re-enable injection.
+      // InjectMetaclassMembers(Metaclass, Class, InjectedFields);
     }
   }
 

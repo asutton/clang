@@ -2275,5 +2275,6 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
     }
   }
 
-  return InjectCode(Injections);
+  // FIXME: Re-enable code injection.
+  // return InjectCode(Injections);
 }

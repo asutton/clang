@@ -8412,11 +8412,6 @@ public:
                               bool WantNontrivialTypeSourceInfo = false,
                               IdentifierInfo **CorrectedII = nullptr);
 
-  void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
-                              SmallVectorImpl<Decl *> &Fields);
-  bool InjectCode(SmallVectorImpl<Stmt *> &Injections);
-  bool InjectCode(Stmt *Injection);
-
   Decl *ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
                            unsigned &ScopeFlags);
   void ActOnStartConstexprDecl(Scope *S, Decl *D);
@@ -8426,6 +8421,17 @@ public:
   bool EvaluateConstexprDecl(ConstexprDecl *CD, FunctionDecl *D);
   bool EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E);
   bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
+
+  StmtResult ActOnCXXBlockInjection(SourceLocation ArrowLoc, Stmt *S);
+  StmtResult ActOnCXXClassInjection(SourceLocation ArrowLoc, Decl *D);
+  StmtResult ActOnCXXNamespaceInjection(SourceLocation ArrowLoc, Decl *D);
+
+#if 0
+  void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
+                              SmallVectorImpl<Decl *> &Fields);
+  bool InjectCode(SmallVectorImpl<Stmt *> &Injections);
+  bool InjectCode(Stmt *Injection);
+
 
   StmtResult ActOnCXXInjectionStmt(SourceLocation Arrow, SourceLocation LB,
                                    SourceLocation RB, ArrayRef<Token> TokArray);
@@ -8453,6 +8459,7 @@ public:
 
   using BlockInjectionParserCB = void (void *, Stmt *);
   BlockInjectionParserCB *BlockInjectionParser;
+#endif
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
