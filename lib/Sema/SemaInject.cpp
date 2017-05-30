@@ -63,11 +63,45 @@ static bool InvalidInjection(Sema& S, SourceLocation POI, int SK,
   return false;
 }
 
+/// The source code injector is responsible for constructing statements and
+/// declarations that are inserted into the AST. The transformation is a simple
+/// mapping that replaces one set of names with another. In this regard, it
+/// is very much like template instantiation.
+class SourceCodeInjector : public TreeTransform<SourceCodeInjector> {
+  using BaseType = TreeTransform<SourceCodeInjector>;
+
+public:
+  SourceCodeInjector(Sema &SemaRef)
+      : TreeTransform<SourceCodeInjector>(SemaRef) {}
+
+  // Always rebuild nodes; we're effectively copying from one AST to another.
+  bool AlwaysRebuild() const { return true; }
+
+  // Replace the declaration From (in the injected statement or members) with
+  // the declaration To (derived from the target context).
+  void AddSubstitution(Decl *From, Decl *To) {
+    transformedLocalDecl(From, To);
+  }
+};
+
+
+/// Returns the transformed statement S. 
 bool Sema::InjectBlockStatements(SourceLocation POI, CompoundStmt *S) {
   if (!CurContext->isFunctionOrMethod())
     return InvalidInjection(*this, POI, 0, CurContext);
 
-  S->dump();
+  // FIXME: At some point, we'll have parameters to bind.
+  SourceCodeInjector Injector(*this);
+
+  // Transform each statement in turn. Note that we build build a compound
+  // statement from all injected statements.
+  for (Stmt *B : S->body()) {
+    StmtResult R = Injector.TransformStmt(S);
+    if (R.isInvalid())
+      return false;
+    InjectedStmts.push_back(R.get());
+  }
+  
   return true;
 }
 

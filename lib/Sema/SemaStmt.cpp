@@ -71,12 +71,33 @@ StmtResult Sema::ActOnNullStmt(SourceLocation SemiLoc,
   return new (Context) NullStmt(SemiLoc, HasLeadingEmptyMacro);
 }
 
+// Replace an evaluated constexpr declaration with its injected statements.
+//
+// FIXME: Preserve the constexpr-decl in the generated source? We could
+// make it the first member.
+static StmtResult ReplaceWithInjectedStmts(Sema &SemaRef, ConstexprDecl *CD) {
+  // FIXME: The LB is not correct. We can't currently access it.
+  SourceLocation LB = CD->getSourceRange().getBegin();
+  SourceLocation RB = CD->getSourceRange().getEnd();
+  Stmt *S = new (SemaRef.Context) CompoundStmt(SemaRef.Context, 
+                                               SemaRef.InjectedStmts, LB, RB);
+  SemaRef.InjectedStmts.clear();
+  return S;
+}
+
 StmtResult Sema::ActOnDeclStmt(DeclGroupPtrTy dg, SourceLocation StartLoc,
                                SourceLocation EndLoc) {
   DeclGroupRef DG = dg.get();
 
   // If we have an invalid decl, just return an error.
   if (DG.isNull()) return StmtError();
+
+  // If we have a constexpr decl, repace it with its injected statements.
+  //
+  // FIXME: Even if we're in a template?
+  if (DG.isSingleDecl())
+    if (ConstexprDecl *CD = dyn_cast<ConstexprDecl>(DG.getSingleDecl()))
+      return ReplaceWithInjectedStmts(*this, CD);
 
   return new (Context) DeclStmt(DG, StartLoc, EndLoc);
 }

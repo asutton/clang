@@ -2245,6 +2245,8 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
       return true;
   }
 
+  assert(InjectedStmts.empty() && "Residual injected statements");
+
   SmallVector<PartialDiagnosticAt, 8> Notes;
   SmallVector<Stmt *, 16> Injections;
   Expr::EvalResult Result;

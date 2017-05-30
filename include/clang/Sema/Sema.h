@@ -8432,6 +8432,10 @@ public:
   bool InjectClassMembers(SourceLocation POI, CXXRecordDecl *D);
   bool InjectNamespaceMembers(SourceLocation POI, NamespaceDecl *D);
 
+  /// \brief Stores the result of injecting statements resulting from the
+  /// evaluation of a constexpr declaration. 
+  llvm::SmallVector<Stmt *, 8> InjectedStmts;
+
 #if 0
   void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                               SmallVectorImpl<Decl *> &Fields);

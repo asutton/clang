@@ -1677,6 +1677,7 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(unsigned Context,
     break;
 
   case tok::kw_constexpr: // [Meta]: constexpr-declaration
+    // FIXME: Enable only if reflection is on.
     if (getLangOpts().CPlusPlus1z && NextToken().is(tok::l_brace))
       return ParseConstexprDeclaration();
 
