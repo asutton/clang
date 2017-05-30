@@ -169,7 +169,8 @@ CoroutineBodyStmt::CoroutineBodyStmt(CoroutineBodyStmt::CtorArgs const &Args)
 
 CompoundStmt *CXXInjectionStmt::getInjectedBlock() const {
   assert(isBlockInjection() && "injection is not a block");
-  return cast<CompoundStmt>(InjectedStmt);
+  CXXMethodDecl *Method = cast<CXXMethodDecl>(InjectedDecl);
+  return cast<CompoundStmt>(Method->getBody());
 }
 
 CXXRecordDecl *CXXInjectionStmt::getInjectedClass() const {
@@ -191,4 +192,5 @@ SourceLocation CXXInjectionStmt::getLocEnd() const {
   case IK_Namespace:
     return getInjectedNamespace()->getRBraceLoc();
   }
+  llvm_unreachable("Invalid injection kind");
 }

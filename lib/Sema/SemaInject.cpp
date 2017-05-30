@@ -23,11 +23,53 @@
 using namespace clang;
 using namespace sema;
 
-StmtResult Sema::ActOnCXXBlockInjection(SourceLocation ArrowLoc, Stmt *S) {
-  /// FIXME: Is there any checking that we need to apply to the statements
-  /// of this block?
-  return new (Context) CXXInjectionStmt(ArrowLoc, IK_Block, S);
+/// Returns a partially constructed block injection.
+StmtResult Sema::ActOnBlockInjection(Scope *S, SourceLocation ArrowLoc) {
+  LambdaScopeInfo *LSI = PushLambdaScope();
+
+  // Build the expression
+  //
+  //    []() -> auto compound-statement
+  //
+  // where compound-statement is the as-of-yet parsed body of the injection.
+  const bool KnownDependent = S->getTemplateParamParent();
+
+  FunctionProtoType::ExtProtoInfo EPI(
+      Context.getDefaultCallingConvention(/*IsVariadic=*/false,
+                                          /*IsCXXMethod=*/true));
+  EPI.TypeQuals |= DeclSpec::TQ_const;
+  QualType MethodTy = 
+      Context.getFunctionType(Context.getAutoDeductType(), None, EPI);
+  TypeSourceInfo *MethodTyInfo = Context.getTrivialTypeSourceInfo(MethodTy);
+
+  LambdaIntroducer Intro;
+  Intro.Range = SourceRange(ArrowLoc);
+  Intro.Default = LCD_None;
+
+  CXXRecordDecl *Closure = createLambdaClosureType(
+      Intro.Range, MethodTyInfo, KnownDependent, Intro.Default);
+  CXXMethodDecl *Method =
+      startLambdaDefinition(Closure, Intro.Range, MethodTyInfo, ArrowLoc,
+                            None, /*IsConstexprSpecified=*/false);
+  buildLambdaScope(LSI, Method, Intro.Range, Intro.Default, Intro.DefaultLoc,
+                   /*ExplicitParams=*/false,
+                   /*ExplicitResultType=*/true,
+                   /*Mutable=*/false);
+
+  return new (Context) CXXInjectionStmt(ArrowLoc, IK_Block, Method);
 }
+
+void Sema::ActOnStartBlockInjectionBody(Scope *S) {
+  LambdaScopeInfo *LSI = cast<LambdaScopeInfo>(FunctionScopes.back());
+  PushDeclContext(S, LSI->CallOperator);
+  PushExpressionEvaluationContext(
+      ExpressionEvaluationContext::PotentiallyEvaluated);
+}
+
+void Sema::ActOnFinishBlockInjectionBody(Scope *S, Stmt *Body) {
+  ActOnLambdaExpr(Body->getLocStart(), Body, S);
+}
+
 
 StmtResult Sema::ActOnCXXClassInjection(SourceLocation ArrowLoc, Decl *D) {
   /// FIXME: Is there any checking that we need to apply to the members of
@@ -70,9 +112,14 @@ static bool InvalidInjection(Sema& S, SourceLocation POI, int SK,
 class SourceCodeInjector : public TreeTransform<SourceCodeInjector> {
   using BaseType = TreeTransform<SourceCodeInjector>;
 
+  // The declaration context containing the code to be injected. This is either
+  // a function (for block injection), a class (for class injection), or a
+  // namespace (for namespace injection).
+  DeclContext *SrcContext;
+
 public:
-  SourceCodeInjector(Sema &SemaRef)
-      : TreeTransform<SourceCodeInjector>(SemaRef) {}
+  SourceCodeInjector(Sema &SemaRef, DeclContext *DC)
+      : TreeTransform<SourceCodeInjector>(SemaRef), SrcContext(DC) {}
 
   // Always rebuild nodes; we're effectively copying from one AST to another.
   bool AlwaysRebuild() const { return true; }
@@ -82,30 +129,137 @@ public:
   void AddSubstitution(Decl *From, Decl *To) {
     transformedLocalDecl(From, To);
   }
+
+  Decl *TransformDecl(Decl *D);
+  Decl *TransformDecl(SourceLocation, Decl *D);
+  Decl *TransformVarDecl(VarDecl *D);
 };
+
+Decl *SourceCodeInjector::TransformDecl(Decl *D) {
+  return TransformDecl(D->getLocation(), D);
+}
+
+Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
+  if (!D)
+    return nullptr;
+
+  // Don't transform declarations that are not local to the source context.
+  DeclContext *DC = D->getDeclContext();
+  while (DC && DC != SrcContext)
+    DC = DC->getParent();
+  if (DC == SrcContext)
+    return nullptr;
+
+  // Search for a previous transformation.
+  auto Known = TransformedLocalDecls.find(D);
+  if (Known != TransformedLocalDecls.end())
+    return Known->second;
+
+  // FIXME: It might be a better idea to use a DeclVisitor here.
+  switch (D->getKind()) {
+  default:
+    D->dump();
+    llvm_unreachable("Injection not implemented");
+  case Decl::Var:
+    return TransformVarDecl(cast<VarDecl>(D));
+
+  // case Decl::ParmVar:
+  //   return TransformParmVarDecl(cast<ParmVarDecl>(D));
+  // case Decl::Function:
+  //   return TransformFunctionDecl(cast<FunctionDecl>(D));
+  // case Decl::CXXMethod:
+  //   return TransformCXXMethodDecl(cast<CXXMethodDecl>(D));
+  // case Decl::CXXConstructor:
+  //   return TransformCXXConstructorDecl(cast<CXXConstructorDecl>(D));
+  // case Decl::CXXDestructor:
+  //   return TransformCXXDestructorDecl(cast<CXXDestructorDecl>(D));
+  // case Decl::Field:
+  //   return TransformFieldDecl(cast<FieldDecl>(D));
+  // case Decl::Constexpr:
+  //   return TransformConstexprDecl(cast<ConstexprDecl>(D));
+  }
+}
+
+Decl *SourceCodeInjector::TransformVarDecl(VarDecl *D) {
+  llvm::outs() << "XFORM VAR\n";
+  D->dump();
+  TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
+  VarDecl *R = VarDecl::Create(SemaRef.Context, 
+                               SemaRef.CurContext, 
+                               D->getLocation(), 
+                               D->getLocation(),
+                               D->getIdentifier(), 
+                               TypeInfo->getType(), 
+                               TypeInfo, 
+                               D->getStorageClass());
+  transformedLocalDecl(D, R);
+
+  // FIXME: Transform attributes.
+
+  SemaRef.CurContext->addDecl(R);
+
+  // Transform the initializer and associated properties of the definition.
+  if (D->getInit()) {
+    // Propagate the inline flag.
+    if (D->isInlineSpecified())
+      R->setInlineSpecified();
+    else if (D->isInline())
+      R->setImplicitlyInline();
+
+    if (D->getInit()) {
+      if (R->isStaticDataMember() && !D->isOutOfLine())
+        SemaRef.PushExpressionEvaluationContext(
+          Sema::ExpressionEvaluationContext::ConstantEvaluated, D);
+      else
+        SemaRef.PushExpressionEvaluationContext(
+          Sema::ExpressionEvaluationContext::PotentiallyEvaluated, D);
+
+      ExprResult Init;
+      {
+        Sema::ContextRAII SwitchContext(SemaRef, R->getDeclContext());
+        Init = TransformInitializer(D->getInit(),
+                                    D->getInitStyle() == VarDecl::CallInit);
+      }
+      if (!Init.isInvalid()) {
+        if (Init.get())
+          SemaRef.AddInitializerToDecl(R, Init.get(), D->isDirectInit());
+        else
+          SemaRef.ActOnUninitializedDecl(R);
+      } else
+        R->setInvalidDecl();
+    }
+  }
+
+  return R;
+}
 
 
 /// Returns the transformed statement S. 
-bool Sema::InjectBlockStatements(SourceLocation POI, CompoundStmt *S) {
+bool Sema::InjectBlockStatements(SourceLocation POI, CXXInjectionStmt *S) {
   if (!CurContext->isFunctionOrMethod())
     return InvalidInjection(*this, POI, 0, CurContext);
 
   // FIXME: At some point, we'll have parameters to bind.
-  SourceCodeInjector Injector(*this);
+  SourceCodeInjector Injector(*this, S->getInjectionContext());
 
   // Transform each statement in turn. Note that we build build a compound
-  // statement from all injected statements.
-  for (Stmt *B : S->body()) {
-    StmtResult R = Injector.TransformStmt(S);
-    if (R.isInvalid())
+  // statement from all injected statements at the point of injection.
+  CompoundStmt *Block = S->getInjectedBlock();
+  for (Stmt *B : Block->body()) {
+    StmtResult R = Injector.TransformStmt(B);
+    if (R.isInvalid()) {
+      llvm::outs() << "WTF?\n";
+      B->dump();
       return false;
+    }
+    R.get()->dump();
     InjectedStmts.push_back(R.get());
   }
   
   return true;
 }
 
-bool Sema::InjectClassMembers(SourceLocation POI, CXXRecordDecl *D) {
+bool Sema::InjectClassMembers(SourceLocation POI, CXXInjectionStmt *D) {
   if (!CurContext->isRecord())
     return InvalidInjection(*this, POI, 1, CurContext);
 
@@ -113,7 +267,7 @@ bool Sema::InjectClassMembers(SourceLocation POI, CXXRecordDecl *D) {
   return true;
 }
 
-bool Sema::InjectNamespaceMembers(SourceLocation POI, NamespaceDecl *D) {
+bool Sema::InjectNamespaceMembers(SourceLocation POI, CXXInjectionStmt *D) {
   if (!CurContext->isFileContext())
     return InvalidInjection(*this, POI, 2, CurContext);
 
@@ -131,11 +285,11 @@ bool Sema::ApplySourceCodeModifications(SourceLocation POI,
   for (Stmt *S : Stmts) {
     if (CXXInjectionStmt *IS = dyn_cast<CXXInjectionStmt>(S)) {
       if (IS->isBlockInjection())
-        return InjectBlockStatements(POI, IS->getInjectedBlock());
+        return InjectBlockStatements(POI, IS);
       else if (IS->isClassInjection())
-        return InjectClassMembers(POI, IS->getInjectedClass());
+        return InjectClassMembers(POI, IS);
       else if (IS->isNamespaceInjection())
-        return InjectNamespaceMembers(POI, IS->getInjectedNamespace());
+        return InjectNamespaceMembers(POI, IS);
     } else if (ReflectionTraitExpr *RTE = dyn_cast<ReflectionTraitExpr>(S)) {
       switch (RTE->getTrait()) {
       case BRT_ModifyAccess:

@@ -656,29 +656,21 @@ enum InjectionKind
 class CXXInjectionStmt : public Stmt {
   /// \brief The location of the '->'  token.
   SourceLocation ArrowLoc;
-  
-  /// \brief The injected content. The specific kind depends on the injection
-  /// kind (see InjectionKind).
-  union {
-    Stmt *InjectedStmt;
-    Decl *InjectedDecl;
-  };
 
-public:
-  CXXInjectionStmt(SourceLocation AL, InjectionKind IK, Stmt *S)
-      : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), InjectedStmt(S) {
-    assert(IK == IK_Block && "injection is not a statement");
-    InjectionStmtBits.InjectionKind = IK;
-  }
+  /// The kind of injected declaration. This is:
+  /// - a CXXMethodDecl of a lambda expression for a block injection,
+  /// - a CXXRecordDecl for a class injection, or
+  /// - a NamespaceDecl for a namespace injection.
+  Decl *InjectedDecl;
   
+public:
   CXXInjectionStmt(SourceLocation AL, InjectionKind IK, Decl *D)
       : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), InjectedDecl(D) {
-    assert(IK > IK_Block && "injection is not a declaration");
     InjectionStmtBits.InjectionKind = IK;
   }
 
   explicit CXXInjectionStmt(EmptyShell Empty)
-      : Stmt(CXXInjectionStmtClass, Empty), ArrowLoc() {}
+      : Stmt(CXXInjectionStmtClass, Empty), ArrowLoc(), InjectedDecl() {}
 
   /// \brief Returns the location of the injected arrow.
   SourceLocation getArrowLoc() const { return ArrowLoc; }
@@ -697,6 +689,11 @@ public:
   /// \brief Returns true if the injection is a namespace definition.
   bool isNamespaceInjection() const { 
     return getInjectionKind() == IK_Namespace; 
+  }
+
+  /// \brief Returns the declaration containing the injected code.
+  DeclContext *getInjectionContext() const { 
+    return cast<DeclContext>(InjectedDecl); 
   }
 
   /// \brief Returns the injected compound statement.

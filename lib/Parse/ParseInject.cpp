@@ -116,18 +116,15 @@ StmtResult Parser::ParseCXXInjectionStmt() {
 StmtResult Parser::ParseCXXBlockInjection(SourceLocation ArrowLoc) {
   assert(Tok.is(tok::l_brace) && "expected '{'");
 
-  // FIXME: What is the scope of variables appearing within this block? If
-  // they're local to block, that's obvious. But can names refer to entities
-  // outside of this scope (e.g., a metaclass?). Probably not. Do we need
-  // to consider parameterized injections -- and how would those work exactly?
-  //
-  // Also, in return statements, what should the type be? Should we just
-  // suppress certain checks if this is an injection.
-
-  StmtResult R = ParseCompoundStatement();
-  if (R.isInvalid())
-    return R;
-  return Actions.ActOnCXXBlockInjection(ArrowLoc, R.get());
+  // Parse the block statement as if it were a lambda '[] stmt'. 
+  StmtResult Injection = Actions.ActOnBlockInjection(getCurScope(), ArrowLoc);
+  ParseScope BodyScope(this, Scope::BlockScope | 
+                             Scope::FnScope | 
+                             Scope::DeclScope);
+  Actions.ActOnStartBlockInjectionBody(getCurScope());
+  StmtResult Body = ParseCompoundStatement();
+  Actions.ActOnFinishBlockInjectionBody(getCurScope(), Body.get());
+  return Injection.get();
 }
 
 StmtResult Parser::ParseCXXClassInjection(SourceLocation ArrowLoc) {

@@ -8422,15 +8422,18 @@ public:
   bool EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E);
   bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
 
-  StmtResult ActOnCXXBlockInjection(SourceLocation ArrowLoc, Stmt *S);
+  StmtResult ActOnBlockInjection(Scope *S, SourceLocation ArrowLoc);
+  void ActOnStartBlockInjectionBody(Scope *S);
+  void ActOnFinishBlockInjectionBody(Scope *S, Stmt *Body);
+  
   StmtResult ActOnCXXClassInjection(SourceLocation ArrowLoc, Decl *D);
   StmtResult ActOnCXXNamespaceInjection(SourceLocation ArrowLoc, Decl *D);
 
   bool ApplySourceCodeModifications(SourceLocation POI,
                                     SmallVectorImpl<Stmt *> &Stmts);
-  bool InjectBlockStatements(SourceLocation POI, CompoundStmt *S);
-  bool InjectClassMembers(SourceLocation POI, CXXRecordDecl *D);
-  bool InjectNamespaceMembers(SourceLocation POI, NamespaceDecl *D);
+  bool InjectBlockStatements(SourceLocation POI, CXXInjectionStmt *S);
+  bool InjectClassMembers(SourceLocation POI, CXXInjectionStmt *D);
+  bool InjectNamespaceMembers(SourceLocation POI, CXXInjectionStmt *D);
 
   /// \brief Stores the result of injecting statements resulting from the
   /// evaluation of a constexpr declaration. 
