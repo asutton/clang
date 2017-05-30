@@ -2188,7 +2188,7 @@ void Sema::ActOnConstexprDeclError(Scope *S, Decl *D) {
 
 /// Process a constexpr-declaration.
 ///
-/// This builds an unnamed \c constexpr \c void function whose body is that of
+/// This builds an unnamed constexpr void function whose body is that of
 /// the constexpr-delaration, and evaluates a call to that function.
 bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, FunctionDecl *D) {
   QualType FunctionTy = D->getType();
@@ -2275,6 +2275,6 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
     }
   }
 
-  // FIXME: Re-enable code injection.
-  // return InjectCode(Injections);
+  SourceLocation POI = CD->getSourceRange().getEnd();
+  return ApplySourceCodeModifications(POI, Injections);
 }

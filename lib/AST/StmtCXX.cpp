@@ -167,28 +167,28 @@ CoroutineBodyStmt::CoroutineBodyStmt(CoroutineBodyStmt::CtorArgs const &Args)
             const_cast<Stmt **>(getParamMoves().data()));
 }
 
-CompoundStmt *CXXInjectionStmt::getBlock() const {
-  assert(isBlock() && "injection is not a block");
+CompoundStmt *CXXInjectionStmt::getInjectedBlock() const {
+  assert(isBlockInjection() && "injection is not a block");
   return cast<CompoundStmt>(InjectedStmt);
 }
 
-CXXRecordDecl *CXXInjectionStmt::getClass() const {
-  assert(isClass() && "injection is not a class");
+CXXRecordDecl *CXXInjectionStmt::getInjectedClass() const {
+  assert(isClassInjection() && "injection is not a class");
   return cast<CXXRecordDecl>(InjectedDecl);
 }
 
-NamespaceDecl *CXXInjectionStmt::getNamespace() const {
-  assert(isNamespace() && "injection is not a namespace");
+NamespaceDecl *CXXInjectionStmt::getInjectedNamespace() const {
+  assert(isNamespaceInjection() && "injection is not a namespace");
   return cast<NamespaceDecl>(InjectedDecl);
 }
 
 SourceLocation CXXInjectionStmt::getLocEnd() const {
   switch (getInjectionKind()) {
   case IK_Block:
-    return getBlock()->getLocEnd();
+    return getInjectedBlock()->getLocEnd();
   case IK_Class:
-    return getClass()->getBraceRange().getEnd();
+    return getInjectedClass()->getBraceRange().getEnd();
   case IK_Namespace:
-    return getNamespace()->getRBraceLoc();
+    return getInjectedNamespace()->getRBraceLoc();
   }
 }

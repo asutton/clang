@@ -8426,11 +8426,15 @@ public:
   StmtResult ActOnCXXClassInjection(SourceLocation ArrowLoc, Decl *D);
   StmtResult ActOnCXXNamespaceInjection(SourceLocation ArrowLoc, Decl *D);
 
+  bool ApplySourceCodeModifications(SourceLocation POI,
+                                    SmallVectorImpl<Stmt *> &Stmts);
+  bool InjectBlockStatements(SourceLocation POI, CompoundStmt *S);
+  bool InjectClassMembers(SourceLocation POI, CXXRecordDecl *D);
+  bool InjectNamespaceMembers(SourceLocation POI, NamespaceDecl *D);
+
 #if 0
   void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                               SmallVectorImpl<Decl *> &Fields);
-  bool InjectCode(SmallVectorImpl<Stmt *> &Injections);
-  bool InjectCode(Stmt *Injection);
 
 
   StmtResult ActOnCXXInjectionStmt(SourceLocation Arrow, SourceLocation LB,

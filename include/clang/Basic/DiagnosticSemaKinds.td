@@ -9031,6 +9031,11 @@ def err_declname_invalid_operand_type : Error<
   "cannot include expression of type %0 in a declaration name">;
 def err_declname_not_an_identifer : Error<
   "declaration name %0 not is not an identifier">;
+
+// source code injection
+def err_invalid_injection : Error<
+  "injecting %select{statements|class members|namespace members}0 into a "
+  "%select{function definition|class definition|namespace definition}1">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

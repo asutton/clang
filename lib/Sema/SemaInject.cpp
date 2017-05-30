@@ -41,6 +41,83 @@ StmtResult Sema::ActOnCXXNamespaceInjection(SourceLocation ArrowLoc, Decl *D) {
   return new (Context) CXXInjectionStmt(ArrowLoc, IK_Namespace, D);
 }
 
+// Returns an integer value describing the target context of the injection.
+// This correlates to the second %select in err_invalid_injection.
+static int DescribeInjectionTarget(DeclContext *DC) {
+  if (DC->isFunctionOrMethod())
+    return 0;
+  else if (DC->isRecord())
+    return 1;
+  else if (DC->isFileContext())
+    return 2;
+  else
+    llvm_unreachable("Invalid injection context");
+}
+
+// Generate an error injecting a declaration of kind SK into the given 
+// declaration context. Returns false. Note that SK correlates to the first
+// %select in err_invalid_injection.
+static bool InvalidInjection(Sema& S, SourceLocation POI, int SK, 
+                             DeclContext *DC) {
+  S.Diag(POI, diag::err_invalid_injection) << SK << DescribeInjectionTarget(DC);
+  return false;
+}
+
+bool Sema::InjectBlockStatements(SourceLocation POI, CompoundStmt *S) {
+  if (!CurContext->isFunctionOrMethod())
+    return InvalidInjection(*this, POI, 0, CurContext);
+
+  S->dump();
+  return true;
+}
+
+bool Sema::InjectClassMembers(SourceLocation POI, CXXRecordDecl *D) {
+  if (!CurContext->isRecord())
+    return InvalidInjection(*this, POI, 1, CurContext);
+
+  D->dump();
+  return true;
+}
+
+bool Sema::InjectNamespaceMembers(SourceLocation POI, NamespaceDecl *D) {
+  if (!CurContext->isFileContext())
+    return InvalidInjection(*this, POI, 2, CurContext);
+
+  D->dump();
+  return true;
+}
+
+/// Inject a sequence of source code fragments or modification requests
+/// into the current AST. The point of injection (POI) is the point at
+/// which the injection is applied.
+///
+/// \returns  true if no errors are encountered, false otherwise.
+bool Sema::ApplySourceCodeModifications(SourceLocation POI, 
+                                        SmallVectorImpl<Stmt *> &Stmts) {
+  for (Stmt *S : Stmts) {
+    if (CXXInjectionStmt *IS = dyn_cast<CXXInjectionStmt>(S)) {
+      if (IS->isBlockInjection())
+        return InjectBlockStatements(POI, IS->getInjectedBlock());
+      else if (IS->isClassInjection())
+        return InjectClassMembers(POI, IS->getInjectedClass());
+      else if (IS->isNamespaceInjection())
+        return InjectNamespaceMembers(POI, IS->getInjectedNamespace());
+    } else if (ReflectionTraitExpr *RTE = dyn_cast<ReflectionTraitExpr>(S)) {
+      switch (RTE->getTrait()) {
+      case BRT_ModifyAccess:
+        return ModifyDeclarationAccess(RTE);
+      case BRT_ModifyVirtual:
+        return ModifyDeclarationVirtual(RTE);
+      default:
+        llvm_unreachable("Invalid reflection trait");
+      }
+    } else
+      llvm_unreachable("Invalid injection");
+  }
+  return true;
+}
+
+
 #if 0
 /// Injects declarations from a C++ metaclass definition into another class,
 /// by replacing all references to the metaclass type with that of the
@@ -479,50 +556,6 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
   // Class->dump();
 }
 
-/// Apply one injection.
-///
-/// \returns  \c true if no errors are encountered.
-bool Sema::InjectCode(Stmt *Injection) {
-  switch (Injection->getStmtClass()) {
-  case Stmt::CXXInjectionStmtClass: {
-    if (CurContext->isFileContext())
-      NamespaceInjectionParser(InjectionParser, Injection);
-    else if (CurContext->isRecord())
-      ClassInjectionParser(InjectionParser, Injection);
-    else
-      BlockInjectionParser(InjectionParser, Injection);
-    break;
-  }
-
-  case Stmt::ReflectionTraitExprClass: {
-    ReflectionTraitExpr *E = cast<ReflectionTraitExpr>(Injection);
-    switch (E->getTrait()) {
-    case BRT_ModifyAccess:
-      return ModifyDeclarationAccess(E);
-    case BRT_ModifyVirtual:
-      return ModifyDeclarationVirtual(E);
-    default:
-      llvm_unreachable("Invalid reflection trait");
-    }
-  }
-
-  default:
-    llvm_unreachable("Invalid injection");
-  }
-
-  return true;
-}
-
-/// Inject a sequence of source code fragments or modification requests
-/// into the current AST.
-///
-/// \returns  \c true if no errors are encountered, \c false otherwise.
-bool Sema::InjectCode(SmallVectorImpl<Stmt *> &Injections) {
-  for (Stmt *S : Injections)
-    if (!InjectCode(S))
-      return false;
-  return true;
-}
 
 /// Returns a new C++ injection statement.
 ///

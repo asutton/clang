@@ -508,6 +508,7 @@ namespace  {
     void VisitGotoStmt(const GotoStmt *Node);
     void VisitCXXCatchStmt(const CXXCatchStmt *Node);
     void VisitCapturedStmt(const CapturedStmt *Node);
+    void VisitCXXInjectionStmt(const CXXInjectionStmt *Node);
 
     // OpenMP
     void VisitOMPExecutableDirective(const OMPExecutableDirective *Node);
@@ -1853,6 +1854,20 @@ void ASTDumper::VisitCXXCatchStmt(const CXXCatchStmt *Node) {
 void ASTDumper::VisitCapturedStmt(const CapturedStmt *Node) {
   VisitStmt(Node);
   dumpDecl(Node->getCapturedDecl());
+}
+
+void ASTDumper::VisitCXXInjectionStmt(const CXXInjectionStmt *Node) {
+  VisitStmt(Node);
+  if (Node->isBlockInjection()) {
+    OS << " block";
+    dumpStmt(Node->getInjectedBlock());
+  } else if (Node->isClassInjection()) {
+    OS << " class";
+    dumpDecl(Node->getInjectedClass());
+  } else {
+    OS << " namespace";
+    dumpDecl(Node->getInjectedNamespace());
+  }
 }
 
 //===----------------------------------------------------------------------===//

@@ -689,22 +689,24 @@ public:
   }
 
   /// \brief Returns true if the injection is a compound statement.
-  bool isBlock() const { return getInjectionKind() == IK_Block; }
+  bool isBlockInjection() const { return getInjectionKind() == IK_Block; }
 
   /// \brief Returns true if the injection is a class definition.
-  bool isClass() const { return getInjectionKind() == IK_Class; }
+  bool isClassInjection() const { return getInjectionKind() == IK_Class; }
   
   /// \brief Returns true if the injection is a namespace definition.
-  bool isNamespace() const { return getInjectionKind() == IK_Namespace; }
+  bool isNamespaceInjection() const { 
+    return getInjectionKind() == IK_Namespace; 
+  }
 
   /// \brief Returns the injected compound statement.
-  CompoundStmt *getBlock() const;
+  CompoundStmt *getInjectedBlock() const;
 
   /// \brief Returns the injected class definition.
-  CXXRecordDecl *getClass() const;
+  CXXRecordDecl *getInjectedClass() const;
 
   /// \brief Returns the injected namespace definition.
-  NamespaceDecl *getNamespace() const;
+  NamespaceDecl *getInjectedNamespace() const;
 
   SourceLocation getLocStart() const LLVM_READONLY { return ArrowLoc; }
   SourceLocation getLocEnd() const LLVM_READONLY;
