@@ -2277,6 +2277,12 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
     }
   }
 
+  // Apply any modifications, and if successful, remove the declaration from
+  // the class; it shouldn't be visible in the output code.
+  //
+  // FIXME: Do we really want to remove the value?
   SourceLocation POI = CD->getSourceRange().getEnd();
-  return ApplySourceCodeModifications(POI, Injections);
+  bool Ok = ApplySourceCodeModifications(POI, Injections);
+  if (Ok)
+    CurContext->removeDecl(CD);
 }
