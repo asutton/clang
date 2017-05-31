@@ -147,8 +147,8 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   DeclContext *DC = D->getDeclContext();
   while (DC && DC != SrcContext)
     DC = DC->getParent();
-  if (DC == SrcContext)
-    return nullptr;
+  if (!DC)
+    return D;
 
   // Search for a previous transformation.
   auto Known = TransformedLocalDecls.find(D);
@@ -158,7 +158,6 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   // FIXME: It might be a better idea to use a DeclVisitor here.
   switch (D->getKind()) {
   default:
-    D->dump();
     llvm_unreachable("Injection not implemented");
   case Decl::Var:
     return TransformVarDecl(cast<VarDecl>(D));
@@ -181,8 +180,6 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
 }
 
 Decl *SourceCodeInjector::TransformVarDecl(VarDecl *D) {
-  llvm::outs() << "XFORM VAR\n";
-  D->dump();
   TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
   VarDecl *R = VarDecl::Create(SemaRef.Context, 
                                SemaRef.CurContext, 
@@ -247,12 +244,8 @@ bool Sema::InjectBlockStatements(SourceLocation POI, CXXInjectionStmt *S) {
   CompoundStmt *Block = S->getInjectedBlock();
   for (Stmt *B : Block->body()) {
     StmtResult R = Injector.TransformStmt(B);
-    if (R.isInvalid()) {
-      llvm::outs() << "WTF?\n";
-      B->dump();
+    if (R.isInvalid())
       return false;
-    }
-    R.get()->dump();
     InjectedStmts.push_back(R.get());
   }
   
