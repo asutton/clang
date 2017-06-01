@@ -9034,8 +9034,8 @@ def err_declname_not_an_identifer : Error<
 
 // source code injection
 def err_invalid_injection : Error<
-  "injecting %select{statements|class members|namespace members}0 into a "
-  "%select{function definition|class definition|namespace definition}1">;
+  "injecting %select{statements|class members|namespace members}0 into "
+  "%select{a function|a class|a namespace|global scope}1">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

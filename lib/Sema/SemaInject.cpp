@@ -90,8 +90,10 @@ static int DescribeInjectionTarget(DeclContext *DC) {
     return 0;
   else if (DC->isRecord())
     return 1;
-  else if (DC->isFileContext())
+  else if (DC->isNamespace())
     return 2;
+  else if (DC->isTranslationUnit())
+    return 3;
   else
     llvm_unreachable("Invalid injection context");
 }
@@ -135,6 +137,7 @@ public:
   Decl *TransformVarDecl(VarDecl *D);
   Decl *TransformParmVarDecl(ParmVarDecl *D);
   Decl *TransformFunctionDecl(FunctionDecl *D);
+  Decl *TransformCXXRecordDecl(CXXRecordDecl *D);
   Decl *TransformCXXMethodDecl(CXXMethodDecl *D);
   Decl *TransformCXXConstructorDecl(CXXConstructorDecl *D);
   Decl *TransformCXXDestructorDecl(CXXDestructorDecl *D);
@@ -153,6 +156,8 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
     return nullptr;
 
   // Don't transform declarations that are not local to the source context.
+  //
+  // FIXME: Is there a better way to determine nesting?
   DeclContext *DC = D->getDeclContext();
   while (DC && DC != SrcContext)
     DC = DC->getParent();
@@ -175,6 +180,8 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
     return TransformParmVarDecl(cast<ParmVarDecl>(D));
   case Decl::Function:
     return TransformFunctionDecl(cast<FunctionDecl>(D));
+  case Decl::CXXRecord:
+    return TransformCXXRecordDecl(cast<CXXRecordDecl>(D));
   case Decl::CXXMethod:
     return TransformCXXMethodDecl(cast<CXXMethodDecl>(D));
   case Decl::CXXConstructor:
@@ -295,6 +302,49 @@ Decl *SourceCodeInjector::TransformFieldDecl(FieldDecl *D) {
   return R;
 }
 
+Decl *SourceCodeInjector::TransformCXXRecordDecl(CXXRecordDecl *D) {
+  DeclarationNameInfo DN(D->getDeclName(), D->getLocation());
+  DeclarationNameInfo DNI = TransformDeclarationNameInfo(DN);
+
+  // FIXME: If D has a previous declaration, then we need to find the
+  // previous declaration of R.
+
+  CXXRecordDecl *R = CXXRecordDecl::Create(SemaRef.Context, D->getTagKind(),
+                                           SemaRef.CurContext, D->getLocStart(), 
+                                           D->getLocation(),
+                                           DNI.getName().getAsIdentifierInfo(),
+                                           /*PrevDecl=*/nullptr);
+  transformedLocalDecl(D, R);
+
+  // FIXME: Propagate attributes of the class.
+
+  SemaRef.CurContext->addDecl(R);
+
+  if (D->hasDefinition()) {
+    R->startDefinition();
+
+    // FIXME: Transform base class specifiers.
+
+    // Recursively transform declarations.
+    Sema::ContextRAII SwitchContext(SemaRef, R);
+    for (Decl *Member : D->decls()) {
+      // Don't transform invalid declarations.
+      if (Member->isInvalidDecl())
+        continue;
+
+      // Don't transform non-members appearing in a class.
+      if (Member->getDeclContext() != D)
+        continue;
+      
+      TransformDecl(Member);
+    }
+
+    R->completeDefinition();
+  }
+ 
+  return R;
+}
+
 Decl *SourceCodeInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
   DeclarationNameInfo NameInfo = TransformDeclarationNameInfo(D->getNameInfo());
 
@@ -409,6 +459,7 @@ bool Sema::InjectBlockStatements(SourceLocation POI, CXXInjectionStmt *S) {
 bool Sema::InjectClassMembers(SourceLocation POI, CXXInjectionStmt *S) {
   if (!CurContext->isRecord())
     return InvalidInjection(*this, POI, 1, CurContext);
+
   CXXRecordDecl *Target = cast<CXXRecordDecl>(CurContext);
   CXXRecordDecl *Source = S->getInjectedClass();
   SourceCodeInjector Injector(*this, Source);
@@ -460,20 +511,20 @@ bool Sema::ApplySourceCodeModifications(SourceLocation POI,
   for (Stmt *S : Stmts) {
     if (CXXInjectionStmt *IS = dyn_cast<CXXInjectionStmt>(S)) {
       if (IS->isBlockInjection())
-        return InjectBlockStatements(POI, IS);
+        InjectBlockStatements(POI, IS);
       else if (IS->isClassInjection())
-        return InjectClassMembers(POI, IS);
+        InjectClassMembers(POI, IS);
       else if (IS->isNamespaceInjection())
-        return InjectNamespaceMembers(POI, IS);
+        InjectNamespaceMembers(POI, IS);
+      else
+        llvm_unreachable("Unknown injection context");
     } else if (ReflectionTraitExpr *RTE = dyn_cast<ReflectionTraitExpr>(S)) {
-      switch (RTE->getTrait()) {
-      case BRT_ModifyAccess:
-        return ModifyDeclarationAccess(RTE);
-      case BRT_ModifyVirtual:
-        return ModifyDeclarationVirtual(RTE);
-      default:
-        llvm_unreachable("Invalid reflection trait");
-      }
+      if (RTE->getTrait() == BRT_ModifyAccess)
+        ModifyDeclarationAccess(RTE);
+      else if (RTE->getTrait() == BRT_ModifyVirtual)
+        ModifyDeclarationVirtual(RTE);
+      else
+        llvm_unreachable("Unknown reflection trait");
     } else
       llvm_unreachable("Invalid injection");
   }
