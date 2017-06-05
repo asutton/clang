@@ -3609,10 +3609,13 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
     case tok::annot_metaclass: {
       tok::TokenKind Kind = Tok.getKind();
 
-      if (Kind == tok::annot_metaclass)
+      // If this was a metaclass, associate it with the specifier.
+      if (Kind == tok::annot_metaclass) {
         DS.setMetaclass((Decl *)Tok.getAnnotationValue());
-      
-      ConsumeToken();
+        ConsumeAnnotationToken();
+      } else {
+        ConsumeToken();
+      }
 
       // These are attributes following class specifiers.
       // To produce better diagnostic, we parse them when
