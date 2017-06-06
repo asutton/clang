@@ -2178,12 +2178,15 @@ void Sema::ActOnConstexprDeclError(Scope *S, Decl *D) {
   ConstexprDecl *CD = cast<ConstexprDecl>(D);
   CD->setInvalidDecl();
 
-  if (CD->hasFunctionRepresentation()) {
-    FunctionDecl *Fn = CD->getFunctionDecl();
-    ActOnFinishFunctionBody(Fn, nullptr);
-  } else {
+  if (CD->hasFunctionRepresentation())
+    ActOnFinishFunctionBody(CD->getFunctionDecl(), nullptr);
+  else
     ActOnLambdaError(CD->getLocation(), S);
-  }
+
+  // Remove the declaration; we don't want to see it in the source tree.
+  //
+  // FIXME: Do we really want to do this?
+  CD->getDeclContext()->removeDecl(CD);
 }
 
 /// Process a constexpr-declaration.
@@ -2262,17 +2265,13 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
     // handles this case.
     if (!Notes.empty()) {
       // If we got a compiler error, then just emit that.
-      if (Notes[0].second.getDiagID() == diag::err_user_defined_error) {
+      if (Notes[0].second.getDiagID() == diag::err_user_defined_error)
         Diag(CD->getLocStart(), Notes[0].second);
-        return false;
-      }
-
-      if (Notes[0].second.getDiagID() != diag::note_constexpr_uninitialized) {
+      else if (Notes[0].second.getDiagID() != diag::note_constexpr_uninitialized) {
         // FIXME: These source locations are wrong.
         Diag(CD->getLocStart(), diag::err_expr_not_ice) << LangOpts.CPlusPlus;
         for (const PartialDiagnosticAt &Note : Notes)
           Diag(Note.first, Note.second);
-        return false;
       }
     }
   }
@@ -2280,9 +2279,10 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   // Apply any modifications, and if successful, remove the declaration from
   // the class; it shouldn't be visible in the output code.
   //
-  // FIXME: Do we really want to remove the value?
+  // FIXME: Do we really want to remove the constexpr declaration?
   SourceLocation POI = CD->getSourceRange().getEnd();
-  bool Ok = ApplySourceCodeModifications(POI, Injections);
-  if (Ok)
-    CurContext->removeDecl(CD);
+  ApplySourceCodeModifications(POI, Injections);
+  CD->getDeclContext()->removeDecl(CD);
+  
+  return Notes.empty();
 }

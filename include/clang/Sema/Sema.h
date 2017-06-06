@@ -8439,38 +8439,8 @@ public:
   /// evaluation of a constexpr declaration. 
   llvm::SmallVector<Stmt *, 8> InjectedStmts;
 
-#if 0
   void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                               SmallVectorImpl<Decl *> &Fields);
-
-
-  StmtResult ActOnCXXInjectionStmt(SourceLocation Arrow, SourceLocation LB,
-                                   SourceLocation RB, ArrayRef<Token> TokArray);
-
-  ArrayRef<Token> GetTokensToInject(Stmt *S);
-
-  // Source code injection requires that we parse the tokens of an injection
-  // statement based on the context in which the injections are processed.
-  // There is one parsing callback function for each such context.
-  //
-  // Each callback takes a pointer to the (opaque) parser and the injection
-  // statement containing the tokens to be parsed.
-
-  /// The cached parser object, used as the first argument to parsing callbacks.
-  ///
-  // FIXME: This is the same as the OpaqueParser for late template parsing.
-  // There's some duplication that could be cleaned up.
-  void *InjectionParser;
-
-  using NamespaceInjectionParserCB = void (void *, Stmt *);
-  NamespaceInjectionParserCB *NamespaceInjectionParser;
-
-  using ClassInjectionParserCB = void (void *, Stmt *);
-  ClassInjectionParserCB *ClassInjectionParser;
-
-  using BlockInjectionParserCB = void (void *, Stmt *);
-  BlockInjectionParserCB *BlockInjectionParser;
-#endif
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

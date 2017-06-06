@@ -142,6 +142,7 @@ public:
   Decl *TransformCXXConstructorDecl(CXXConstructorDecl *D);
   Decl *TransformCXXDestructorDecl(CXXDestructorDecl *D);
   Decl *TransformFieldDecl(FieldDecl *D);
+  Decl *TransformConstexprDecl(ConstexprDecl *D);
 
   void TransformFunctionParameters(FunctionDecl *D, FunctionDecl *R);
   void TransformFunctionDefinition(FunctionDecl *D, FunctionDecl *R);
@@ -171,7 +172,6 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
 
   switch (D->getKind()) {
   default:
-    D->dump();
     llvm_unreachable("Injection not implemented");
   case Decl::Var:
     return TransformVarDecl(cast<VarDecl>(D));
@@ -190,8 +190,8 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
     return TransformCXXDestructorDecl(cast<CXXDestructorDecl>(D));
   case Decl::Field:
     return TransformFieldDecl(cast<FieldDecl>(D));
-  // case Decl::Constexpr:
-  //   return TransformConstexprDecl(cast<ConstexprDecl>(D));
+  case Decl::Constexpr:
+    return TransformConstexprDecl(cast<ConstexprDecl>(D));
   }
 }
 
@@ -531,9 +531,7 @@ bool Sema::ApplySourceCodeModifications(SourceLocation POI,
   return true;
 }
 
-
-#if 0
-Decl *MetaclassInjector::TransformConstexprDecl(ConstexprDecl *D) {
+Decl *SourceCodeInjector::TransformConstexprDecl(ConstexprDecl *D) {
   // We can use the ActOn* members since the initial parsing for these
   // declarations is trivial (i.e., don't have to translate declarators).
   unsigned ScopeFlags; // Unused
@@ -547,6 +545,7 @@ Decl *MetaclassInjector::TransformConstexprDecl(ConstexprDecl *D) {
     SemaRef.ActOnConstexprDeclError(SemaRef.getCurScope(), New);
   return New;
 }
+
 
 /// Copy, by way of transforming, the members of the given C++ metaclass into
 /// the target class.
@@ -577,18 +576,20 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
     InjectMetaclassMembers(BaseMeta, Class, Fields);
   }
 
+  SourceCodeInjector Injector(*this, Meta);
+  Injector.AddSubstitution(Def, Class);
+
   // Inject the members.
   for (Decl *D : Def->decls()) {
     if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {
-      // Skip the injected class name.
       if (RD->isInjectedClassName())
+        // Skip the injected class name.
         continue;
     }
 
     // Inject the declaration into the class. The injection site is the
     // closing brace of the class body.
-    MetaclassInjector Inject(*this, Def, Class);
-    if (Decl *R = Inject.TransformDecl(D)) {
+    if (Decl *R = Injector.TransformDecl(D)) {
       if (isa<FieldDecl>(R))
         Fields.push_back(R);
     }
@@ -597,22 +598,3 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
   // llvm::errs() << "RESULTING CLASS\n";
   // Class->dump();
 }
-
-
-/// Returns a new C++ injection statement.
-///
-/// These things are pretty opaque; there's practically no checking we can do
-/// until they are injected.
-StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Arrow, SourceLocation LB,
-                                       SourceLocation RB,
-                                       ArrayRef<Token> TokArray) {
-  return new (Context) CXXInjectionStmt(Context, Arrow, LB, RB, TokArray);
-}
-
-/// Returns the tokens for the injection statement \p S.
-ArrayRef<Token> Sema::GetTokensToInject(Stmt *S) {
-  assert(isa<CXXInjectionStmt>(S));
-  return cast<CXXInjectionStmt>(S)->getTokens();
-}
-
-#endif

@@ -13999,32 +13999,6 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
   // Notify the consumer that we've defined a tag.
   if (!Tag->isInvalidDecl())
     Consumer.HandleTagDeclDefinition(Tag);
-
-  // FIXME: Remove this... it's too late.
-#if 0
-  // Lastly... apply the metaclass, if it exists.
-  if (CXXRecordDecl *Old = dyn_cast<CXXRecordDecl>(Tag)) {
-    if (MetaclassDecl *Metaclass = Old->getMetaclass()) {
-      CXXRecordDecl *New = EvaluateMetaclass(Metaclass, Old);
-
-      // TODO: This is not efficient. Removing declarations from a DC is a
-      // linear in the number of declarations in the DC. It would be more
-      // efficient to simply swap the values of the old and new classes.
-
-      // Replace the old declaration with the new declaration in its context.
-      DeclContext *SemaDC = Old->getDeclContext();
-      DeclContext *LexDC = Old->getDeclContext();
-      SemaDC->removeDecl(Old);
-      if (SemaDC != LexDC)
-        LexDC->removeDecl(Old);
-      SemaDC->addDecl(New);
-
-      // Replace the old declaration
-      IdResolver.RemoveDecl(Old);
-      IdResolver.AddDecl(New);
-    }
-  }
-#endif
 }
 
 void Sema::ActOnObjCContainerFinishDefinition() {
@@ -14722,7 +14696,7 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
       SmallVector<Decl *, 32> InjectedFields;
       
       // FIXME: Re-enable injection.
-      // InjectMetaclassMembers(Metaclass, Class, InjectedFields);
+      InjectMetaclassMembers(Metaclass, Class, InjectedFields);
     }
   }
 
