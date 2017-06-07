@@ -1749,7 +1749,8 @@ Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
   return Metaclass;
 }
 
-void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD,
+void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD, 
+                                         ParsedAttributes &Attrs,
                                          CXXRecordDecl *&Definition) {
   MetaclassDecl *Metaclass = cast<MetaclassDecl>(MD);
 
@@ -1766,6 +1767,10 @@ void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD,
   CurContext->addHiddenDecl(Definition);
   Definition->startDefinition();
   assert(Definition->isMetaclassDefinition() && "Broken metaclass definition");
+
+  // Apply attributes to the definition.
+  if (AttributeList *List = Attrs.getList())
+    ProcessDeclAttributeList(CurScope, Definition, List, true);
 
   Metaclass->setDefinition(Definition);
 }

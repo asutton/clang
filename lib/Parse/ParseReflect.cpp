@@ -302,15 +302,18 @@ void Parser::AnnotateMetaclassName(CXXScopeSpec *SS, Decl *Metaclass) {
 Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
   assert(Tok.is(tok::dollar));
   SourceLocation DLoc = ConsumeToken();
+  
   // For now, pretend we are defining a class that was declared with the
   // 'struct' class-key.
   DeclSpec::TST TagType = DeclSpec::TST_struct;
   assert(Tok.is(tok::kw_class)); // TODO: Support for '$struct' and '$union'?
   ConsumeToken();
 
-  // TODO: Parse attributes?
-  ParsedAttributesWithRange attrs(AttrFactory);
+  // Allow GNU and C++11 attributes after '$class'.
+  ParsedAttributesWithRange Attrs(AttrFactory);
   SourceLocation AttrFixItLoc = Tok.getLocation();
+  MaybeParseGNUAttributes(Attrs);
+  MaybeParseCXX11Attributes(Attrs);
 
   // Parse the metaclass name.
   assert(Tok.is(tok::identifier));
@@ -328,13 +331,14 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
   // Enter a scope for the metaclass.
   ParseScope MetaclassScope(this, Scope::DeclScope);
 
-  Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass, MetaclassDef);
+  Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass, Attrs, 
+                                        MetaclassDef);
 
   PrettyDeclStackTraceEntry CrashInfo(Actions, Metaclass, DLoc,
                                       "parsing metaclass body");
 
   // Parse the body of the metaclass.
-  ParseCXXMemberSpecification(DLoc, AttrFixItLoc, attrs, TagType, MetaclassDef);
+  ParseCXXMemberSpecification(DLoc, AttrFixItLoc, Attrs, TagType, MetaclassDef);
 
   if (MetaclassDef->isInvalidDecl()) {
     Actions.ActOnMetaclassDefinitionError(getCurScope(), Metaclass);

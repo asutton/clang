@@ -8399,7 +8399,8 @@ public:
 
   Decl *ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
                        IdentifierInfo *II);
-  void ActOnMetaclassStartDefinition(Scope *S, Decl *MD,
+  void ActOnMetaclassStartDefinition(Scope *S, Decl *MD, 
+                                     ParsedAttributes &Attrs,
                                      CXXRecordDecl *&Definition);
   void ActOnMetaclassFinishDefinition(Scope *S, Decl *MD,
                                       SourceRange BraceRange);

@@ -134,6 +134,7 @@ public:
 
   Decl *TransformDecl(Decl *D);
   Decl *TransformDecl(SourceLocation, Decl *D);
+  Decl *TransformDeclImpl(SourceLocation, Decl *D);
   Decl *TransformVarDecl(VarDecl *D);
   Decl *TransformParmVarDecl(ParmVarDecl *D);
   Decl *TransformFunctionDecl(FunctionDecl *D);
@@ -146,6 +147,7 @@ public:
 
   void TransformFunctionParameters(FunctionDecl *D, FunctionDecl *R);
   void TransformFunctionDefinition(FunctionDecl *D, FunctionDecl *R);
+  void TransformAttributes(Decl *D, Decl *R);
 };
 
 Decl *SourceCodeInjector::TransformDecl(Decl *D) {
@@ -170,12 +172,17 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   if (Known != TransformedLocalDecls.end())
     return Known->second;
 
+  Decl *R = TransformDeclImpl(Loc, D);
+  TransformAttributes(D, R);
+  return R;
+}
+
+Decl *SourceCodeInjector::TransformDeclImpl(SourceLocation Loc, Decl *D) {
   switch (D->getKind()) {
   default:
-    llvm_unreachable("Injection not implemented");
+    break;
   case Decl::Var:
     return TransformVarDecl(cast<VarDecl>(D));
-
   case Decl::ParmVar:
     return TransformParmVarDecl(cast<ParmVarDecl>(D));
   case Decl::Function:
@@ -193,6 +200,7 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   case Decl::Constexpr:
     return TransformConstexprDecl(cast<ConstexprDecl>(D));
   }
+  llvm_unreachable("Injecting unknown declaration");
 }
 
 Decl *SourceCodeInjector::TransformVarDecl(VarDecl *D) {
@@ -435,6 +443,19 @@ void SourceCodeInjector::TransformFunctionDefinition(FunctionDecl *D,
   }
 }
 
+void SourceCodeInjector::TransformAttributes(Decl *D, Decl *R) {
+  // FIXME: The general rule for TreeTransform<>::TransformAttr is to simply
+  // return the original attribute. We may actually need to perform 
+  // substitutions in derived kinds of attributes.
+  for (Attr *Old : D->attrs()) {
+    const Attr *New = TransformAttr(Old);
+    if (New == Old)
+      R->addAttr(Old->clone(SemaRef.Context));
+    else
+      R->addAttr(const_cast<Attr *>(New));
+  }
+}
+
 /// Returns the transformed statement S. 
 bool Sema::InjectBlockStatements(SourceLocation POI, CXXInjectionStmt *S) {
   if (!CurContext->isFunctionOrMethod())
@@ -565,7 +586,13 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
 
   // Inject each metaclass member in turn.
   CXXRecordDecl *Def = Meta->getDefinition();
-  
+
+  SourceCodeInjector Injector(*this, Meta);
+  Injector.AddSubstitution(Def, Class);
+
+  // Propagate attributes on a metaclass to the destination class.
+  Injector.TransformAttributes(Def, Class);
+
   // Recursively inject base classes.
   for (CXXBaseSpecifier &B : Def->bases()) {
     QualType T = B.getType();
@@ -575,9 +602,6 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
     MetaclassDecl *BaseMeta = cast<MetaclassDecl>(BaseClass->getDeclContext());
     InjectMetaclassMembers(BaseMeta, Class, Fields);
   }
-
-  SourceCodeInjector Injector(*this, Meta);
-  Injector.AddSubstitution(Def, Class);
 
   // Inject the members.
   for (Decl *D : Def->decls()) {
@@ -594,6 +618,8 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
         Fields.push_back(R);
     }
   }
+
+  llvm::outs() << "HERE: " << Class->hasAttr<PackedAttr>() << '\n';
 
   // llvm::errs() << "RESULTING CLASS\n";
   // Class->dump();

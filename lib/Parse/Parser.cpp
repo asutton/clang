@@ -833,11 +833,13 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
     goto dont_know;
 
   case tok::dollar:
-    // If we get '$' as a token, then -freflection must be enabled.
-    // This can be disambiguated from an expression-statement since an
-    // identifier must follow.
-    if (NextToken().is(tok::kw_class) &&
-        GetLookAheadToken(2).is(tok::identifier))
+    // If we get '$' as a token, then -freflection must be enabled. 
+    //
+    // FIXME: There is an ambiguity with metaclass declarations and elaborated
+    // type specifiers. '$class T' is either a metaclass definition or it
+    // is the reflection of an elaborated type specifier. Note that this goes
+    // away when we move to only using reflexpr.
+    if (NextToken().is(tok::kw_class))
       return ParseMetaclassDefinition();
     goto dont_know;
 
