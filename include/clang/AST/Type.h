@@ -3703,6 +3703,70 @@ public:
                       Expr *E);
 };
 
+/// \brief Representation of reflected types.
+///
+/// This represents the set of types formed using the typename specifier
+/// on a non-dependent expression.
+///
+///   struct S;
+///   void f() {
+///     typename($S) foo ;
+///   }
+///
+/// As with decltype types, we preserve the underlying expression.
+///
+/// \todo Consider merging this implementation with DecltypeType and maybe
+/// TypeofType. They all appear to have the same internal structure.
+class ReflectedType : public Type {
+  friend class ASTContext;  // ASTContext creates these.
+  
+  Expr *UnderlyingExpr;
+  QualType UnderlyingType;
+
+protected:
+  ReflectedType(Expr *E, QualType T, QualType Can = QualType());
+
+public:
+  /// \brief Returns the reflection of a type.
+  Expr *getTypeReflection() const { return UnderlyingExpr; }
+
+  /// \brief Returns the underlying type; the one reflected.
+  QualType getUnderlyingType() const { return UnderlyingType; }
+
+  /// \brief Returns whether this type provides sugar.
+  bool isSugared() const;
+
+  /// \brief Removes one level of sugar.
+  QualType desugar() const;
+
+  static bool classof(const Type *T) { return T->getTypeClass() == Reflected; }
+};
+
+/// \brief Representation of dependent reflected types.
+///
+/// This represents the set of types formed using the typename reflection
+/// operator. For example:
+///
+///   template<typename T>
+///   void f() {
+///     typename($T) foo ;
+///   }
+///
+/// When the reflection is dependent, the type is canonicalized.
+class DependentReflectedType : public ReflectedType, 
+                               public llvm::FoldingSetNode {
+  const ASTContext &Context;
+public:
+  DependentReflectedType(const ASTContext &Context, Expr *E);
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, Context, getTypeReflection());
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
+                      Expr *E);
+};
+
 /// A unary type transform, which is a type constructed from another.
 class UnaryTransformType : public Type {
 public:

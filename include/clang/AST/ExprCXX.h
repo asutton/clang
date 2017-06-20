@@ -4313,18 +4313,18 @@ protected:
 public:
   ReflectionExpr(SourceLocation OpLoc, Expr *E, QualType T)
       : Expr(ReflectionExprClass, T, VK_RValue, OK_Ordinary,
-             true,   // Type dependent
-             false,  // Value dependent
-             false,  // Instantiation dependent
-             false), // Unexpanded packs
+             E->isTypeDependent(),
+             E->isValueDependent(),
+             E->isInstantiationDependent(),
+             E->containsUnexpandedParameterPack()),
         Operand(E), OpLoc(OpLoc), LParenLoc(), RParenLoc() {}
 
   ReflectionExpr(SourceLocation OpLoc, TypeSourceInfo *TSI, QualType T)
       : Expr(ReflectionExprClass, T, VK_RValue, OK_Ordinary,
-             true,   // Type dependent
-             false,  // Value dependent
-             false,  // Instantiation dependent
-             false), // Unexpanded packs
+             TSI->getType()->isDependentType(),
+             TSI->getType()->isDependentType(),
+             TSI->getType()->isInstantiationDependentType(),
+             TSI->getType()->containsUnexpandedParameterPack()),
         Operand(TSI), OpLoc(OpLoc), LParenLoc(), RParenLoc() {}
 
   ReflectionExpr(StmtClass SC, EmptyShell Empty) : Expr(SC, Empty) {}

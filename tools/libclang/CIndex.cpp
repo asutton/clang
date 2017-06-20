@@ -1720,6 +1720,13 @@ bool CursorVisitor::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
   return false;
 }
 
+bool CursorVisitor::VisitReflectedTypeLoc(ReflectedTypeLoc TL) {
+  if (Expr *E = TL.getTypeReflection())
+    return Visit(MakeCXCursor(E, StmtParent, TU));
+
+  return false;
+}
+
 bool CursorVisitor::VisitInjectedClassNameTypeLoc(InjectedClassNameTypeLoc TL) {
   return Visit(MakeCursorTypeRef(TL.getDecl(), TL.getNameLoc(), TU));
 }

@@ -8374,9 +8374,9 @@ public:
                                   SourceLocation RParenLoc);
   ExprResult BuildDeclReflection(SourceLocation Loc, Decl *D);
   ExprResult BuildTypeReflection(SourceLocation Loc, QualType T);
+
+  QualType BuildReflectedType(SourceLocation TypenameLoc, Expr *E);
   TypeResult ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc, Expr *E);
-
-
 
   NamespaceDecl *RequireCppxNamespace(SourceLocation Loc);
   NamespaceDecl *RequireCppxMetaNamespace(SourceLocation Loc);

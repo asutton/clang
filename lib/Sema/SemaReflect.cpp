@@ -1629,22 +1629,16 @@ bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
 }
 
 /// Diagnose a type reflection error and return a type error.
-static TypeResult TypeReflectionError(Sema &SemaRef, Expr *E) {
+static QualType TypeReflectionError(Sema &SemaRef, Expr *E) {
   SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_type)
       << E->getSourceRange();
-  return TypeResult(true);
+  return QualType();
 }
 
-/// Evaluates the given expression and yields the computed type.
-///
-// FIXME: We probably want to return something like decltype(E). We should
-// factor those two nodes into a common base (call it ComputedType), and
-// then construct and return that.
-TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc,
-                                              Expr *E) {
-  if (E->isTypeDependent())
-    llvm_unreachable("Dependent reflection types not implemented");
-
+// Compute the type of a reflection.
+QualType
+GetNonDependentReflectedType(Sema &SemaRef, Expr *E)
+{
   // Get the type of the reflection.
   QualType T = E->getType();
   if (AutoType *D = T->getContainedAutoType()) {
@@ -1656,18 +1650,19 @@ TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc,
   // Unpack information from the expression.
   CXXRecordDecl *Class = T->getAsCXXRecordDecl();
   if (!Class && !isa<ClassTemplateSpecializationDecl>(Class))
-    return TypeReflectionError(*this, E);
+    return TypeReflectionError(SemaRef, E);
   ClassTemplateSpecializationDecl *Spec =
       cast<ClassTemplateSpecializationDecl>(Class);
-  // FIXME: We should verify that this Class actually a meta class
-  // object so that we aren't arbitrarily converting integers into
-  // addresses (no bueno).
+  
+  // FIXME: We should verify that this Class actually a meta class object so 
+  // that we aren't arbitrarily converting integers into addresses.
+  
   const TemplateArgumentList &Args = Spec->getTemplateArgs();
   if (Args.size() == 0)
-    return TypeReflectionError(*this, E);
+    return TypeReflectionError(SemaRef, E);
   const TemplateArgument &Arg = Args.get(0);
   if (Arg.getKind() != TemplateArgument::Integral)
-    return TypeReflectionError(*this, E);
+    return TypeReflectionError(SemaRef, E);
 
   // Decode the specialization argument as a type.
   llvm::APSInt Data = Arg.getAsIntegral();
@@ -1678,9 +1673,8 @@ TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc,
     // Returns the referenced type. For example:
     //
     //    typename($int) x; // int x
-    QualType RT((Type *)Info.second, 0);
-    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(RT);
-    return CreateParsedType(RT, TSI);
+    QualType T((Type *)Info.second, 0);
+    return SemaRef.Context.getReflectedType(E, T);
   } else if (Info.first == RK_Decl) {
     // Returns the type of the referenced declaration. For example:
     //
@@ -1691,17 +1685,39 @@ TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc,
     // to its type.
     Decl *D = (Decl *)Info.second;
     if (!isa<ValueDecl>(D)) {
-      Diag(E->getLocStart(), diag::err_reflection_not_a_typed_decl)
-          << E->getSourceRange();
-      return TypeResult(true);
+      SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_typed_decl)
+                   << E->getSourceRange();
+      return QualType();
     }
-    ValueDecl *VD = cast<ValueDecl>(D);
-    QualType RT = VD->getType();
-    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(RT);
-    return CreateParsedType(RT, TSI);
+    return cast<ValueDecl>(D)->getType();
   }
+  else
+    // FIXME: Should be equivalent to decltype(e).
+    llvm_unreachable("expression type not implemented");
+}
 
-  return TypeReflectionError(*this, E);
+/// Evaluates the given expression and yields the computed type.
+QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
+  QualType T;
+  if (E->isTypeDependent())
+    return Context.getReflectedType(E, Context.DependentTy);
+  else
+    return GetNonDependentReflectedType(*this, E);
+}
+
+/// Evaluates the given expression and yields the computed type.
+TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc,
+                                              Expr *E) {
+  QualType T = BuildReflectedType(TypenameLoc, E);
+  if (T.isNull())
+    return TypeResult(true);
+
+  // FIXME: Add parens?
+  TypeLocBuilder TLB;
+  ReflectedTypeLoc TL = TLB.push<ReflectedTypeLoc>(T);
+  TL.setNameLoc(TypenameLoc);
+  TypeSourceInfo *TSI = TLB.getTypeSourceInfo(Context, T);
+  return CreateParsedType(T, TSI);
 }
 
 Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,

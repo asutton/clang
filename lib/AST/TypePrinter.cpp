@@ -183,6 +183,7 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::TypeOfExpr:
     case Type::TypeOf:
     case Type::Decltype:
+    case Type::Reflected:
     case Type::UnaryTransform:
     case Type::Record:
     case Type::Enum:
@@ -851,6 +852,17 @@ void TypePrinter::printDecltypeBefore(const DecltypeType *T, raw_ostream &OS) {
   spaceBeforePlaceHolder(OS);
 }
 void TypePrinter::printDecltypeAfter(const DecltypeType *T, raw_ostream &OS) { } 
+
+void TypePrinter::printReflectedBefore(const ReflectedType *T, 
+                                       raw_ostream &OS) { 
+  OS << "typename(";
+  if (T->getTypeReflection())
+    T->getTypeReflection()->printPretty(OS, nullptr, Policy);
+  OS << ')';
+  spaceBeforePlaceHolder(OS);
+}
+void TypePrinter::printReflectedAfter(const ReflectedType *T, 
+                                      raw_ostream &OS) { } 
 
 void TypePrinter::printUnaryTransformBefore(const UnaryTransformType *T,
                                             raw_ostream &OS) {

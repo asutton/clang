@@ -1901,6 +1901,7 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
+  case Type::Reflected:
   case Type::TemplateTypeParm:
   case Type::UnaryTransform:
   case Type::SubstTemplateTypeParm:
@@ -3122,6 +3123,13 @@ void CXXNameMangler::mangleType(const DecltypeType *T) {
   else
     Out << "DT";
   mangleExpression(E);
+  Out << 'E';
+}
+
+void CXXNameMangler::mangleType(const ReflectedType *T) {
+// <type> ::= RT <expression> E  # decltype of an expression
+  Out << "RT";
+  mangleExpression(T->getTypeReflection());
   Out << 'E';
 }
 

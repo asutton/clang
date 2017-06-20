@@ -337,6 +337,12 @@ void ASTTypeWriter::VisitDecltypeType(const DecltypeType *T) {
   Code = TYPE_DECLTYPE;
 }
 
+void ASTTypeWriter::VisitReflectedType(const ReflectedType *T) {
+  Record.AddTypeRef(T->getUnderlyingType());
+  Record.AddStmt(T->getTypeReflection());
+  Code = TYPE_DECLTYPE;
+}
+
 void ASTTypeWriter::VisitUnaryTransformType(const UnaryTransformType *T) {
   Record.AddTypeRef(T->getBaseType());
   Record.AddTypeRef(T->getUnderlyingType());
@@ -683,6 +689,10 @@ void TypeLocWriter::VisitTypeOfTypeLoc(TypeOfTypeLoc TL) {
 }
 
 void TypeLocWriter::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
+  Record.AddSourceLocation(TL.getNameLoc());
+}
+
+void TypeLocWriter::VisitReflectedTypeLoc(ReflectedTypeLoc TL) {
   Record.AddSourceLocation(TL.getNameLoc());
 }
 

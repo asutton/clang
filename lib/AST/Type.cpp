@@ -2943,6 +2943,34 @@ void DependentDecltypeType::Profile(llvm::FoldingSetNodeID &ID,
   E->Profile(ID, Context, true);
 }
 
+ReflectedType::ReflectedType(Expr *E, QualType T, QualType Can)
+  : Type(Reflected, Can, E->isInstantiationDependent(),
+         E->isInstantiationDependent(),
+         E->getType()->isVariablyModifiedType(), 
+         E->containsUnexpandedParameterPack()), 
+    UnderlyingExpr(E), UnderlyingType(T) {
+}
+
+bool ReflectedType::isSugared() const { 
+  // A reflected type is sugared if it's non-dependent.
+  return !UnderlyingExpr->isInstantiationDependent(); 
+}
+
+QualType ReflectedType::desugar() const {
+  if (isSugared())
+    return getUnderlyingType();
+  else
+    return QualType(this, 0);
+}
+
+DependentReflectedType::DependentReflectedType(const ASTContext &Cxt, Expr *E)
+  : ReflectedType(E, Cxt.DependentTy), Context(Cxt) { }
+
+void DependentReflectedType::Profile(llvm::FoldingSetNodeID &ID,
+                                     const ASTContext& Context, Expr *E) {
+  E->Profile(ID, Context, true);
+}
+
 UnaryTransformType::UnaryTransformType(QualType BaseType,
                                        QualType UnderlyingType,
                                        UTTKind UKind,
@@ -3557,6 +3585,7 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
+  case Type::Reflected:
   case Type::UnaryTransform:
   case Type::TemplateTypeParm:
   case Type::SubstTemplateTypeParmPack:

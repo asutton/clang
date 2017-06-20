@@ -887,6 +887,12 @@ public:
   /// Subclasses may override this routine to provide different behavior.
   QualType RebuildDecltypeType(Expr *Underlying, SourceLocation Loc);
 
+  /// \brief Build a new type reflection specifier.
+  ///
+  /// By default, performs semantic analysis when building the decltype type.
+  /// Subclasses may override this routine to provide different behavior.
+  QualType RebuildReflectedType(Expr *Underlying, SourceLocation Loc);
+
   /// \brief Build a new C++11 auto type.
   ///
   /// By default, builds a new AutoType with the given deduced type.
@@ -5505,6 +5511,30 @@ QualType TreeTransform<Derived>::TransformDecltypeType(TypeLocBuilder &TLB,
 
   return Result;
 }
+
+template<typename Derived>
+QualType TreeTransform<Derived>::TransformReflectedType(TypeLocBuilder &TLB,
+                                                        ReflectedTypeLoc TL) {
+  const ReflectedType *T = TL.getTypePtr();
+
+  ExprResult E = getDerived().TransformExpr(T->getTypeReflection());
+  if (E.isInvalid())
+    return QualType();
+
+  QualType Result = TL.getType();
+  if (getDerived().AlwaysRebuild() ||
+      E.get() != T->getTypeReflection()) {
+    Result = getDerived().RebuildReflectedType(E.get(), TL.getNameLoc());
+    if (Result.isNull())
+      return QualType();
+  }
+
+  ReflectedTypeLoc NewTL = TLB.push<ReflectedTypeLoc>(Result);
+  NewTL.setNameLoc(TL.getNameLoc());
+
+  return Result;
+}
+
 
 template<typename Derived>
 QualType TreeTransform<Derived>::TransformUnaryTransformType(
@@ -12451,6 +12481,12 @@ template<typename Derived>
 QualType TreeTransform<Derived>::RebuildDecltypeType(Expr *E,
                                                      SourceLocation Loc) {
   return SemaRef.BuildDecltypeType(E, Loc);
+}
+
+template<typename Derived>
+QualType TreeTransform<Derived>::RebuildReflectedType(Expr *E,
+                                                      SourceLocation Loc) {
+  return SemaRef.BuildReflectedType(Loc, E);
 }
 
 template<typename Derived>
