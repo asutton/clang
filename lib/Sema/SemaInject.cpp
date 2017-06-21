@@ -23,39 +23,59 @@
 using namespace clang;
 using namespace sema;
 
-static bool CaptureIdentifier(Sema &SemaRef, IdentifierLocPair P, 
+static bool CaptureIdentifier(Sema &SemaRef, DeclContext *DC, 
+                              IdentifierLocPair P,
                               SmallVectorImpl<Decl *> &Vars) {
+  IdentifierInfo *Id = P.first;
+  SourceLocation IdLoc = P.second;
+
   // C++11 [expr.prim.lambda]p10:
   //   The identifiers in a capture-list are looked up using the usual
   //   rules for unqualified name lookup (3.4.1)
   //
   // That applies here too.
-  DeclarationNameInfo Name(P.first, P.second);
+  DeclarationNameInfo Name(Id, IdLoc);
   LookupResult R(SemaRef, Name, Sema::LookupOrdinaryName);
   SemaRef.LookupName(R, SemaRef.getCurScope());
   if (R.empty() || R.isAmbiguous()) {
     // FIXME: Generate the right diagnostics. Also, I'm not sure if this is
     // the right behavior for ambiguous names.
-    SemaRef.Diag(P.second, diag::err_compiler_error) 
+    SemaRef.Diag(IdLoc, diag::err_compiler_error) 
         << "cannot capture name";
   }
   
   VarDecl *Found = R.getAsSingle<VarDecl>();
   if (!Found) {
     // FIXME: Does it matter if we capture a non-variable?
-    SemaRef.Diag(P.second, diag::err_compiler_error)
+    SemaRef.Diag(IdLoc, diag::err_compiler_error)
         << "captured name is not a variable";
   }
 
-  Found->dump();
+  // Crete a placeholder the name 'x' and dependent type. This is used to
+  // dependently parse the body of the fragment. Also make a fake initializer.
+  QualType T = SemaRef.Context.DependentTy;
+  TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(T);
+  VarDecl *Placeholder = VarDecl::Create(SemaRef.Context, DC, IdLoc, 
+                                         IdLoc, Id, T, TSI, SC_Static);
+  Placeholder->setAccess(AS_private);
+  Placeholder->setConstexpr(AS_private);
+  Placeholder->setInitStyle(VarDecl::CInit);
+  Placeholder->setInit(
+      new (SemaRef.Context) OpaqueValueExpr(IdLoc, T, VK_RValue));
+  Placeholder->setReferenced(true);
+  Placeholder->markUsed(SemaRef.Context);
+
+  DC->addDecl(Placeholder);
+
   return true;
 }
 
-static bool ProcessCaptures(Sema &SemaRef, Sema::CapturedIdList &Ids) {
+static bool ProcessCaptures(Sema &SemaRef, DeclContext *DC, 
+                            Sema::CapturedIdList &Ids) {
   bool Ok = true;
   SmallVector<Decl *, 4> Vars;
   std::for_each(Ids.begin(), Ids.end(), [&](IdentifierLocPair P) {
-    Ok = CaptureIdentifier(SemaRef, P, Vars);
+    Ok = CaptureIdentifier(SemaRef, DC, P, Vars);
   });
 
   // FIXME: Inject the generated declarations into the given context.
@@ -91,7 +111,7 @@ StmtResult Sema::ActOnBlockInjection(Scope *S, SourceLocation ArrowLoc,
       Intro.Range, MethodTyInfo, KnownDependent, Intro.Default);
 
   // Inject captured variables.
-  ProcessCaptures(*this, Ids);
+  ProcessCaptures(*this, Closure, Ids);
 
   CXXMethodDecl *Method =
       startLambdaDefinition(Closure, Intro.Range, MethodTyInfo, ArrowLoc,
@@ -120,7 +140,8 @@ void Sema::ActOnFinishBlockFragment(Scope *S, Stmt *Body) {
 /// members within the injected fragment for the purpose of lookup. Returns
 /// false if capture lookup or insertion fails.
 bool Sema::ActOnStartClassFragment(Decl *D, CapturedIdList &Ids) {
-  ProcessCaptures(*this, Ids);
+  CXXRecordDecl *Class = cast<CXXRecordDecl>(D);
+  ProcessCaptures(*this, Class, Ids);
   return true;
 }
 
@@ -132,7 +153,8 @@ StmtResult Sema::ActOnFinishClassFragment(SourceLocation ArrowLoc, Decl *D) {
 /// Called prior to the parsing of namespace members. This injects captured
 /// declarations for the purpose of lookup. Returns false if this fails.
 bool Sema::ActOnStartNamespaceFragment(Decl *D, CapturedIdList &Ids) {
-  ProcessCaptures(*this, Ids);
+  NamespaceDecl *Ns = cast<NamespaceDecl>(D);
+  ProcessCaptures(*this, Ns, Ids);
   return true;
 }
 

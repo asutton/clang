@@ -1301,6 +1301,13 @@ bool Sema::CppLookupName(LookupResult &R, Scope *S) {
         // template parameter scope for an out-of-line definition, also
         // look into that context.
         if (!(Found && S->isTemplateParamScope())) {
+          // FIXME: This triggers if we lookup a captured local name within
+          // a naemspace fragment. Effectively, the Ctx is the function
+          // declaration masquerading as a constexpr-declaration. We need
+          // to allow the lookup to succeed.
+          //
+          // Basically, if Ctx is an constexpr declaration, and the initial
+          // scope was a namespace (fragment), We should skip this branch.
           assert(Ctx->isFileContext() &&
               "We should have been looking only at file context here already.");
 
