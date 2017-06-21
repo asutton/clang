@@ -30,4 +30,3 @@ int main() {
   S<typename($int)> s;
   f3<int>();
 }
-// RUN: echo

@@ -8423,12 +8423,18 @@ public:
   bool EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E);
   bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
 
-  StmtResult ActOnBlockInjection(Scope *S, SourceLocation ArrowLoc);
-  void ActOnStartBlockInjectionBody(Scope *S);
-  void ActOnFinishBlockInjectionBody(Scope *S, Stmt *Body);
+  using CapturedIdList = SmallVectorImpl<IdentifierLocPair>;
+
+  StmtResult ActOnBlockInjection(Scope *S, SourceLocation ArrowLoc, 
+                                 CapturedIdList &Ids);
+  void ActOnStartBlockFragment(Scope *S);
+  void ActOnFinishBlockFragment(Scope *S, Stmt *Body);
+
+  bool ActOnStartClassFragment(Decl *D, CapturedIdList &Ids);
+  StmtResult ActOnFinishClassFragment(SourceLocation ArrowLoc, Decl *D);
   
-  StmtResult ActOnCXXClassInjection(SourceLocation ArrowLoc, Decl *D);
-  StmtResult ActOnCXXNamespaceInjection(SourceLocation ArrowLoc, Decl *D);
+  bool ActOnStartNamespaceFragment(Decl *D, CapturedIdList &Ids);
+  StmtResult ActOnFinishNamespaceFragment(SourceLocation ArrowLoc, Decl *D);
 
   bool ApplySourceCodeModifications(SourceLocation POI,
                                     SmallVectorImpl<Stmt *> &Stmts);

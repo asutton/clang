@@ -23,8 +23,49 @@
 using namespace clang;
 using namespace sema;
 
+static bool CaptureIdentifier(Sema &SemaRef, IdentifierLocPair P, 
+                              SmallVectorImpl<Decl *> &Vars) {
+  // C++11 [expr.prim.lambda]p10:
+  //   The identifiers in a capture-list are looked up using the usual
+  //   rules for unqualified name lookup (3.4.1)
+  //
+  // That applies here too.
+  DeclarationNameInfo Name(P.first, P.second);
+  LookupResult R(SemaRef, Name, Sema::LookupOrdinaryName);
+  SemaRef.LookupName(R, SemaRef.getCurScope());
+  if (R.empty() || R.isAmbiguous()) {
+    // FIXME: Generate the right diagnostics. Also, I'm not sure if this is
+    // the right behavior for ambiguous names.
+    SemaRef.Diag(P.second, diag::err_compiler_error) 
+        << "cannot capture name";
+  }
+  
+  VarDecl *Found = R.getAsSingle<VarDecl>();
+  if (!Found) {
+    // FIXME: Does it matter if we capture a non-variable?
+    SemaRef.Diag(P.second, diag::err_compiler_error)
+        << "captured name is not a variable";
+  }
+
+  Found->dump();
+  return true;
+}
+
+static bool ProcessCaptures(Sema &SemaRef, Sema::CapturedIdList &Ids) {
+  bool Ok = true;
+  SmallVector<Decl *, 4> Vars;
+  std::for_each(Ids.begin(), Ids.end(), [&](IdentifierLocPair P) {
+    Ok = CaptureIdentifier(SemaRef, P, Vars);
+  });
+
+  // FIXME: Inject the generated declarations into the given context.
+
+  return Ok;
+}
+
 /// Returns a partially constructed block injection.
-StmtResult Sema::ActOnBlockInjection(Scope *S, SourceLocation ArrowLoc) {
+StmtResult Sema::ActOnBlockInjection(Scope *S, SourceLocation ArrowLoc,
+                                     CapturedIdList &Ids) {
   LambdaScopeInfo *LSI = PushLambdaScope();
 
   // Build the expression
@@ -48,9 +89,14 @@ StmtResult Sema::ActOnBlockInjection(Scope *S, SourceLocation ArrowLoc) {
 
   CXXRecordDecl *Closure = createLambdaClosureType(
       Intro.Range, MethodTyInfo, KnownDependent, Intro.Default);
+
+  // Inject captured variables.
+  ProcessCaptures(*this, Ids);
+
   CXXMethodDecl *Method =
       startLambdaDefinition(Closure, Intro.Range, MethodTyInfo, ArrowLoc,
                             None, /*IsConstexprSpecified=*/false);
+
   buildLambdaScope(LSI, Method, Intro.Range, Intro.Default, Intro.DefaultLoc,
                    /*ExplicitParams=*/false,
                    /*ExplicitResultType=*/true,
@@ -59,27 +105,39 @@ StmtResult Sema::ActOnBlockInjection(Scope *S, SourceLocation ArrowLoc) {
   return new (Context) CXXInjectionStmt(ArrowLoc, IK_Block, Method);
 }
 
-void Sema::ActOnStartBlockInjectionBody(Scope *S) {
+void Sema::ActOnStartBlockFragment(Scope *S) {
   LambdaScopeInfo *LSI = cast<LambdaScopeInfo>(FunctionScopes.back());
   PushDeclContext(S, LSI->CallOperator);
   PushExpressionEvaluationContext(
       ExpressionEvaluationContext::PotentiallyEvaluated);
 }
 
-void Sema::ActOnFinishBlockInjectionBody(Scope *S, Stmt *Body) {
+void Sema::ActOnFinishBlockFragment(Scope *S, Stmt *Body) {
   ActOnLambdaExpr(Body->getLocStart(), Body, S);
 }
 
+/// Called prior to the parsing of class members. This creates new static
+/// members within the injected fragment for the purpose of lookup. Returns
+/// false if capture lookup or insertion fails.
+bool Sema::ActOnStartClassFragment(Decl *D, CapturedIdList &Ids) {
+  ProcessCaptures(*this, Ids);
+  return true;
+}
 
-StmtResult Sema::ActOnCXXClassInjection(SourceLocation ArrowLoc, Decl *D) {
-  /// FIXME: Is there any checking that we need to apply to the members of
-  /// this class?
+/// Returns the completed injection statement.
+StmtResult Sema::ActOnFinishClassFragment(SourceLocation ArrowLoc, Decl *D) {
   return new (Context) CXXInjectionStmt(ArrowLoc, IK_Class, D);
 }
 
-StmtResult Sema::ActOnCXXNamespaceInjection(SourceLocation ArrowLoc, Decl *D) {
-  /// FIXME: Is there any checking that we need to apply to the members of
-  /// this namespace?
+/// Called prior to the parsing of namespace members. This injects captured
+/// declarations for the purpose of lookup. Returns false if this fails.
+bool Sema::ActOnStartNamespaceFragment(Decl *D, CapturedIdList &Ids) {
+  ProcessCaptures(*this, Ids);
+  return true;
+}
+
+/// Returns the completed injection statement.
+StmtResult Sema::ActOnFinishNamespaceFragment(SourceLocation ArrowLoc, Decl *D) {
   return new (Context) CXXInjectionStmt(ArrowLoc, IK_Namespace, D);
 }
 

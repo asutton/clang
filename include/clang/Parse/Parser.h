@@ -2623,10 +2623,15 @@ private:
 
   DeclGroupPtrTy ParseConstexprDeclaration();
 
+  using CapturedIdList = SmallVectorImpl<IdentifierLocPair>;
+
   StmtResult ParseCXXInjectionStmt();
-  StmtResult ParseCXXBlockInjection(SourceLocation ArrowLoc);
-  StmtResult ParseCXXClassInjection(SourceLocation ArrowLoc);
-  StmtResult ParseCXXNamespaceInjection(SourceLocation ArrowLoc);
+  StmtResult ParseCXXBlockInjection(SourceLocation ArrowLoc,
+                                    CapturedIdList &Ids);
+  StmtResult ParseCXXClassInjection(SourceLocation ArrowLoc,
+                                    CapturedIdList &Ids);
+  StmtResult ParseCXXNamespaceInjection(SourceLocation ArrowLoc,
+                                    CapturedIdList &Ids);
 
 #if 0
   void InjectTokens(Stmt *Injection, CachedTokens &Toks);

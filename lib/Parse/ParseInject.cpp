@@ -23,70 +23,19 @@ using namespace clang;
 ///
 /// \verbatim
 /// injection-statement:
-///   '->' injection
+///   '->' injection-capture_opt injection
+///
+/// injection-capture:
+///   '[' identifier-list ']'
 ///
 /// injection:
-///   compound-statement
+///   'do' compound-statement
 ///   class-key identifier_opt '{' member-specification_opt '}'
 ///   'namespace' identifier_opt '{' namespace-body '}'
 ///
-/// TODO: Allow template and function parameters for local name bindings. 
-/// For example:
-///
-///   immediate void leave_with_value() { -> (int x) { return x; } }
-///
-///   void foo() {
-///     int x = 4;
-///     constexpr { leave_with_value(); }
-///   }
-///
-/// When the injection '-> (int x) ... ' is applied, we would perform lookup
-/// on x at the injection site (e.g., after the '}' of the constexpr block).
-/// That finds x, and so the resulting function would be:
-///
-///   void f() {
-///     int x = 4;
-///     return x;
-///   }
-///
-/// TODO: Could we provide ALTERNATIVE bindings for the required names? Maybe
-/// like this:
-///
-///   void bar() {
-///     int y = 12;
-///     constexpr using (x = y) { leave_with_value(); }
-///   }
-///
-/// Here, the 'using' component would establish bind the name 'x' to 'y' before
-/// evaluating the given function. Note that we don't actually *need* this
-/// feature. We can define aliases for variables (references), types and
-/// namespaces.
-///
-///   void bar() {
-///     int y = 12;
-///     constexpr { int& x = y; leave_with_value(); }
-///   }
-///
-/// TODO: Is there a way that 'leave_with_value' can announce which names it
-/// requires? Maybe something like this?
-///
-///   immediate void leave_with_value() using (int x) {
-///     -> { return x; }
-///   }
-///
-/// Here, 'x' is declared as an environment parameter and is is resolved
-/// as such within the injection?
-///
-/// Maybe using functions for these things isn't the right thing to do. Perhaps:
-///
-///   using<typename T>(int x) leave_with_value() {
-///     -> { return x; }
-///   }
-///
-/// TODO: Can we automatically determine which names are unbound and skip
-/// the parameters by default?
-///
 /// \endverbatim
+///
+/// TODO: Support the optional identifier for namespace injections.
 StmtResult Parser::ParseCXXInjectionStmt() {
   assert(Tok.is(tok::arrow));
   SourceLocation ArrowLoc = ConsumeToken();
@@ -95,17 +44,46 @@ StmtResult Parser::ParseCXXInjectionStmt() {
   // statement. Establish a new declaration scope for the following injection.
   ParseScope InjectionScope(this, Scope::DeclScope | Scope::InjectionScope);
 
+  // Parse the optional capture list.
+  SmallVector<IdentifierLocPair, 4> Captures;
+  if (Tok.is(tok::l_square)) {
+    BalancedDelimiterTracker T(*this, tok::l_square);
+    if (T.consumeOpen()) {
+      Diag(Tok, diag::err_expected) << tok::l_square;
+      return StmtError();
+    }
+
+    while (Tok.isNot(tok::r_square)) {
+      if (Tok.isNot(tok::identifier)) {
+        Diag(Tok, diag::err_expected) << tok::identifier;
+        return StmtError();
+      }
+
+      IdentifierInfo* Id = Tok.getIdentifierInfo();
+      SourceLocation Loc = ConsumeToken();
+      Captures.push_back(IdentifierLocPair(Id, Loc));
+
+      if (Tok.is(tok::comma))
+        ConsumeToken();
+    }
+
+    if (T.consumeClose()) {
+      Diag(Tok, diag::err_expected) << tok::r_square;
+      return StmtError();
+    }
+  }
+
   switch (Tok.getKind()) {
-    case tok::l_brace:
-      return ParseCXXBlockInjection(ArrowLoc);
+    case tok::kw_do:
+      return ParseCXXBlockInjection(ArrowLoc, Captures);
 
     case tok::kw_struct:
     case tok::kw_class:
     case tok::kw_union:
-      return ParseCXXClassInjection(ArrowLoc);
+      return ParseCXXClassInjection(ArrowLoc, Captures);
 
     case tok::kw_namespace:
-      return ParseCXXNamespaceInjection(ArrowLoc);
+      return ParseCXXNamespaceInjection(ArrowLoc, Captures);
 
     default:
       Diag(Tok.getLocation(), diag::err_expected_injection);
@@ -113,21 +91,27 @@ StmtResult Parser::ParseCXXInjectionStmt() {
   }
 }
 
-StmtResult Parser::ParseCXXBlockInjection(SourceLocation ArrowLoc) {
-  assert(Tok.is(tok::l_brace) && "expected '{'");
+StmtResult Parser::ParseCXXBlockInjection(SourceLocation ArrowLoc,
+                                          CapturedIdList &Ids) {
+  assert(Tok.is(tok::kw_do) && "expected 'do'");
 
-  // Parse the block statement as if it were a lambda '[] stmt'. 
-  StmtResult Injection = Actions.ActOnBlockInjection(getCurScope(), ArrowLoc);
+  // FIXME: Save the introducer token?
+  ConsumeToken();
+
+  // Parse the block statement as if it were a lambda '[]()stmt'. 
+  StmtResult Injection = 
+      Actions.ActOnBlockInjection(getCurScope(), ArrowLoc, Ids);
   ParseScope BodyScope(this, Scope::BlockScope | 
                              Scope::FnScope | 
                              Scope::DeclScope);
-  Actions.ActOnStartBlockInjectionBody(getCurScope());
+  Actions.ActOnStartBlockFragment(getCurScope());
   StmtResult Body = ParseCompoundStatement();
-  Actions.ActOnFinishBlockInjectionBody(getCurScope(), Body.get());
-  return Injection.get();
+  Actions.ActOnFinishBlockFragment(getCurScope(), Body.get());
+  return Injection;
 }
 
-StmtResult Parser::ParseCXXClassInjection(SourceLocation ArrowLoc) {
+StmtResult Parser::ParseCXXClassInjection(SourceLocation ArrowLoc,
+                                          CapturedIdList &Ids) {
   assert(Tok.isOneOf(tok::kw_struct, tok::kw_class, tok::kw_union) &&
          "expected 'struct', 'class', or 'union'");
   DeclSpec::TST TagType;
@@ -162,16 +146,21 @@ StmtResult Parser::ParseCXXClassInjection(SourceLocation ArrowLoc) {
                                  /*ScopeEnumUsesClassTag=*/false, TR,
                                  /*IsTypeSpecifier*/false);
 
+  if (!Actions.ActOnStartClassFragment(Class, Ids))
+    return StmtError();
+
   // Parse the class definition.
   ParsedAttributesWithRange PA(AttrFactory);
   ParseCXXMemberSpecification(ClassKeyLoc, SourceLocation(), PA, TagType,
                               Class);
   if (Class->isInvalidDecl())
     return StmtError();
-  return Actions.ActOnCXXClassInjection(ArrowLoc, Class);
+  
+  return Actions.ActOnFinishClassFragment(ArrowLoc, Class);
 }
 
-StmtResult Parser::ParseCXXNamespaceInjection(SourceLocation ArrowLoc) {
+StmtResult Parser::ParseCXXNamespaceInjection(SourceLocation ArrowLoc,
+                                              CapturedIdList &Ids) {
   assert(Tok.is(tok::kw_namespace) && "expected 'namespace'");
   SourceLocation NamespaceLoc = ConsumeToken();
   IdentifierInfo *Id = nullptr;
@@ -209,108 +198,22 @@ StmtResult Parser::ParseCXXNamespaceInjection(SourceLocation ArrowLoc) {
                                             T.getOpenLocation(), 
                                             Attrs.getList(), ImplicitUsing);
 
+  if (!Actions.ActOnStartNamespaceFragment(Ns, Ids))
+    return StmtError();
+
   // Parse the declarations within the namespace. Note that this will match
   // the closing brace. We don't allow nested specifiers for the vector.
-  std::vector<IdentifierInfo *> Ids;
-  std::vector<SourceLocation> IdLocs;
+  std::vector<IdentifierInfo *> NsIds;
+  std::vector<SourceLocation> NsIdLocs;
   std::vector<SourceLocation> NsLocs;
-  ParseInnerNamespace(IdLocs, Ids, NsLocs, 0, InlineLoc, Attrs, T);
+  ParseInnerNamespace(NsIdLocs, NsIds, NsLocs, 0, InlineLoc, Attrs, T);
 
   NamespaceScope.Exit();
 
   Actions.ActOnFinishNamespaceDef(Ns, T.getCloseLocation());
   if (Ns->isInvalidDecl())
     return StmtError();
-  return Actions.ActOnCXXNamespaceInjection(ArrowLoc, Ns);
+  
+  return Actions.ActOnFinishNamespaceFragment(ArrowLoc, Ns);
 }
 
-#if 0
-/// Enter the injected tokens into the stream. Append the current token to the
-/// end of the new token stream so that we replay it after the injected tokens.
-void Parser::InjectTokens(Stmt *S, CachedTokens &Toks) {
-  // Build the list of tokens to inject.
-  ArrayRef<Token> InjectedToks = Actions.GetTokensToInject(S);
-  Toks.resize(InjectedToks.size() + 1);
-  auto Iter = std::copy(InjectedToks.begin(), InjectedToks.end(), Toks.begin());
-  *Iter = Tok;
-
-  // llvm::errs() << "INJECTING\n";
-  // for (Token K : InjectedToks) {
-  //   PP.DumpToken(K);
-  //   llvm::errs() << '\n';
-  // }
-
-  // Inject the tokens and consume the current token.
-  PP.EnterTokenStream(Toks, true);
-  ConsumeAnyToken();
-
-  // Sanity check.
-  assert(Tok.is(Toks.front().getKind()));
-}
-
-void Parser::ParseInjectedNamespaceMember(Stmt *S) {
-  CachedTokens Toks;
-  InjectTokens(S, Toks);
-
-  // The parsing method depends on context.
-  if (Actions.CurContext->isTranslationUnit()) {
-    DeclGroupPtrTy Decls;
-    ParseTopLevelDecl(Decls);
-    Actions.getASTConsumer().HandleTopLevelDecl(Decls.get());
-  } else {
-    ParsedAttributesWithRange Attrs(AttrFactory);
-    ParseExternalDeclaration(Attrs);
-  }
-}
-
-void Parser::ParseInjectedClassMember(Stmt *S) {
-  CachedTokens Toks;
-  InjectTokens(S, Toks);
-
-  // FIXME: This is entirely wrong. Lots of stuff to fix here:
-  //
-  // 1. Get the current access specifier.
-  // 2. Actually allow attributes to be parsed.
-  // 3. Get information about the class if it's a template.
-  //
-  // Note that we don't actually have to do anything with the resulting
-  // class. Members are automatically registered in the current class when
-  // parsed.
-  ParseCXXClassMemberDeclaration(AS_public, /*AccessAttrs=*/nullptr,
-                                 ParsedTemplateInfo(),
-                                 /*TemplateDiags=*/nullptr,
-                                 /*IsInjected=*/true);
-}
-
-void Parser::ParseInjectedStatement(Stmt *S) {
-  CachedTokens Toks;
-  InjectTokens(S, Toks);
-
-  StmtVector Stmts;
-
-  // FIXME: Parse a statement-seq.
-  StmtResult R = ParseStatement();
-  if (R.isInvalid())
-    return;
-  Stmts.push_back(R.get());
-
-  // Build a compound statement to store the injected results.
-  InjectedStmts =
-      Actions.ActOnCompoundStmt(S->getLocStart(), S->getLocEnd(), Stmts, false);
-}
-
-void Parser::InjectedNamespaceMemberCB(void *OpaqueParser, Stmt *Injection) {
-  Parser *P = reinterpret_cast<Parser *>(OpaqueParser);
-  return P->ParseInjectedNamespaceMember(Injection);
-}
-
-void Parser::InjectedClassMemberCB(void *OpaqueParser, Stmt *Injection) {
-  Parser *P = reinterpret_cast<Parser *>(OpaqueParser);
-  return P->ParseInjectedClassMember(Injection);
-}
-
-void Parser::InjectedStatementCB(void *OpaqueParser, Stmt *Injection) {
-  Parser *P = reinterpret_cast<Parser *>(OpaqueParser);
-  return P->ParseInjectedStatement(Injection);
-}
-#endif
