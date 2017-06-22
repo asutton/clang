@@ -8423,17 +8423,19 @@ public:
   bool EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E);
   bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
 
-  using CapturedIdList = SmallVectorImpl<IdentifierLocPair>;
+  using CapturedDeclsList = SmallVectorImpl<Decl *>;
+
+  DeclResult ActOnInjectionCapture(IdentifierLocPair P);
 
   StmtResult ActOnBlockInjection(Scope *S, SourceLocation ArrowLoc, 
-                                 CapturedIdList &Ids);
+                                 CapturedDeclsList &Captures);
   void ActOnStartBlockFragment(Scope *S);
   void ActOnFinishBlockFragment(Scope *S, Stmt *Body);
 
-  bool ActOnStartClassFragment(Decl *D, CapturedIdList &Ids);
+  bool ActOnStartClassFragment(Decl *D, CapturedDeclsList &Captures);
   StmtResult ActOnFinishClassFragment(SourceLocation ArrowLoc, Decl *D);
   
-  bool ActOnStartNamespaceFragment(Decl *D, CapturedIdList &Ids);
+  bool ActOnStartNamespaceFragment(Decl *D, CapturedDeclsList &Captures);
   StmtResult ActOnFinishNamespaceFragment(SourceLocation ArrowLoc, Decl *D);
 
   bool ApplySourceCodeModifications(SourceLocation POI,

@@ -2060,8 +2060,8 @@ ParsedType Sema::getMetaclassName(const IdentifierInfo &II,
   return ParsedType::make(T);
 }
 
-/// Returns \c true if a constexpr-declaration in declaration context \p DC
-/// would be represented using a function.
+/// Returns true if a constexpr-declaration in declaration context DC
+/// would be represented using a function (vs. a lambda).
 static inline bool NeedsFunctionRepresentation(const DeclContext *DC) {
   return DC->isFileContext() || DC->isRecord();
 }
@@ -2095,7 +2095,6 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
     QualType FunctionTy = Context.getFunctionType(Context.VoidTy, None, EPI);
     TypeSourceInfo *FunctionTyInfo =
         Context.getTrivialTypeSourceInfo(FunctionTy);
-
     FunctionDecl *Function =
         FunctionDecl::Create(Context, CurContext, ConstexprLoc, NameInfo,
                              FunctionTy, FunctionTyInfo, SC_None,
@@ -2103,6 +2102,7 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
                              /*hasWrittenPrototype=*/true,
                              /*isConstexprSpecified=*/true);
     Function->setImplicit();
+    Function->setMetaprogram();
 
     // Build the constexpr declaration around the function.
     CD = ConstexprDecl::Create(Context, CurContext, ConstexprLoc, Function);
@@ -2144,6 +2144,7 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
                      /*ExplicitParams=*/false,
                      /*ExplicitResultType=*/true,
                      /*Mutable=*/false);
+    Method->setMetaprogram();
 
     // NOTE: The call operator is not yet attached to the closure type. That
     // happens in ActOnFinishConstexprDecl(). The operator is, however,
@@ -2152,7 +2153,10 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
   } else
     llvm_unreachable("constexpr declaration in unsupported context");
 
+  // Add the declaration to the current context. This will be from the AST
+  // after evaluation.
   CurContext->addDecl(CD);
+  
   return CD;
 }
 
