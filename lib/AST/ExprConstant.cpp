@@ -4056,7 +4056,7 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     if (Info.checkingPotentialConstantExpression())
       return ESR_Succeeded;
 
-    // Register the injection as an effect; do this by binding
+    // Register the injection as an effect.
     if (Info.EvalStatus.Injections) {
       const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(S);
 
@@ -4064,15 +4064,22 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
       Expr::InjectionInfo &II = Info.EvalStatus.Injections->back();
       II.CaptureValues.resize(IS->getNumCaptures());
       for (std::size_t I = 0; I < IS->getNumCaptures(); ++I) {
-        if (!Evaluate(II.CaptureValues[I], Info, IS->getCapture(I)))
+        const Expr *E = IS->getCapture(I);
+        if (!Evaluate(II.CaptureValues[I], Info, E))
           return ESR_Failed;
 
-        llvm::outs() << "HERE\n";
-        II.CaptureValues[I].dump();
+        const ValueDecl *VD = cast<DeclRefExpr>(E)->getDecl();
+        QualType T = VD->getType();
 
         LValue LV;
         LV.setFrom(Info.Ctx, II.CaptureValues[I]);
-        llvm::outs() << "VALUE AT INDEX: " << LV.CallIndex << '\n';
+        CompleteObject CO = findCompleteObject(Info, E, AK_Read, LV, T);
+        if (!CO)
+          return ESR_Failed;
+
+        // Overwrite the lvalue with the complete object. That is, manifest
+        // the value as a constant, so we can substitute later.
+        II.CaptureValues[I] = *CO.Value;
       }
 
       return ESR_Succeeded;
