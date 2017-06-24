@@ -103,9 +103,10 @@ StmtResult Parser::ParseCXXBlockInjection(SourceLocation ArrowLoc,
   // FIXME: Save the introducer token?
   ConsumeToken();
 
+  StmtResult Injection = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, 
+                                                    Sema::IK_Block, Captures);
+
   // Parse the block statement as if it were a lambda '[]()stmt'. 
-  StmtResult Injection = 
-      Actions.ActOnBlockInjection(getCurScope(), ArrowLoc, Captures);
   ParseScope BodyScope(this, Scope::BlockScope | 
                              Scope::FnScope | 
                              Scope::DeclScope);
@@ -119,6 +120,11 @@ StmtResult Parser::ParseCXXClassInjection(SourceLocation ArrowLoc,
                                           CapturedDeclsList &Captures) {
   assert(Tok.isOneOf(tok::kw_struct, tok::kw_class, tok::kw_union) &&
          "expected 'struct', 'class', or 'union'");
+
+  // Pre-build the statement and associate its captures.
+  StmtResult Injection = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, 
+                                                    Sema::IK_Class, Captures);
+
   DeclSpec::TST TagType;
   if (Tok.is(tok::kw_struct))
     TagType = DeclSpec::TST_struct;
@@ -151,8 +157,7 @@ StmtResult Parser::ParseCXXClassInjection(SourceLocation ArrowLoc,
                                  /*ScopeEnumUsesClassTag=*/false, TR,
                                  /*IsTypeSpecifier*/false);
 
-  if (!Actions.ActOnStartClassFragment(Class, Captures))
-    return StmtError();
+  Actions.ActOnStartClassFragment(Injection.get(), Class);
 
   // Parse the class definition.
   ParsedAttributesWithRange PA(AttrFactory);
@@ -161,12 +166,19 @@ StmtResult Parser::ParseCXXClassInjection(SourceLocation ArrowLoc,
   if (Class->isInvalidDecl())
     return StmtError();
   
-  return Actions.ActOnFinishClassFragment(ArrowLoc, Class);
+  Actions.ActOnFinishClassFragment(Injection.get());
+  return Injection;
 }
 
 StmtResult Parser::ParseCXXNamespaceInjection(SourceLocation ArrowLoc,
                                               CapturedDeclsList &Captures) {
   assert(Tok.is(tok::kw_namespace) && "expected 'namespace'");
+
+  // Pre-build the statement and associate its captures.
+  StmtResult Injection = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, 
+                                                    Sema::IK_Namespace, 
+                                                    Captures);
+
   SourceLocation NamespaceLoc = ConsumeToken();
   IdentifierInfo *Id = nullptr;
   SourceLocation IdLoc;
@@ -203,8 +215,7 @@ StmtResult Parser::ParseCXXNamespaceInjection(SourceLocation ArrowLoc,
                                             T.getOpenLocation(), 
                                             Attrs.getList(), ImplicitUsing);
 
-  if (!Actions.ActOnStartNamespaceFragment(Ns, Captures))
-    return StmtError();
+  Actions.ActOnStartNamespaceFragment(Injection.get(), Ns);
 
   // Parse the declarations within the namespace. Note that this will match
   // the closing brace. We don't allow nested specifiers for the vector.
@@ -219,6 +230,7 @@ StmtResult Parser::ParseCXXNamespaceInjection(SourceLocation ArrowLoc,
   if (Ns->isInvalidDecl())
     return StmtError();
   
-  return Actions.ActOnFinishNamespaceFragment(ArrowLoc, Ns);
+  Actions.ActOnFinishNamespaceFragment(Injection.get());
+  return Injection;
 }
 

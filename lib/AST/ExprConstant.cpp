@@ -4056,9 +4056,25 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     if (Info.checkingPotentialConstantExpression())
       return ESR_Succeeded;
 
-    // Register the injection as an effect.
+    // Register the injection as an effect; do this by binding
     if (Info.EvalStatus.Injections) {
-      Info.EvalStatus.Injections->push_back(const_cast<Stmt *>(S));
+      const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(S);
+
+      Info.EvalStatus.Injections->emplace_back(IS);
+      Expr::InjectionInfo &II = Info.EvalStatus.Injections->back();
+      II.CaptureValues.resize(IS->getNumCaptures());
+      for (std::size_t I = 0; I < IS->getNumCaptures(); ++I) {
+        if (!Evaluate(II.CaptureValues[I], Info, IS->getCapture(I)))
+          return ESR_Failed;
+
+        llvm::outs() << "HERE\n";
+        II.CaptureValues[I].dump();
+
+        LValue LV;
+        LV.setFrom(Info.Ctx, II.CaptureValues[I]);
+        llvm::outs() << "VALUE AT INDEX: " << LV.CallIndex << '\n';
+      }
+
       return ESR_Succeeded;
     }
 
@@ -5145,7 +5161,6 @@ bool LValueExprEvaluator::VisitDeclRefExpr(const DeclRefExpr *E) {
 
 
 bool LValueExprEvaluator::VisitVarDecl(const Expr *E, const VarDecl *VD) {
-
   // If we are within a lambda's call operator, check whether the 'VD' referred
   // to within 'E' actually represents a lambda-capture that maps to a
   // data-member/field within the closure object, and if so, evaluate to the

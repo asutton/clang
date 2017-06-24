@@ -265,6 +265,16 @@ public:
   }
 };
 
+/// \brief The kind of source code construct reflected.
+/// This value is packed into the low-order bits of each reflected pointer.
+///
+/// FIXME: Put this somewhere meaningful.
+enum ReflectionKind { 
+  RK_Decl = 1, 
+  RK_Type = 2, 
+  RK_Expr = 3 
+};
+
 /// Sema - This implements semantic analysis and AST building for C.
 class Sema {
   Sema(const Sema &) = delete;
@@ -8358,6 +8368,18 @@ public:
   // C++ Reflection [Meta]
   //
 
+  /// \brief True if T is the type of a reflection.
+  bool isReflectionType(QualType T);
+
+  /// \brief Gets opaque node pointer from T.
+  void getReflectionValue(QualType T, APValue &V);
+
+  /// \brief The kind of reflection source code construct.
+  ReflectionKind getReflectionKind(const APValue &V);
+
+  /// \brief An opaque pointer to the reflected node.
+  void* getReflectionNode(const APValue &V);
+
   bool BuildDeclnameId(SmallVectorImpl<Expr *>& Parts, UnqualifiedId& Result,
                        SourceLocation KWLoc, SourceLocation LParenLoc,
                        SourceLocation RParenLoc);
@@ -8427,29 +8449,34 @@ public:
 
   DeclResult ActOnInjectionCapture(IdentifierLocPair P);
 
-  StmtResult ActOnBlockInjection(Scope *S, SourceLocation ArrowLoc, 
-                                 CapturedDeclsList &Captures);
+  // Keep these aligned CXXInjectionStmt::InjectionKind
+  enum InjectionStmtKind {
+    IK_Block,
+    IK_Class,
+    IK_Namespace,
+  };
+
+  StmtResult ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc, unsigned IK,
+                                CapturedDeclsList &Captures);
   void ActOnStartBlockFragment(Scope *S);
   void ActOnFinishBlockFragment(Scope *S, Stmt *Body);
+  void ActOnStartClassFragment(Stmt *S, Decl *D);
+  void ActOnFinishClassFragment(Stmt *S);
+  void ActOnStartNamespaceFragment(Stmt *S, Decl *D);
+  void ActOnFinishNamespaceFragment(Stmt *S);
 
-  bool ActOnStartClassFragment(Decl *D, CapturedDeclsList &Captures);
-  StmtResult ActOnFinishClassFragment(SourceLocation ArrowLoc, Decl *D);
-  
-  bool ActOnStartNamespaceFragment(Decl *D, CapturedDeclsList &Captures);
-  StmtResult ActOnFinishNamespaceFragment(SourceLocation ArrowLoc, Decl *D);
-
+  // Source code injection/modification
   bool ApplySourceCodeModifications(SourceLocation POI,
                                     SmallVectorImpl<Stmt *> &Stmts);
   bool InjectBlockStatements(SourceLocation POI, CXXInjectionStmt *S);
   bool InjectClassMembers(SourceLocation POI, CXXInjectionStmt *D);
   bool InjectNamespaceMembers(SourceLocation POI, CXXInjectionStmt *D);
 
-  /// \brief Stores the result of injecting statements resulting from the
-  /// evaluation of a constexpr declaration. 
-  llvm::SmallVector<Stmt *, 8> InjectedStmts;
-
   void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                               SmallVectorImpl<Decl *> &Fields);
+
+  // Statements resulting from injection.
+  SmallVector<Stmt *, 8> InjectedStmts;
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

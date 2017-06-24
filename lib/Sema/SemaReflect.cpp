@@ -22,12 +22,6 @@
 using namespace clang;
 using namespace sema;
 
-/// Used to encode the kind of entity reflected.
-///
-/// This value is packed into the low-order bits of each reflected pointer.
-/// Because we stuff pointer values, all must be aligned at 2 bytes (which is
-/// generally guaranteed).
-enum ReflectionKind { RK_Decl = 1, RK_Type = 2, RK_Expr = 3 };
 
 using ReflectionValue =
     llvm::PointerSumType<ReflectionKind,
@@ -86,6 +80,57 @@ struct ReflectedConstruct {
     return isType() ? (Type *)P.second : nullptr;
   }
 };
+
+/// FIXME: Move this to ASTContext.
+bool Sema::isReflectionType(QualType T) {
+  if (CXXRecordDecl *Class = T->getAsCXXRecordDecl()) {
+    // Reflections are specializations. 
+    if (!isa<ClassTemplateSpecializationDecl>(Class)) 
+      return false;
+    
+    // Reflections are defined in the meta namespace.
+    DeclContext* Owner = Class->getDeclContext();
+    if (Owner->isInlineNamespace())
+      Owner = Owner->getParent();
+
+    // FIXME: Don't emit errors if this fails, just return false.
+    if (!Owner->Equals(RequireCppxMetaNamespace(SourceLocation())))
+      return false;
+
+    // FIXME: We should actually test the name of the class. This is mostly a
+    // heuristic right now.
+    return true;
+  }
+  
+  return false;
+}
+
+/// This won't hold in the newer reflection model.
+void Sema::getReflectionValue(QualType T, APValue &V) {
+  assert(isReflectionType(T) && "Expected reflection type");
+
+  ClassTemplateSpecializationDecl *Class = 
+      cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
+  
+  const TemplateArgumentList& Args = Class->getTemplateArgs();
+  assert(Args.size() != 0 && 
+         "Invalid reflection argument list");
+  const TemplateArgument &Arg = Args.get(0);
+  assert(Arg.getKind() == TemplateArgument::Integral && 
+         "Invalid reflection argument");
+  
+  V = APValue(Arg.getAsIntegral());
+}
+
+
+ReflectionKind Sema::getReflectionKind(const APValue &V) {
+  return ExplodeOpaqueValue(V.getInt().getExtValue()).first;
+}
+
+void* Sema::getReflectionNode(const APValue &V) {
+  return ExplodeOpaqueValue(V.getInt().getExtValue()).second;
+}
+
 
 /// Diagnose a type reflection error and return a type error.
 static ExprResult ValueReflectionError(Sema& SemaRef, Expr *E) {
@@ -2276,7 +2321,7 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   assert(InjectedStmts.empty() && "Residual injected statements");
 
   SmallVector<PartialDiagnosticAt, 8> Notes;
-  SmallVector<Stmt *, 16> Injections;
+  SmallVector<Expr::InjectionInfo, 16> Injections;
   Expr::EvalResult Result;
   Result.Diag = &Notes;
   Result.Injections = &Injections;
@@ -2304,9 +2349,13 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   // Apply any modifications, and if successful, remove the declaration from
   // the class; it shouldn't be visible in the output code.
   //
-  // FIXME: Do we really want to remove the constexpr declaration?
   SourceLocation POI = CD->getSourceRange().getEnd();
-  ApplySourceCodeModifications(POI, Injections);
+
+  // FIXME: Actually apply modifications.
+  // ApplySourceCodeModifications(POI, Injections);
+
+  // FIXME: Do we really want to remove the metaprogram after evaluation? Or
+  // should we just mark it completed.
   CD->getDeclContext()->removeDecl(CD);
   
   return Notes.empty();

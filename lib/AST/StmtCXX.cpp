@@ -167,6 +167,25 @@ CoroutineBodyStmt::CoroutineBodyStmt(CoroutineBodyStmt::CtorArgs const &Args)
             const_cast<Stmt **>(getParamMoves().data()));
 }
 
+CXXInjectionStmt::CXXInjectionStmt(ASTContext &Cxt, SourceLocation AL, 
+                                   SmallVectorImpl<Expr *> &Caps)
+    : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), NumCaptures(Caps.size()),
+      Captures(new (Cxt) Expr*[NumCaptures]), InjectedDecl() {
+  std::copy(Caps.begin(), Caps.end(), Captures);
+}
+
+void CXXInjectionStmt::setBlockInjection(CXXMethodDecl *D) {
+  setInjection(Block, D);
+}
+
+void CXXInjectionStmt::setClassInjection(CXXRecordDecl *D) {
+  setInjection(Class, D);
+}
+
+void CXXInjectionStmt::setNamespaceInjection(NamespaceDecl *D) {
+  setInjection(Namespace, D);
+}
+
 CompoundStmt *CXXInjectionStmt::getInjectedBlock() const {
   assert(isBlockInjection() && "injection is not a block");
   CXXMethodDecl *Method = cast<CXXMethodDecl>(InjectedDecl);
@@ -185,11 +204,11 @@ NamespaceDecl *CXXInjectionStmt::getInjectedNamespace() const {
 
 SourceLocation CXXInjectionStmt::getLocEnd() const {
   switch (getInjectionKind()) {
-  case IK_Block:
+  case Block:
     return getInjectedBlock()->getLocEnd();
-  case IK_Class:
+  case Class:
     return getInjectedClass()->getBraceRange().getEnd();
-  case IK_Namespace:
+  case Namespace:
     return getInjectedNamespace()->getRBraceLoc();
   }
   llvm_unreachable("Invalid injection kind");

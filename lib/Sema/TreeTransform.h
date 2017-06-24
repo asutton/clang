@@ -7531,7 +7531,56 @@ TreeTransform<Derived>::TransformCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
 template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
-  return S;
+  // Transform each capture.
+  SmallVector<Decl *, 4> Captures;
+  for (Expr *E : S->captures()) {
+    DeclRefExpr *Ref = cast<DeclRefExpr>(E);
+    ValueDecl *VD = Ref->getDecl();
+    Decl *R = getDerived().TransformDecl(VD->getLocation(), VD);
+    if (!R)
+      return StmtError();
+    Captures.push_back(R);
+  }
+
+  // Rebuild the injection statement.
+  //
+  // FIXME: We're passing a null scope A LOT. That can't be good.
+  StmtResult Result = getSema().ActOnInjectionStmt(nullptr, 
+                                                   S->getArrowLoc(),
+                                                   S->getInjectionKind(), 
+                                                   Captures);
+  if (Result.isInvalid())
+    return StmtError();
+  CXXInjectionStmt *Injection = cast<CXXInjectionStmt>(Result.get());
+  
+  // Replay the construction of statement.
+  switch (S->getInjectionKind()) {
+  case CXXInjectionStmt::Block: {
+    getSema().ActOnStartBlockFragment(nullptr);
+    StmtResult Body = TransformStmt(S->getInjectedBlock());
+    getSema().ActOnFinishBlockFragment(nullptr, Body.get());
+    break;
+  }
+  case CXXInjectionStmt::Class: {
+    // FIXME: This is wrong. We need to replay the construction and then
+    // transform each member of the original fragment. 
+    Decl *D = TransformDecl(S->getArrowLoc(), S->getInjectedClass());
+    if (!D)
+      return StmtError();
+    Injection->setClassInjection(cast<CXXRecordDecl>(D));
+    break;
+  }
+  case CXXInjectionStmt::Namespace: {
+    // FIXME: This is wrong. See the comments above.
+    Decl *D = TransformDecl(S->getArrowLoc(), S->getInjectedClass());
+    if (!D)
+      return StmtError();
+    Injection->setNamespaceInjection(cast<NamespaceDecl>(D));
+    break;
+  }
+  }
+
+  return Injection;
 }
 
 template<typename Derived>

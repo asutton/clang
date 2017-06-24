@@ -41,18 +41,34 @@ Sema::ActOnInjectionCapture(IdentifierLocPair P) {
   LookupName(R, getCurScope());
   if (R.empty()) {
     Diag(IdLoc, diag::err_compiler_error) << "no such declaration to capture";
-    return false;
+    return DeclResult(true);
   }
   else if (R.isAmbiguous()) {
     Diag(IdLoc, diag::err_compiler_error) << "ambiguous capture";
-    return false;
+    return DeclResult(true);
   }
-  else
-    return R.getAsSingle<VarDecl>();
+
+  // FIXME: What happens if we capture a non-variable? Can we capture a
+  // using-declaration?
+  Decl *D = R.getAsSingle<Decl>();
+  if (!isa<VarDecl>(D)) {
+    Diag(IdLoc, diag::err_compiler_error) << "capture is not a variable";
+    return DeclResult(true);
+  }
+
+  VarDecl *VD = cast<VarDecl>(D);
+  if (VD->getType()->isReferenceType()) {
+    Diag(IdLoc, diag::err_compiler_error) << "cannot capture a reference";
+    return DeclResult(true);
+  }
+
+  return D;
 }
 
-static bool ProcessCapture(Sema &SemaRef, DeclContext *DC, NamedDecl *D)
+static bool ProcessCapture(Sema &SemaRef, DeclContext *DC, Expr *E)
 {
+  ValueDecl *D = cast<DeclRefExpr>(E)->getDecl();
+
   // Create a placeholder the name 'x' and dependent type. This is used to
   // dependently parse the body of the fragment. Also make a fake initializer.
   SourceLocation IdLoc = D->getLocation();
@@ -74,52 +90,82 @@ static bool ProcessCapture(Sema &SemaRef, DeclContext *DC, NamedDecl *D)
 }
 
 static bool ProcessCaptures(Sema &SemaRef, DeclContext *DC, 
-                            Sema::CapturedDeclsList &Captures) {
-  return std::all_of(Captures.begin(), Captures.end(), [&](Decl *D) {
-    return ProcessCapture(SemaRef, DC, cast<NamedDecl>(D));
+                            CXXInjectionStmt::capture_range Captures) {
+  return std::all_of(Captures.begin(), Captures.end(), [&](Expr *E) {
+    return ProcessCapture(SemaRef, DC, E);
   });
 }
 
-/// Returns a partially constructed block injection.
-StmtResult Sema::ActOnBlockInjection(Scope *S, SourceLocation ArrowLoc,
-                                     CapturedDeclsList &Captures) {
-  LambdaScopeInfo *LSI = PushLambdaScope();
-
-  // Build the expression
+/// Returns a partially constructed injection statement.
+StmtResult Sema::ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc,
+                                    unsigned IK, CapturedDeclsList &Captures) {
+  // We're not actually capture declarations, we're capturing an expression
+  // that computes the value of the capture declaration. Build an expression
+  // that reads each value and converts to an rvalue.
   //
-  //    []() -> auto compound-statement
-  //
-  // where compound-statement is the as-of-yet parsed body of the injection.
-  const bool KnownDependent = S->getTemplateParamParent();
+  // FIXME: The source location for references is way off. We need to forward 
+  // a vector of decl/location pairs.
+  SmallVector<Expr *, 4> Refs(Captures.size());
+  std::transform(Captures.begin(), Captures.end(), Refs.begin(), 
+    [&](Decl *D) -> Expr * {
+    ValueDecl *VD = cast<ValueDecl>(D);
+    QualType T = VD->getType();
 
-  FunctionProtoType::ExtProtoInfo EPI(
-      Context.getDefaultCallingConvention(/*IsVariadic=*/false,
-                                          /*IsCXXMethod=*/true));
-  EPI.TypeQuals |= DeclSpec::TQ_const;
-  QualType MethodTy = 
-      Context.getFunctionType(Context.getAutoDeductType(), None, EPI);
-  TypeSourceInfo *MethodTyInfo = Context.getTrivialTypeSourceInfo(MethodTy);
+    // FIXME: Ultimately, we want an rvalue containing whatever aggregate
+    // has been referenced. However, there are no standard conversions for
+    // class types; we would actually be initializing a new temporary, which
+    // is not at all what we want.
+    return new (Context) DeclRefExpr(VD, false, T, VK_LValue, ArrowLoc);
+  });
 
-  LambdaIntroducer Intro;
-  Intro.Range = SourceRange(ArrowLoc);
-  Intro.Default = LCD_None;
+  CXXInjectionStmt *Injection =
+      new (Context) CXXInjectionStmt(Context, ArrowLoc, Refs);
 
-  CXXRecordDecl *Closure = createLambdaClosureType(
-      Intro.Range, MethodTyInfo, KnownDependent, Intro.Default);
+  // Pre-build the declaration for lambda stuff.
+  if (IK == IK_Block) {
+    LambdaScopeInfo *LSI = PushLambdaScope();
 
-  // Inject captured variables.
-  ProcessCaptures(*this, Closure, Captures);
+    // Build the expression
+    //
+    //    []() -> auto compound-statement
+    //
+    // where compound-statement is the as-of-yet parsed body of the injection.
+    bool KnownDependent = false;
+    if (S && S->getTemplateParamParent())
+      KnownDependent = true;
 
-  CXXMethodDecl *Method =
-      startLambdaDefinition(Closure, Intro.Range, MethodTyInfo, ArrowLoc,
-                            None, /*IsConstexprSpecified=*/false);
+    FunctionProtoType::ExtProtoInfo EPI(
+        Context.getDefaultCallingConvention(/*IsVariadic=*/false,
+                                            /*IsCXXMethod=*/true));
+    EPI.TypeQuals |= DeclSpec::TQ_const;
+    QualType MethodTy = 
+        Context.getFunctionType(Context.getAutoDeductType(), None, EPI);
+    TypeSourceInfo *MethodTyInfo = Context.getTrivialTypeSourceInfo(MethodTy);
 
-  buildLambdaScope(LSI, Method, Intro.Range, Intro.Default, Intro.DefaultLoc,
-                   /*ExplicitParams=*/false,
-                   /*ExplicitResultType=*/true,
-                   /*Mutable=*/false);
+    LambdaIntroducer Intro;
+    Intro.Range = SourceRange(ArrowLoc);
+    Intro.Default = LCD_None;
 
-  return new (Context) CXXInjectionStmt(ArrowLoc, IK_Block, Method);
+    CXXRecordDecl *Closure = createLambdaClosureType(
+        Intro.Range, MethodTyInfo, KnownDependent, Intro.Default);
+
+    // Inject captured variables here.
+    ProcessCaptures(*this, Closure, Injection->captures());
+
+    CXXMethodDecl *Method =
+        startLambdaDefinition(Closure, Intro.Range, MethodTyInfo, ArrowLoc,
+                              None, /*IsConstexprSpecified=*/false);
+
+    buildLambdaScope(LSI, Method, Intro.Range, Intro.Default, Intro.DefaultLoc,
+                     /*ExplicitParams=*/false,
+                     /*ExplicitResultType=*/true,
+                     /*Mutable=*/false);
+
+    // Set the method on the declaration.
+    Injection->setBlockInjection(Method);
+  }
+
+  return Injection;
 }
 
 void Sema::ActOnStartBlockFragment(Scope *S) {
@@ -133,32 +179,33 @@ void Sema::ActOnFinishBlockFragment(Scope *S, Stmt *Body) {
   ActOnLambdaExpr(Body->getLocStart(), Body, S);
 }
 
-/// Called prior to the parsing of class members. This creates new static
-/// members within the injected fragment for the purpose of lookup. Returns
-/// false if capture lookup or insertion fails.
-bool Sema::ActOnStartClassFragment(Decl *D, CapturedDeclsList &Captures) {
+/// Associate the fragment with the injection statement and process any 
+/// captured declarations.
+void Sema::ActOnStartClassFragment(Stmt *S, Decl *D) {
+  CXXInjectionStmt *Injection = cast<CXXInjectionStmt>(S);
   CXXRecordDecl *Class = cast<CXXRecordDecl>(D);
-  ProcessCaptures(*this, Class, Captures);
-  return true;
+  Injection->setClassInjection(Class);
+  ProcessCaptures(*this, Class, Injection->captures());
 }
 
 /// Returns the completed injection statement.
-StmtResult Sema::ActOnFinishClassFragment(SourceLocation ArrowLoc, Decl *D) {
-  return new (Context) CXXInjectionStmt(ArrowLoc, IK_Class, D);
-}
+///
+/// FIXME: Is there any final processing we need to do?
+void Sema::ActOnFinishClassFragment(Stmt *S) { }
 
 /// Called prior to the parsing of namespace members. This injects captured
 /// declarations for the purpose of lookup. Returns false if this fails.
-bool Sema::ActOnStartNamespaceFragment(Decl *D, CapturedDeclsList &Captures) {
+void Sema::ActOnStartNamespaceFragment(Stmt *S, Decl *D) {
+  CXXInjectionStmt *Injection = cast<CXXInjectionStmt>(S);
   NamespaceDecl *Ns = cast<NamespaceDecl>(D);
-  ProcessCaptures(*this, Ns, Captures);
-  return true;
+  Injection->setNamespaceInjection(Ns);
+  ProcessCaptures(*this, Ns, Injection->captures());
 }
 
 /// Returns the completed injection statement.
-StmtResult Sema::ActOnFinishNamespaceFragment(SourceLocation ArrowLoc, Decl *D) {
-  return new (Context) CXXInjectionStmt(ArrowLoc, IK_Namespace, D);
-}
+///
+/// FIXME: Is there any final processing to do?
+void Sema::ActOnFinishNamespaceFragment(Stmt *S) { }
 
 // Returns an integer value describing the target context of the injection.
 // This correlates to the second %select in err_invalid_injection.
@@ -695,8 +742,6 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
         Fields.push_back(R);
     }
   }
-
-  llvm::outs() << "HERE: " << Class->hasAttr<PackedAttr>() << '\n';
 
   // llvm::errs() << "RESULTING CLASS\n";
   // Class->dump();

@@ -48,6 +48,7 @@ add_clang_library(clangAST
   RawCommentList.cpp
   RecordLayout.cpp
   RecordLayoutBuilder.cpp
+  Reflection.cpp
   SelectorLocationsKind.cpp
   Stmt.cpp
   StmtCXX.cpp

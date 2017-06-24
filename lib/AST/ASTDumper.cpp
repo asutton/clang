@@ -1856,16 +1856,24 @@ void ASTDumper::VisitCapturedStmt(const CapturedStmt *Node) {
   dumpDecl(Node->getCapturedDecl());
 }
 
+static void dumpCaptures(ASTDumper &Dumper, const CXXInjectionStmt *Node) {
+  for (Expr *E : Node->captures())
+    Dumper.dumpStmt(E);
+}
+
 void ASTDumper::VisitCXXInjectionStmt(const CXXInjectionStmt *Node) {
   VisitStmt(Node);
   if (Node->isBlockInjection()) {
     OS << " block";
+    dumpCaptures(*this, Node);
     dumpStmt(Node->getInjectedBlock());
   } else if (Node->isClassInjection()) {
     OS << " class";
+    dumpCaptures(*this, Node);
     dumpDecl(Node->getInjectedClass());
   } else {
     OS << " namespace";
+    dumpCaptures(*this, Node);
     dumpDecl(Node->getInjectedNamespace());
   }
 }

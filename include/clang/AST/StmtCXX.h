@@ -23,6 +23,8 @@
 namespace clang {
 
 class VarDecl;
+class CXXMethodDecl;
+class CXXRecordDecl;
 class TemplateParameterList;
 
 /// CXXCatchStmt - This represents a C++ catch block.
@@ -641,33 +643,41 @@ public:
   }
 };
 
-/// \brief Determines the kind of injected content.
-///
-/// \todo If the values of this field exceed 16 bits, then change the bit width
-/// in Stmt::InjectionStmtBitfields.
-enum InjectionKind
-{
-  IK_Block,
-  IK_Class,
-  IK_Namespace,
-};
-
 /// Represents a C++ injection statement.
 class CXXInjectionStmt : public Stmt {
   /// \brief The location of the '->'  token.
   SourceLocation ArrowLoc;
+
+  /// \brief The number of captured declarations.
+  std::size_t NumCaptures;
+
+  /// \brief The references to captured variables. These are all DeclRefExprs.
+  /// We store these instead of their underlying declarations to facilitate
+  /// their evaluation during injection. In particular, the evaluation of an
+  /// injection statement entails the substitution of the values of captured
+  /// declarations into placeholders.
+  Expr** Captures;
 
   /// The kind of injected declaration. This is:
   /// - a CXXMethodDecl of a lambda expression for a block injection,
   /// - a CXXRecordDecl for a class injection, or
   /// - a NamespaceDecl for a namespace injection.
   Decl *InjectedDecl;
-  
 public:
-  CXXInjectionStmt(SourceLocation AL, InjectionKind IK, Decl *D)
-      : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), InjectedDecl(D) {
-    InjectionStmtBits.InjectionKind = IK;
-  }
+
+  /// \brief The kind of injection.
+  ///
+  /// \todo If the values of this field exceed 16 bits, then change the bit width
+  /// in Stmt::InjectionStmtBitfields.
+  enum InjectionKind
+  {
+    Block,
+    Class,
+    Namespace,
+  };
+
+  CXXInjectionStmt(ASTContext &Cxt, SourceLocation AL, 
+                   SmallVectorImpl<Expr *> &Caps);
 
   explicit CXXInjectionStmt(EmptyShell Empty)
       : Stmt(CXXInjectionStmtClass, Empty), ArrowLoc(), InjectedDecl() {}
@@ -675,20 +685,55 @@ public:
   /// \brief Returns the location of the injected arrow.
   SourceLocation getArrowLoc() const { return ArrowLoc; }
 
+  /// \brief The number of captured declarations.
+  std::size_t getNumCaptures() const { return NumCaptures; }
+
+  /// \brief The Ith capture of the injection statement.
+  Expr *getCapture(std::size_t I) { return Captures[I]; }
+  
+  /// \brief The Ith capture of the injection statement.
+  const Expr *getCapture(std::size_t I) const { return Captures[I]; }
+
+  using capture_iterator = Expr**;
+  using capture_range = llvm::iterator_range<capture_iterator>;
+  capture_iterator begin_captures() const { return Captures; }
+  capture_iterator end_captures() const { return Captures + NumCaptures; }
+  capture_range captures() const { 
+    return capture_range(begin_captures(), end_captures());
+  }
+
+private:
+  void setInjection(InjectionKind K, Decl *D) {
+    assert(!InjectedDecl && "Injected declaration already set");
+    InjectionStmtBits.InjectionKind = K;
+    InjectedDecl = D;
+  }
+public:
+
+  /// \brief Make this statement a block injection.
+  void setBlockInjection(CXXMethodDecl *D);
+
+  /// \brief Make this statement a class injection.
+  void setClassInjection(CXXRecordDecl *D);
+
+  /// \brief Make this statement a namespace injection.
+  void setNamespaceInjection(NamespaceDecl *D);
+
   /// \brief Returns the kind of injection.
   InjectionKind getInjectionKind() const { 
+    assert(InjectedDecl && "Injected declaration not set");
     return (InjectionKind)InjectionStmtBits.InjectionKind; 
   }
 
   /// \brief Returns true if the injection is a compound statement.
-  bool isBlockInjection() const { return getInjectionKind() == IK_Block; }
+  bool isBlockInjection() const { return getInjectionKind() == Block; }
 
   /// \brief Returns true if the injection is a class definition.
-  bool isClassInjection() const { return getInjectionKind() == IK_Class; }
+  bool isClassInjection() const { return getInjectionKind() == Class; }
   
   /// \brief Returns true if the injection is a namespace definition.
   bool isNamespaceInjection() const { 
-    return getInjectionKind() == IK_Namespace; 
+    return getInjectionKind() == Namespace; 
   }
 
   /// \brief Returns the declaration containing the injected code.

@@ -534,6 +534,19 @@ public:
   bool isConstantInitializer(ASTContext &Ctx, bool ForRef,
                              const Expr **Culprit = nullptr) const;
 
+  /// An injection records a code generation effect resulting from evaluation.
+  /// This is a set containing the values of captured declarations and the
+  /// expression into which those will be substituted.
+  struct InjectionInfo {
+    InjectionInfo(const Stmt *S) : Injection(S) { }
+
+    /// \brief the values computed for captured expressions.
+    SmallVector<APValue, 4> CaptureValues;
+
+    /// \brief The statement to which those values will be applied.
+    const Stmt *Injection;
+  };
+
   /// EvalStatus is a struct with detailed info about an evaluation in progress.
   struct EvalStatus {
     /// \brief Whether the evaluated expression has side effects.
@@ -558,9 +571,9 @@ public:
     ///
     /// If evaluation encounters an source code injection when this is not
     /// set, the expression has undefined behavior. This is only set for the
-    /// evaluation of constexpr-declarations. No other evaluations should modify
-    /// source code.
-    SmallVectorImpl<Stmt *> *Injections;
+    /// evaluation of metaprograms. No other evaluations should modify source 
+    /// code.
+    SmallVectorImpl<InjectionInfo> *Injections;
 
     EvalStatus()
         : HasSideEffects(false), HasUndefinedBehavior(false), Diag(nullptr),
