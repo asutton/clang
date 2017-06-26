@@ -4915,6 +4915,10 @@ Sema::GetNameFromUnqualifiedId(const UnqualifiedId &Name) {
     return Context.getNameForTemplate(TName, TNameLoc);
   }
 
+  case UnqualifiedId::IK_IdExprOperator: {
+    llvm_unreachable("idexpr names not implemented");
+  }
+
   } // switch (Name.getKind())
 
   llvm_unreachable("Unknown name kind");

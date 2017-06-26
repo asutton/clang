@@ -8911,6 +8911,10 @@ Decl *Sema::ActOnUsingDeclaration(Scope *S,
 
   case UnqualifiedId::IK_DeductionGuideName:
     llvm_unreachable("cannot parse qualified deduction guide name");
+
+  case UnqualifiedId::IK_IdExprOperator:
+    // FIXME: This is probably valid.
+    llvm_unreachable("Using idexpr operator");
   }
 
   DeclarationNameInfo TargetNameInfo = GetNameFromUnqualifiedId(Name);
@@ -13807,6 +13811,7 @@ NamedDecl *Sema::ActOnFriendFunctionDecl(Scope *S, Declarator &D,
     case UnqualifiedId::IK_LiteralOperatorId:
     case UnqualifiedId::IK_OperatorFunctionId:
     case UnqualifiedId::IK_TemplateId:
+    case UnqualifiedId::IK_IdExprOperator:
       break;
     }
     // This implies that it has to be an operator or function.

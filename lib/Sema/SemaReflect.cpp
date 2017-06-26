@@ -429,6 +429,12 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
   return false;
 }
 
+static bool HasDependentParts(SmallVectorImpl<Expr *>& Parts) {
+ return std::any_of(Parts.begin(), Parts.end(), [](const Expr *E) {
+    return E->isTypeDependent();
+  }); 
+}
+
 /// Constructs a new identifier from the expressions in Parts.
 ///
 /// FIXME: This currently initializes Result as an identifier. It would
@@ -442,12 +448,16 @@ bool Sema::BuildDeclnameId(SmallVectorImpl<Expr *>& Parts,
   SmallString<256> Buf;
   llvm::raw_svector_ostream OS(Buf);
 
+  if (HasDependentParts(Parts)) {
+    // If any components are dependent, we can't compute the name.
+    Expr **Args = new (Context) Expr *[Parts.size()];
+    std::copy(Parts.begin(), Parts.end(), Args);
+    Result.setIdExprOperator(KWLoc, Args, RParenLoc);
+    return true;
+  }
+
   for (std::size_t I = 0; I < Parts.size(); ++I) {
     Expr *E = Parts[I];
-
-    // FIXME: This needs to be an actual expression.
-    if (E->isTypeDependent())
-      llvm_unreachable("Dependent declname expression");
 
     // Get the type of the reflection.
     QualType T = E->getType();

@@ -931,7 +931,9 @@ public:
     /// \brief An implicit 'self' parameter
     IK_ImplicitSelfParam,
     /// \brief A deduction-guide name (a template-name)
-    IK_DeductionGuideName
+    IK_DeductionGuideName,
+    /// \brief An idexpr operator (currently spelled declname).
+    IK_IdExprOperator,
   } Kind;
 
   struct OFI {
@@ -978,6 +980,10 @@ public:
     /// the template-id annotation that contains the template name and
     /// template arguments.
     TemplateIdAnnotation *TemplateId;
+
+    /// \brief When Kind == IK_IdExprOperator. Memory for this array is allocated
+    /// by the context.
+    Expr **NameComponents;
   };
   
   /// \brief The location of the first token that describes this unqualified-id,
@@ -1121,6 +1127,19 @@ public:
     Kind = IK_DeductionGuideName;
     TemplateName = Template;
     StartLocation = EndLocation = TemplateLoc;
+  }
+
+  /// \brief Specify that this unqualified-id was parsed an an idexpr operator.
+  ///
+  /// \param OpLoc The location of the the operator keyword.
+  /// \param Args The array of arguments for the operator.
+  /// \param ParenLoc The location of the close paren.
+  void setIdExprOperator(SourceLocation OpLoc, Expr** Args, 
+                         SourceLocation ParenLoc) {
+    Kind = IK_IdExprOperator;
+    NameComponents = Args;
+    StartLocation = OpLoc;
+    EndLocation = ParenLoc;
   }
   
   /// \brief Return the source range that covers this unqualified-id.
