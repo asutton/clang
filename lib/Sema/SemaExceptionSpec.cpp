@@ -1243,6 +1243,7 @@ CanThrowResult Sema::canThrow(const Expr *E) {
   case Expr::TypoExprClass:
   case Expr::ReflectionExprClass:
   case Expr::ReflectionTraitExprClass:
+  case Expr::CXXConstantExprClass:
     // FIXME: Can any of the above throw?  If so, when?
     return CT_Cannot;
 

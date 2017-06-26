@@ -958,6 +958,10 @@ void ASTStmtReader::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
   E->setRParenLoc(ReadSourceLocation());
 }
 
+void ASTStmtReader::VisitCXXConstantExpr(CXXConstantExpr *S) {
+  llvm_unreachable("constant expression reading not implemented");
+}
+
 //===----------------------------------------------------------------------===//
 // Objective-C Expressions and Statements
 

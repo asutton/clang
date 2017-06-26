@@ -943,6 +943,10 @@ void ASTStmtWriter::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
   Code = serialization::EXPR_COMPILER_ERROR;
 }
 
+void ASTStmtWriter::VisitCXXConstantExpr(CXXConstantExpr *S) {
+  llvm_unreachable("constant expression writing not implemented");
+}
+
 //===----------------------------------------------------------------------===//
 // Objective-C Expressions and Statements.
 //===----------------------------------------------------------------------===//

@@ -160,6 +160,7 @@ def CoyieldExpr : DStmt<CoroutineSuspendExpr>;
 // [Meta] C++ Reflection Expressions
 def ReflectionExpr : DStmt<Expr>;
 def ReflectionTraitExpr : DStmt<Expr>;
+def CXXConstantExpr : DStmt<Expr>;
 def CompilerErrorExpr : DStmt<Expr>;
 
 // Obj-C Expressions.

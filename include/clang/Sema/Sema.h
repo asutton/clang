@@ -8368,6 +8368,8 @@ public:
   // C++ Reflection [Meta]
   //
 
+  ExprResult BuildConstantExpression(Expr *E);
+
   /// \brief True if T is the type of a reflection.
   bool isReflectionType(QualType T);
 
@@ -8465,12 +8467,14 @@ public:
   void ActOnStartNamespaceFragment(Stmt *S, Decl *D);
   void ActOnFinishNamespaceFragment(Stmt *S);
 
+  using InjectionInfo = Expr::InjectionInfo;
+
   // Source code injection/modification
   bool ApplySourceCodeModifications(SourceLocation POI,
-                                    SmallVectorImpl<Stmt *> &Stmts);
-  bool InjectBlockStatements(SourceLocation POI, CXXInjectionStmt *S);
-  bool InjectClassMembers(SourceLocation POI, CXXInjectionStmt *D);
-  bool InjectNamespaceMembers(SourceLocation POI, CXXInjectionStmt *D);
+                                    SmallVectorImpl<InjectionInfo> &Injections);
+  bool InjectBlockStatements(SourceLocation POI, InjectionInfo &II);
+  bool InjectClassMembers(SourceLocation POI, InjectionInfo &II);
+  bool InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II);
 
   void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                               SmallVectorImpl<Decl *> &Fields);

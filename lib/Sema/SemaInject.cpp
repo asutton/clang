@@ -78,7 +78,7 @@ static bool ProcessCapture(Sema &SemaRef, DeclContext *DC, Expr *E)
   VarDecl *Placeholder = VarDecl::Create(SemaRef.Context, DC, IdLoc, IdLoc, 
                                          Id, T, TSI, SC_Static);
   Placeholder->setAccess(DC->isRecord() ? AS_private : AS_none);
-  Placeholder->setConstexpr(AS_private);
+  Placeholder->setConstexpr(true);
   Placeholder->setInitStyle(VarDecl::CInit);
   Placeholder->setInit(
       new (SemaRef.Context) OpaqueValueExpr(IdLoc, T, VK_RValue));
@@ -581,11 +581,11 @@ void SourceCodeInjector::TransformAttributes(Decl *D, Decl *R) {
 }
 
 /// Returns the transformed statement S. 
-bool Sema::InjectBlockStatements(SourceLocation POI, CXXInjectionStmt *S) {
+bool Sema::InjectBlockStatements(SourceLocation POI, InjectionInfo &II) {
   if (!CurContext->isFunctionOrMethod())
     return InvalidInjection(*this, POI, 0, CurContext);
 
-  // FIXME: At some point, we'll have parameters to bind.
+  /*
   SourceCodeInjector Injector(*this, S->getInjectionContext());
 
   // Transform each statement in turn. Note that we build build a compound
@@ -597,22 +597,61 @@ bool Sema::InjectBlockStatements(SourceLocation POI, CXXInjectionStmt *S) {
       return false;
     InjectedStmts.push_back(R.get());
   }
+  */
   
   return true;
 }
 
-bool Sema::InjectClassMembers(SourceLocation POI, CXXInjectionStmt *S) {
+bool Sema::InjectClassMembers(SourceLocation POI, InjectionInfo &II) {
   if (!CurContext->isRecord())
     return InvalidInjection(*this, POI, 1, CurContext);
 
+  const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(II.Injection);
+
   CXXRecordDecl *Target = cast<CXXRecordDecl>(CurContext);
-  CXXRecordDecl *Source = S->getInjectedClass();
+  CXXRecordDecl *Source = IS->getInjectedClass();
   SourceCodeInjector Injector(*this, Source);
   Injector.AddSubstitution(Source, Target);
+
+  llvm::outs() << "CLASS\n";
+  Source->dump();
+
+  auto DeclIter = Source->decls_begin();
+  auto DeclEnd = Source->decls_end();
+  const SmallVectorImpl<APValue> &Values = II.CaptureValues;
+  for (std::size_t I = 0; I < IS->getNumCaptures(); ++I) {
+    assert(DeclIter != DeclEnd && "Ran out of declarations");
+
+    // Unpack information about 
+    const Expr *E = cast<DeclRefExpr>(IS->getCapture(I));
+    QualType T = E->getType();
+    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(T);
+
+    // Build a new placeholder for the destination context.
+    VarDecl *Placeholder = cast<VarDecl>(*DeclIter);
+    SourceLocation Loc = Placeholder->getLocation();
+    IdentifierInfo *Id = Placeholder->getIdentifier();
+    VarDecl *Replacement = 
+        VarDecl::Create(Context, Target, Loc, Loc, Id, T, TSI, SC_Static);
+    Replacement->setAccess(AS_private);
+    Replacement->setConstexpr(true);
+    Replacement->setInitStyle(VarDecl::CInit);
+
+    // FIXME: Make this a constant expression whose value is the capture.
+    Replacement->setInit(new (Context) OpaqueValueExpr(Loc, T, VK_RValue));
+    
+    Replacement->setReferenced(true);
+    Replacement->markUsed(Context);
+
+    Replacement->dump();
+      
+      ++DeclIter;
+  }
 
   // FIXME: What should we do with injected base classes? Actually, we don't
   // parse those, so there's not much we can do.
 
+  /*
   // Transform each declaration in turn.
   for (Decl *Member : Source->decls()) {
     if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Member)) {
@@ -622,14 +661,18 @@ bool Sema::InjectClassMembers(SourceLocation POI, CXXInjectionStmt *S) {
     }
     Injector.TransformDecl(Member);
   }
+  */
+
+  llvm::outs() << "------------------\n";
 
   return true;
 }
 
-bool Sema::InjectNamespaceMembers(SourceLocation POI, CXXInjectionStmt *D) {
+bool Sema::InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II) {
   if (!CurContext->isFileContext())
     return InvalidInjection(*this, POI, 2, CurContext);
 
+  /*
   NamespaceDecl *Source = D->getInjectedNamespace();
   SourceCodeInjector Injector(*this, Source);
   if (CurContext->isNamespace())
@@ -642,6 +685,7 @@ bool Sema::InjectNamespaceMembers(SourceLocation POI, CXXInjectionStmt *D) {
   // FIXME: Notify AST observers of new top-level declarations?
   for (Decl *Member : Source->decls())
     Injector.TransformDecl(Member);
+  */
 
   return true;
 }
@@ -652,22 +696,25 @@ bool Sema::InjectNamespaceMembers(SourceLocation POI, CXXInjectionStmt *D) {
 ///
 /// \returns  true if no errors are encountered, false otherwise.
 bool Sema::ApplySourceCodeModifications(SourceLocation POI, 
-                                        SmallVectorImpl<Stmt *> &Stmts) {
-  for (Stmt *S : Stmts) {
-    if (CXXInjectionStmt *IS = dyn_cast<CXXInjectionStmt>(S)) {
+                                   SmallVectorImpl<InjectionInfo> &Injections) {
+  for (InjectionInfo &II : Injections) {
+    // Unpack the injection to see how it should be applied.
+    const Stmt *S = II.Injection;
+    if (const auto *IS = dyn_cast<CXXInjectionStmt>(S)) {
       if (IS->isBlockInjection())
-        InjectBlockStatements(POI, IS);
+        InjectBlockStatements(POI, II);
       else if (IS->isClassInjection())
-        InjectClassMembers(POI, IS);
+        InjectClassMembers(POI, II);
       else if (IS->isNamespaceInjection())
-        InjectNamespaceMembers(POI, IS);
+        InjectNamespaceMembers(POI, II);
       else
         llvm_unreachable("Unknown injection context");
-    } else if (ReflectionTraitExpr *RTE = dyn_cast<ReflectionTraitExpr>(S)) {
+    } else if (const auto *RTE = dyn_cast<ReflectionTraitExpr>(S)) {
+      auto *E = const_cast<ReflectionTraitExpr *>(RTE);
       if (RTE->getTrait() == BRT_ModifyAccess)
-        ModifyDeclarationAccess(RTE);
+        ModifyDeclarationAccess(E);
       else if (RTE->getTrait() == BRT_ModifyVirtual)
-        ModifyDeclarationVirtual(RTE);
+        ModifyDeclarationVirtual(E);
       else
         llvm_unreachable("Unknown reflection trait");
     } else

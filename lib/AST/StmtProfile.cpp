@@ -1757,6 +1757,10 @@ void StmtProfiler::VisitCompilerErrorExpr(const CompilerErrorExpr *E) {
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXConstantExpr(const CXXConstantExpr *S) {
+  VisitExpr(S);
+}
+
 void StmtProfiler::VisitOpaqueValueExpr(const OpaqueValueExpr *E) {
   VisitExpr(E);  
 }

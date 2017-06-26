@@ -1443,6 +1443,10 @@ public:
     return getSema().ActOnCompilerErrorExpr(Message, BuiltinLoc, RParenLoc);
   }
 
+  ExprResult RebuildCXXConstantExpr(Expr *E) {
+    return getSema().BuildConstantExpression(E);
+  }
+
   /// \brief Build a new Objective-C \@try statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -7148,6 +7152,16 @@ TreeTransform<Derived>::TransformCompilerErrorExpr(CompilerErrorExpr *E) {
   // template instantiations.
   return getDerived().RebuildCompilerErrorExpr(
       Message.get(), E->getBuiltinLoc(), E->getRParenLoc());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXConstantExpr(CXXConstantExpr *E) {
+  ExprResult Result = getDerived().TransformExpr(E->getExpression());
+  if (Result.isInvalid())
+    return ExprError();
+  // Always rebuild. We need to re-evaluate the expression to get the value.
+  return getDerived().RebuildCXXConstantExpr(E);
 }
 
 // Objective-C Statements.

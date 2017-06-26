@@ -4936,6 +4936,10 @@ public:
     return DerivedSuccess(E->getValue(), E);
   }
 
+  bool VisitCXXConstantExpr(const CXXConstantExpr *E) {
+    return DerivedSuccess(E->getValue(), E);
+  }
+
   /// Visit a value which is evaluated, but whose value is ignored.
   void VisitIgnoredValue(const Expr *E) {
     EvaluateIgnoredValue(Info, E);
@@ -10440,6 +10444,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::ArrayTypeTraitExprClass:
   case Expr::ExpressionTraitExprClass:
   case Expr::CXXNoexceptExprClass:
+  case Expr::CXXConstantExprClass:
     return NoDiag();
   case Expr::CallExprClass:
   case Expr::CXXOperatorCallExprClass: {

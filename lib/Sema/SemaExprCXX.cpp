@@ -7587,3 +7587,22 @@ Sema::CheckMicrosoftIfExistsSymbol(Scope *S, SourceLocation KeywordLoc,
 
   return CheckMicrosoftIfExistsSymbol(S, SS, TargetNameInfo);
 }
+
+/// Evaluates the expression E and returns a CXXConstantExpr that wraps
+/// the both E and the computed value.
+ExprResult
+Sema::BuildConstantExpression(Expr *E)
+{
+  // FIXME: Generate an error if we can't build the constant expression? We
+  // probably want more context when we do this so that we can generate 
+  // appropriate diagnostics. Right now, we only build these when folding
+  // calls to immediate functions.
+  Expr::EvalResult Result;
+  if (E->isRValue() && !E->EvaluateAsRValue(Result, Context))
+    return ExprError();
+  else if (E->isLValue() && !E->EvaluateAsLValue(Result, Context))
+    return ExprError();
+  else
+    llvm_unreachable("invalid value category");
+  return new (Context) CXXConstantExpr(E, std::move(Result.Val));
+}

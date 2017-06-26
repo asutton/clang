@@ -2350,9 +2350,7 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   // the class; it shouldn't be visible in the output code.
   //
   SourceLocation POI = CD->getSourceRange().getEnd();
-
-  // FIXME: Actually apply modifications.
-  // ApplySourceCodeModifications(POI, Injections);
+  ApplySourceCodeModifications(POI, Injections);
 
   // FIXME: Do we really want to remove the metaprogram after evaluation? Or
   // should we just mark it completed.

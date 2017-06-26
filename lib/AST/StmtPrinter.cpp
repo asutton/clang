@@ -2559,6 +2559,10 @@ void StmtPrinter::VisitCompilerErrorExpr(CompilerErrorExpr *Node) {
   OS << ")";
 }
 
+void StmtPrinter::VisitCXXConstantExpr(CXXConstantExpr *S) {
+  PrintExpr(S->getExpression());
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {
