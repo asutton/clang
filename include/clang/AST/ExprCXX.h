@@ -4440,6 +4440,10 @@ class CXXConstantExpr : public Expr {
   /// \brief The computed value of the source expression.
   APValue Value;
 public:
+  CXXConstantExpr(Expr *E, const APValue& V)
+    : Expr(CXXConstantExprClass, E->getType(), E->getValueKind(), 
+           E->getObjectKind(), false, false, false, false), Source(E),
+      Value(V) {}
   CXXConstantExpr(Expr *E, APValue&& V)
     : Expr(CXXConstantExprClass, E->getType(), E->getValueKind(), 
            E->getObjectKind(), false, false, false, false), Source(E),

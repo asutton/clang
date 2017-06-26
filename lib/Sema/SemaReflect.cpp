@@ -1725,16 +1725,13 @@ GetNonDependentReflectedType(Sema &SemaRef, Expr *E)
     //
     //    char x;
     //    typename($x) y; // char y
-    //
-    // Note that the referenced declaration is not used when referring
-    // to its type.
     Decl *D = (Decl *)Info.second;
     if (!isa<ValueDecl>(D)) {
       SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_typed_decl)
                    << E->getSourceRange();
       return QualType();
     }
-    return cast<ValueDecl>(D)->getType();
+    return SemaRef.Context.getReflectedType(E, cast<ValueDecl>(D)->getType());
   }
   else
     // FIXME: Should be equivalent to decltype(e).

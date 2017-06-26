@@ -256,6 +256,8 @@ public:
     transformedLocalDecl(From, To);
   }
 
+  // QualType TransformReflectedType(TypeLocBuilder &TLB, ReflectedTypeLoc TL);
+
   Decl *TransformDecl(Decl *D);
   Decl *TransformDecl(SourceLocation, Decl *D);
   Decl *TransformDeclImpl(SourceLocation, Decl *D);
@@ -277,6 +279,15 @@ public:
 Decl *SourceCodeInjector::TransformDecl(Decl *D) {
   return TransformDecl(D->getLocation(), D);
 }
+
+// // Canonicalize reflected types; we don't want these in the output AST.
+// QualType SourceCodeInjector::TransformReflectedType(TypeLocBuilder &TLB, 
+//                                                     ReflectedTypeLoc TL)
+// {
+//   return BaseType::TransformReflectedType(TLB, TL);
+//   // TLB.clear();
+//   // return TransformType(getSema().Context.getCanonicalType(T));
+// }
 
 Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   if (!D)
@@ -613,9 +624,6 @@ bool Sema::InjectClassMembers(SourceLocation POI, InjectionInfo &II) {
   SourceCodeInjector Injector(*this, Source);
   Injector.AddSubstitution(Source, Target);
 
-  llvm::outs() << "CLASS\n";
-  Source->dump();
-
   auto DeclIter = Source->decls_begin();
   auto DeclEnd = Source->decls_end();
   const SmallVectorImpl<APValue> &Values = II.CaptureValues;
@@ -623,7 +631,7 @@ bool Sema::InjectClassMembers(SourceLocation POI, InjectionInfo &II) {
     assert(DeclIter != DeclEnd && "Ran out of declarations");
 
     // Unpack information about 
-    const Expr *E = cast<DeclRefExpr>(IS->getCapture(I));
+    Expr *E = const_cast<Expr *>(IS->getCapture(I));
     QualType T = E->getType();
     TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(T);
 
@@ -636,34 +644,29 @@ bool Sema::InjectClassMembers(SourceLocation POI, InjectionInfo &II) {
     Replacement->setAccess(AS_private);
     Replacement->setConstexpr(true);
     Replacement->setInitStyle(VarDecl::CInit);
-
-    // FIXME: Make this a constant expression whose value is the capture.
-    Replacement->setInit(new (Context) OpaqueValueExpr(Loc, T, VK_RValue));
-    
+    Replacement->setInit(new (Context) CXXConstantExpr(E, Values[I]));    
     Replacement->setReferenced(true);
     Replacement->markUsed(Context);
 
-    Replacement->dump();
+    // Substitute the placeholder for its replacement.
+    Injector.AddSubstitution(Placeholder, Replacement);
       
-      ++DeclIter;
+    ++DeclIter;
   }
 
-  // FIXME: What should we do with injected base classes? Actually, we don't
-  // parse those, so there's not much we can do.
-
-  /*
-  // Transform each declaration in turn.
-  for (Decl *Member : Source->decls()) {
+  while (DeclIter != DeclEnd) {
+    Decl *Member = *DeclIter;
     if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Member)) {
       // The top-level injected class name is not injected.
       if (RD->isInjectedClassName())
         continue;
     }
-    Injector.TransformDecl(Member);
-  }
-  */
 
-  llvm::outs() << "------------------\n";
+    // Inject the member.
+    Injector.TransformDecl(Member);
+
+    ++DeclIter;
+  }
 
   return true;
 }
