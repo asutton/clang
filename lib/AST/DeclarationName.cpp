@@ -254,7 +254,8 @@ void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
     return;
 
   case DeclarationName::CXXIdExprName:
-    llvm_unreachable("unimplemented");
+    // FIXME: Do this right.
+    OS << "declname(...)";
     return;
 
   case DeclarationName::CXXConversionFunctionName: {
@@ -412,6 +413,9 @@ void *DeclarationName::getFETokenInfoAsVoidSlow() const {
   case CXXLiteralOperatorName:
     return getAsCXXLiteralOperatorIdName()->FETokenInfo;
 
+  case CXXIdExprName:
+    return getAsCXXIdExprName()->FETokenInfo;
+
   default:
     llvm_unreachable("Declaration name has no FETokenInfo");
   }
@@ -439,6 +443,10 @@ void DeclarationName::setFETokenInfo(void *T) {
 
   case CXXLiteralOperatorName:
     getAsCXXLiteralOperatorIdName()->FETokenInfo = T;
+    break;
+
+  case CXXIdExprName:
+    getAsCXXIdExprName()->FETokenInfo = T;
     break;
 
   default:

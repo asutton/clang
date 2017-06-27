@@ -4916,7 +4916,16 @@ Sema::GetNameFromUnqualifiedId(const UnqualifiedId &Name) {
   }
 
   case UnqualifiedId::IK_IdExprOperator: {
-    llvm_unreachable("idexpr names not implemented");
+    // FIXME: This is a little wonky. We get the unqualified id from a
+    // declaration name (meaning canonical). Then, we try to reconstruct it.
+    // We should just store the internal bit of the name in the UnqualifiedId
+    // instead of the arguments.
+    llvm::ArrayRef<Expr *> Args = Name.NameComponents;
+    NameInfo.setName(Context.DeclarationNames.getCXXIdExprName(Args.size(),
+                                              const_cast<Expr**>(&Args[0])));
+    SourceRange Range(Name.StartLocation, Name.EndLocation);
+    NameInfo.setCXXIdExprNameRange(Range);
+    return NameInfo;
   }
 
   } // switch (Name.getKind())

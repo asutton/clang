@@ -2718,6 +2718,7 @@ static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
   case UnqualifiedId::IK_Identifier:
   case UnqualifiedId::IK_LiteralOperatorId:
   case UnqualifiedId::IK_TemplateId:
+  case UnqualifiedId::IK_IdExprOperator:
     T = ConvertDeclSpecToType(state);
 
     if (!D.isInvalidType() && D.getDeclSpec().isTypeSpecOwned()) {
@@ -2749,10 +2750,6 @@ static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
     T = SemaRef.GetTypeFromParser(D.getName().ConversionFunctionId,
                                   &ReturnTypeInfo);
     break;
-
-  case UnqualifiedId::IK_IdExprOperator:
-    // FIXME: Not sure if this is even valid.
-    llvm_unreachable("Type specifier for idexpr operator");
   }
 
   if (D.getAttributes())
