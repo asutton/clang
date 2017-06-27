@@ -3777,20 +3777,30 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
   if (D->getDeclContext() && D->getDeclContext()->isDependentContext())
     return;
 
+  // Ignore injectable declarations.
+  if (D->isInjectable())
+    return;
+
   switch (D->getKind()) {
   case Decl::CXXConversion:
   case Decl::CXXMethod:
-  case Decl::Function:
+  case Decl::Function: {
+    FunctionDecl *Fn = cast<FunctionDecl>(D);
+
     // Skip function templates
-    if (cast<FunctionDecl>(D)->getDescribedFunctionTemplate() ||
-        cast<FunctionDecl>(D)->isLateTemplateParsed())
+    if (Fn->getDescribedFunctionTemplate() || Fn->isLateTemplateParsed())
       return;
 
-    EmitGlobal(cast<FunctionDecl>(D));
+    // Skip fragments
+    if (Fn->isFragment())
+      return;
+
+    EmitGlobal(Fn);
     // Always provide some coverage mapping
     // even for the functions that aren't emitted.
     AddDeferredUnusedCoverageMapping(D);
     break;
+  }
 
   case Decl::CXXDeductionGuide:
     // Function-like, but does not result in code emission.
@@ -3815,21 +3825,37 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     break;
 
   // C++ Decls
-  case Decl::Namespace:
-    EmitDeclContext(cast<NamespaceDecl>(D));
+  case Decl::Namespace: {
+    NamespaceDecl *Ns = cast<NamespaceDecl>(D);
+
+    // Skip fragments.
+    if (Ns->isFragment())
+      return;
+
+    EmitDeclContext(Ns);
+  }
+
     break;
-  case Decl::CXXRecord:
+  case Decl::CXXRecord: {
+    CXXRecordDecl *Class = cast<CXXRecordDecl>(D);
+
+    // Skip fragments.
+    if (Class->isFragment())
+      return;
+
     if (DebugInfo) {
       if (auto *ES = D->getASTContext().getExternalSource())
         if (ES->hasExternalDefinitions(D) == ExternalASTSource::EK_Never)
-          DebugInfo->completeUnusedClass(cast<CXXRecordDecl>(*D));
+          DebugInfo->completeUnusedClass(*Class);
     }
     // Emit any static data members, they may be definitions.
-    for (auto *I : cast<CXXRecordDecl>(D)->decls())
+    for (auto *I : Class->decls())
       if (isa<VarDecl>(I) || isa<CXXRecordDecl>(I))
         EmitTopLevelDecl(I);
     break;
-    // No code generation needed.
+  }
+   
+  // No code generation needed.
   case Decl::UsingShadow:
   case Decl::ClassTemplate:
   case Decl::VarTemplate:

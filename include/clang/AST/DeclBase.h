@@ -282,6 +282,9 @@ private:
   /// are regarded as "referenced" but not "used".
   unsigned Referenced : 1;
 
+  /// \brief Whether this declaration is a member of a fragment.
+  mutable bool Injectable;
+
   /// \brief Whether statistic collection is enabled.
   static bool StatisticsEnabled;
 
@@ -336,7 +339,7 @@ protected:
   Decl(Kind DK, DeclContext *DC, SourceLocation L)
       : NextInContextAndBits(), DeclCtx(DC), Loc(L), DeclKind(DK),
         InvalidDecl(0), HasAttrs(false), Implicit(false), Used(false),
-        Referenced(false), Access(AS_none), FromASTFile(0),
+        Referenced(false), Injectable(false), Access(AS_none), FromASTFile(0),
         Hidden(DC && cast<Decl>(DC)->Hidden &&
                (!cast<Decl>(DC)->isFromASTFile() ||
                 hasLocalOwningModuleStorage())),
@@ -546,6 +549,12 @@ public:
   bool isThisDeclarationReferenced() const { return Referenced; }
 
   void setReferenced(bool R = true) { Referenced = R; }
+
+  /// \brief Whether this declaration is is injected. Only members of a 
+  /// fragment are injectable.
+  bool isInjectable() const { return Injectable; }
+
+  void setInjectable(bool B = true) { Injectable = true; }
 
   /// \brief Whether this declaration is a top-level declaration (function,
   /// global variable, etc.) that is lexically inside an objc container
@@ -1206,6 +1215,9 @@ class DeclContext {
   /// LookupQualifiedName()
   mutable bool UseQualifiedLookup : 1;
 
+  /// \brief Whether this declaration context is an injectable fragment.
+  mutable bool Fragment;
+
   /// \brief Pointer to the data structure used to lookup declarations
   /// within this context (or a DependentStoredDeclsMap if this is a
   /// dependent context). We maintain the invariant that, if the map
@@ -1240,7 +1252,7 @@ protected:
         ExternalVisibleStorage(false),
         NeedToReconcileExternalVisibleStorage(false),
         HasLazyLocalLexicalLookups(false), HasLazyExternalLexicalLookups(false),
-        UseQualifiedLookup(false),
+        UseQualifiedLookup(false), Fragment(false),
         LookupPtr(nullptr), FirstDecl(nullptr), LastDecl(nullptr) {}
 
 public:
@@ -1838,6 +1850,10 @@ public:
   bool shouldUseQualifiedLookup() const {
     return UseQualifiedLookup;
   }
+
+  /// \brief Whether this declaration context is a fragment.
+  bool isFragment() const { return Fragment; }
+  void setFragment(bool F) { Fragment = F; }
 
   static bool classof(const Decl *D);
   static bool classof(const DeclContext *D) { return true; }

@@ -1388,6 +1388,10 @@ void DeclContext::addHiddenDecl(Decl *D) {
     if (ImportDecl *Import = dyn_cast<ImportDecl>(D))
       D->getASTContext().addedLocalImportDecl(Import);
   }
+
+  // If this context is fragment, then mark the declaration as injectable.
+  if (Fragment)
+    D->setInjectable(true);
 }
 
 void DeclContext::addDecl(Decl *D) {

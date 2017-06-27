@@ -155,6 +155,7 @@ StmtResult Sema::ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc,
     CXXMethodDecl *Method =
         startLambdaDefinition(Closure, Intro.Range, MethodTyInfo, ArrowLoc,
                               None, /*IsConstexprSpecified=*/false);
+    Method->setFragment(true);
 
     buildLambdaScope(LSI, Method, Intro.Range, Intro.Default, Intro.DefaultLoc,
                      /*ExplicitParams=*/false,
@@ -184,6 +185,7 @@ void Sema::ActOnFinishBlockFragment(Scope *S, Stmt *Body) {
 void Sema::ActOnStartClassFragment(Stmt *S, Decl *D) {
   CXXInjectionStmt *Injection = cast<CXXInjectionStmt>(S);
   CXXRecordDecl *Class = cast<CXXRecordDecl>(D);
+  Class->setFragment(true);
   Injection->setClassInjection(Class);
   ProcessCaptures(*this, Class, Injection->captures());
 }
@@ -198,6 +200,7 @@ void Sema::ActOnFinishClassFragment(Stmt *S) { }
 void Sema::ActOnStartNamespaceFragment(Stmt *S, Decl *D) {
   CXXInjectionStmt *Injection = cast<CXXInjectionStmt>(S);
   NamespaceDecl *Ns = cast<NamespaceDecl>(D);
+  Ns->setFragment(true);
   Injection->setNamespaceInjection(Ns);
   ProcessCaptures(*this, Ns, Injection->captures());
 }
