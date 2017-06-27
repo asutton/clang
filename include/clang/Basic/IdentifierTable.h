@@ -837,6 +837,7 @@ public:
 #include "clang/Basic/OperatorKinds.def"
     CXXDeductionGuide,
     CXXLiteralOperator,
+    CXXIdExprOperator,
     CXXUsingDirective,
     NUM_EXTRA_KINDS
   };

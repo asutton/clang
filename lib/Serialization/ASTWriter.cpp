@@ -5382,6 +5382,9 @@ void ASTRecordWriter::AddDeclarationName(DeclarationName Name) {
     AddIdentifierRef(Name.getCXXLiteralIdentifier());
     break;
 
+  case DeclarationName::CXXIdExprName:
+    llvm_unreachable("unimplemented");
+
   case DeclarationName::CXXUsingDirective:
     // No extra data to emit
     break;
@@ -5436,6 +5439,13 @@ void ASTRecordWriter::AddDeclarationNameLoc(const DeclarationNameLoc &DNLoc,
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXDeductionGuideName:
+    break;
+
+  case DeclarationName::CXXIdExprName:
+    AddSourceLocation(SourceLocation::getFromRawEncoding(
+        DNLoc.CXXOperatorName.BeginOpNameLoc));
+    AddSourceLocation(SourceLocation::getFromRawEncoding(
+        DNLoc.CXXOperatorName.EndOpNameLoc));
     break;
   }
 }

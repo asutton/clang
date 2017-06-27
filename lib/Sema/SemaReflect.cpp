@@ -332,7 +332,7 @@ static bool AppendStringValue(Sema& S, llvm::raw_ostream& OS,
     // const ValueDecl *D = Base.get<const ValueDecl *>();
     // return Error(E->getMessage());
   }
-  return false;
+  return true;
 }
 
 
@@ -345,7 +345,7 @@ static bool AppendCharacterArray(Sema& S, llvm::raw_ostream &OS, Expr *E,
   QualType ElemTy = ArrayTy->getElementType();
   if (!ElemTy->isCharType()) {
     S.Diag(E->getLocStart(), diag::err_declname_invalid_operand_type) << T;
-    return true;
+    return false;
   }
 
   // Evaluate the expression.
@@ -353,7 +353,7 @@ static bool AppendCharacterArray(Sema& S, llvm::raw_ostream &OS, Expr *E,
   if (!E->EvaluateAsLValue(Result, S.Context)) {
     // FIXME: Include notes in the diagnostics.
     S.Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
-    return true;
+    return false;
   }
 
   return AppendStringValue(S, OS, Result.Val);
@@ -368,7 +368,7 @@ static bool AppendCharacterPointer(Sema& S, llvm::raw_ostream &OS, Expr *E,
   QualType ElemTy = PtrTy->getPointeeType();
   if (!ElemTy->isCharType() || !ElemTy.isConstQualified()) {
     S.Diag(E->getLocStart(), diag::err_declname_invalid_operand_type) << T;
-    return true;
+    return false;
   }
 
   // Try evaluating the expression as an rvalue and then extract the result.
@@ -376,7 +376,7 @@ static bool AppendCharacterPointer(Sema& S, llvm::raw_ostream &OS, Expr *E,
   if (!E->EvaluateAsRValue(Result, S.Context)) {
     // FIXME: This is not the right error.
     S.Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
-    return true;
+    return false;
   }
 
   return AppendStringValue(S, OS, Result.Val);
@@ -386,10 +386,10 @@ static bool AppendInteger(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
   llvm::APSInt N;
   if (!E->EvaluateAsInt(N, S.Context)) {
     S.Diag(E->getLocStart(), diag::err_expr_not_ice) << 1;
-    return true;
+    return false;
   }
   OS << N;
-  return false;
+  return true;
 }
 
 static bool
@@ -400,7 +400,7 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
     if (!isa<NamedDecl>(D)) {
       // FIXME: Improve diagnostics.
       S.Diag(E->getLocStart(), diag::err_reflection_not_named);
-      return true;
+      return false;
     }
     NamedDecl *ND = cast<NamedDecl>(D);
 
@@ -409,7 +409,7 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
     DeclarationName Name = ND->getDeclName();
     if (!Name.isIdentifier()) {
       S.Diag(E->getLocStart(), diag::err_declname_not_an_identifer) << Name;
-      return true;
+      return false;
     }
     
     OS << ND->getName();
@@ -420,13 +420,13 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
     else {
       S.Diag(E->getLocStart(), diag::err_declname_not_an_identifer) 
         << QualType(T, 0);
-      return true;
+      return false;
     }
   } else {
     // This isn't supported yet.
     llvm_unreachable("Expression reflection");
   }
-  return false;
+  return true;
 }
 
 static bool HasDependentParts(SmallVectorImpl<Expr *>& Parts) {
@@ -435,29 +435,28 @@ static bool HasDependentParts(SmallVectorImpl<Expr *>& Parts) {
   }); 
 }
 
-/// Constructs a new identifier from the expressions in Parts.
-///
-/// FIXME: This currently initializes Result as an identifier. It would
-/// probably be better to build a new IdKind to represent the concatenation.
-/// Maybe... this is still resolved as a normal identifier.
-bool Sema::BuildDeclnameId(SmallVectorImpl<Expr *>& Parts, 
-                           UnqualifiedId& Result,
-                           SourceLocation KWLoc,
-                           SourceLocation LParenLoc, 
-                           SourceLocation RParenLoc) {
-  SmallString<256> Buf;
-  llvm::raw_svector_ostream OS(Buf);
+/// Constructs a new identifier from the expressions in Parts. Returns nullptr
+/// on error.
+DeclarationNameInfo Sema::BuildIdExprName(SourceLocation OpLoc, 
+                                          SmallVectorImpl<Expr *>& Parts,
+                                          SourceLocation EndLoc) {
 
+  // If any components are dependent, we can't compute the name.
   if (HasDependentParts(Parts)) {
-    // If any components are dependent, we can't compute the name.
-    Expr **Args = new (Context) Expr *[Parts.size()];
-    std::copy(Parts.begin(), Parts.end(), Args);
-    Result.setIdExprOperator(KWLoc, Args, RParenLoc);
-    return true;
+    DeclarationName Name
+      = Context.DeclarationNames.getCXXIdExprName(Parts.size(), &Parts[0]);
+    DeclarationNameInfo NameInfo(Name, OpLoc);
+    NameInfo.setCXXIdExprNameRange({OpLoc, EndLoc});
+    return NameInfo;
   }
 
+  SmallString<256> Buf;
+  llvm::raw_svector_ostream OS(Buf);
   for (std::size_t I = 0; I < Parts.size(); ++I) {
     Expr *E = Parts[I];
+
+    assert(!E->isTypeDependent() && !E->isValueDependent() 
+        && "Dependent name component");
 
     // Get the type of the reflection.
     QualType T = E->getType();
@@ -468,35 +467,59 @@ bool Sema::BuildDeclnameId(SmallVectorImpl<Expr *>& Parts,
     }
     T = Context.getCanonicalType(T);
 
+
     SourceLocation ExprLoc = E->getLocStart();
 
     // Evaluate the sub-expression (depending on type) in order to compute
     // a string part that will constitute a declaration name.
     if (T->isConstantArrayType()) {
-      AppendCharacterArray(*this, OS, E, T);
+      if (!AppendCharacterArray(*this, OS, E, T))
+        return DeclarationNameInfo();
     }
     else if (T->isPointerType()) {
-      AppendCharacterPointer(*this, OS, E, T);
+      if (!AppendCharacterPointer(*this, OS, E, T))
+        return DeclarationNameInfo();
     }
     else if (T->isIntegerType()) {
       if (I == 0) {
         // An identifier cannot start with an integer value.
         Diag(ExprLoc, diag::err_declname_with_integer_prefix);
-        return true;
+        return DeclarationNameInfo();
       }
-      AppendInteger(*this, OS, E, T);
+      if (!AppendInteger(*this, OS, E, T))
+        return DeclarationNameInfo();
     }
     else if (T->isRecordType()) {
-      AppendReflection(*this, OS, E, T);
+      if (!AppendReflection(*this, OS, E, T))
+        return DeclarationNameInfo();
     }
     else {
       Diag(ExprLoc, diag::err_declname_invalid_operand_type) << T;
-      return true;
+      return DeclarationNameInfo();
     }
   }
 
-  IdentifierInfo *II = &PP.getIdentifierTable().get(Buf);
-  Result.setIdentifier(II, KWLoc);
+  // FIXME: Should we always return a declaration name?
+  IdentifierInfo *Id = &PP.getIdentifierTable().get(Buf);
+  DeclarationName Name = Context.DeclarationNames.getIdentifier(Id);
+  return DeclarationNameInfo(Name, OpLoc);
+}
+
+/// Constructs a new identifier from the expressions in Parts. Returns false
+/// if no errors were encountered.
+bool Sema::BuildDeclnameId(SmallVectorImpl<Expr *>& Parts, 
+                           UnqualifiedId& Result,
+                           SourceLocation KWLoc,
+                           SourceLocation LParenLoc, 
+                           SourceLocation RParenLoc) {
+  DeclarationNameInfo NameInfo = BuildIdExprName(KWLoc, Parts, RParenLoc);
+  DeclarationName Name = NameInfo.getName();
+  if (!Name)
+    return true;
+  if (Name.getNameKind() == DeclarationName::CXXIdExprName)
+    Result.setIdExprOperator(KWLoc, Name.getCXXIdExprArguments(), RParenLoc);
+  else
+    Result.setIdentifier(Name.getAsIdentifierInfo(), KWLoc);
   return false;
 }
 

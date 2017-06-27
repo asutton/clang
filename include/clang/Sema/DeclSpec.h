@@ -983,7 +983,7 @@ public:
 
     /// \brief When Kind == IK_IdExprOperator. Memory for this array is allocated
     /// by the context.
-    Expr **NameComponents;
+    llvm::ArrayRef<Expr *> NameComponents;
   };
   
   /// \brief The location of the first token that describes this unqualified-id,
@@ -1134,7 +1134,7 @@ public:
   /// \param OpLoc The location of the the operator keyword.
   /// \param Args The array of arguments for the operator.
   /// \param ParenLoc The location of the close paren.
-  void setIdExprOperator(SourceLocation OpLoc, Expr** Args, 
+  void setIdExprOperator(SourceLocation OpLoc, llvm::ArrayRef<Expr *> Args, 
                          SourceLocation ParenLoc) {
     Kind = IK_IdExprOperator;
     NameComponents = Args;

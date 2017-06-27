@@ -8382,6 +8382,9 @@ public:
   /// \brief An opaque pointer to the reflected node.
   void* getReflectionNode(const APValue &V);
 
+  DeclarationNameInfo BuildIdExprName(SourceLocation OpLoc, 
+                                      SmallVectorImpl<Expr *>& Parts,
+                                      SourceLocation EndLoc);
   bool BuildDeclnameId(SmallVectorImpl<Expr *>& Parts, UnqualifiedId& Result,
                        SourceLocation KWLoc, SourceLocation LParenLoc,
                        SourceLocation RParenLoc);

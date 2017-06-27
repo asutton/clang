@@ -27,7 +27,9 @@ namespace clang {
   class CXXLiteralOperatorIdName;
   class CXXOperatorIdName;
   class CXXSpecialName;
+  class CXXIdExprNameExtra;
   class DeclarationNameExtra;
+  class Expr;
   class IdentifierInfo;
   class MultiKeywordSelector;
   enum OverloadedOperatorKind : int;
@@ -61,6 +63,7 @@ public:
     CXXDeductionGuideName,
     CXXOperatorName,
     CXXLiteralOperatorName,
+    CXXIdExprName,
     CXXUsingDirective
   };
   static const unsigned NumNameKinds = CXXUsingDirective + 1;
@@ -143,6 +146,12 @@ private:
   CXXLiteralOperatorIdName *getAsCXXLiteralOperatorIdName() const {
     if (getNameKind() == CXXLiteralOperatorName)
       return reinterpret_cast<CXXLiteralOperatorIdName *>(getExtra());
+    return nullptr;
+  }
+
+  CXXIdExprNameExtra *getAsCXXIdExprName() const { 
+    if (getNameKind() == CXXIdExprName)
+      return reinterpret_cast<CXXIdExprNameExtra *>(getExtra());
     return nullptr;
   }
 
@@ -262,6 +271,10 @@ public:
   /// operator, retrieve the identifier associated with it.
   IdentifierInfo *getCXXLiteralIdentifier() const;
 
+  /// getCXXIdExprArguments - If this is an idexpr name, retrieve the list
+  /// of arguments.
+  llvm::ArrayRef<Expr *> getCXXIdExprArguments() const;
+
   /// getObjCSelector - Get the Objective-C selector stored in this
   /// declaration name.
   Selector getObjCSelector() const {
@@ -348,6 +361,7 @@ class DeclarationNameTable {
   CXXOperatorIdName *CXXOperatorNames; // Operator names
   void *CXXLiteralOperatorNames; // Actually a CXXOperatorIdName*
   void *CXXDeductionGuideNames; // FoldingSet<CXXDeductionGuideNameExtra> *
+  void *CXXIdExprNames; // FoldingSet<CXXIdExperName> *
 
   DeclarationNameTable(const DeclarationNameTable&) = delete;
   void operator=(const DeclarationNameTable&) = delete;
@@ -390,6 +404,9 @@ public:
   /// getCXXLiteralOperatorName - Get the name of the literal operator function
   /// with II as the identifier.
   DeclarationName getCXXLiteralOperatorName(IdentifierInfo *II);
+
+  /// getCXXIdExprName - Get a name computed from the given arguments.
+  DeclarationName getCXXIdExprName(std::size_t NumArgs, Expr **Args);
 };
 
 /// DeclarationNameLoc - Additional source/type location info
@@ -517,6 +534,22 @@ public:
   void setCXXLiteralOperatorNameLoc(SourceLocation Loc) {
     assert(Name.getNameKind() == DeclarationName::CXXLiteralOperatorName);
     LocInfo.CXXLiteralOperatorName.OpNameLoc = Loc.getRawEncoding();
+  }
+
+  /// The source range of the idexpr operator.
+  /// Reuses the structure of operator names.
+  SourceRange getCXXIdExprNameRange() const { 
+    assert(Name.getNameKind() == DeclarationName::CXXIdExprName);
+    return SourceRange(
+     SourceLocation::getFromRawEncoding(LocInfo.CXXOperatorName.BeginOpNameLoc),
+     SourceLocation::getFromRawEncoding(LocInfo.CXXOperatorName.EndOpNameLoc)
+                      );
+  }
+  /// Sets the range of the operator name.
+  void setCXXIdExprNameRange(SourceRange R) {
+    assert(Name.getNameKind() == DeclarationName::CXXIdExprName);
+    LocInfo.CXXOperatorName.BeginOpNameLoc = R.getBegin().getRawEncoding();
+    LocInfo.CXXOperatorName.EndOpNameLoc = R.getEnd().getRawEncoding();
   }
 
   /// \brief Determine whether this name involves a template parameter.

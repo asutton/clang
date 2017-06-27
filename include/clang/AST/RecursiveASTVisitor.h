@@ -785,6 +785,10 @@ bool RecursiveASTVisitor<Derived>::TraverseDeclarationNameInfo(
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
+  case DeclarationName::CXXIdExprName: {
+    for (Expr *E : NameInfo.getName().getCXXIdExprArguments())
+      TRY_TO(TraverseStmt(E));
+  }
   case DeclarationName::CXXUsingDirective:
     break;
   }
