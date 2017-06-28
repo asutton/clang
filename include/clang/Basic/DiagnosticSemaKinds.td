@@ -9009,6 +9009,9 @@ def err_not_a_reflection : Error<
 def err_modifies_mem_spec_of_non_member : Error<
   "modifying the %select{access|virtual}0-specifier of a "
   "non-member declaration">;
+def err_cannot_make_pure_virtual : Error<
+  "function cannot be made pure virtual; it is already "
+  "%select{defined|defaulted|deleted}0">;
 def err_invalid_access_specifier : Error<
   "invalid access specifier">;
 def err_pure_function_with_definition : Error<

@@ -1695,8 +1695,13 @@ bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
 
   // But it's only pure when the 2nd operand is non-zero.
   if (Vals[1].getExtValue()) {
-    if (Method->isDefined() && !isa<CXXDestructorDecl>(Method)) {
-      Diag(E->getLocStart(), diag::err_pure_function_with_definition);
+    int Err = 0;
+    Method->dump();
+    if (Method->isDefaulted()) Err = 2;
+    else if (Method->isDeleted()) Err = 3;
+    else if (Method->isDefined()) Err = 1;
+    if (Err) {
+      Diag(E->getLocStart(), diag::err_cannot_make_pure_virtual) << (Err - 1);
       return false;
     }
     CheckPureMethod(Method, Method->getSourceRange());

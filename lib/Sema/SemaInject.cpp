@@ -241,6 +241,9 @@ static bool InvalidInjection(Sema& S, SourceLocation POI, int SK,
 class SourceCodeInjector : public TreeTransform<SourceCodeInjector> {
   using BaseType = TreeTransform<SourceCodeInjector>;
 
+  // For convenience.
+  ASTContext &Ctx;
+
   // The declaration context containing the code to be injected. This is either
   // a function (for block injection), a class (for class injection), or a
   // namespace (for namespace injection).
@@ -248,7 +251,8 @@ class SourceCodeInjector : public TreeTransform<SourceCodeInjector> {
 
 public:
   SourceCodeInjector(Sema &SemaRef, DeclContext *DC)
-      : TreeTransform<SourceCodeInjector>(SemaRef), SrcContext(DC) {}
+      : TreeTransform<SourceCodeInjector>(SemaRef), Ctx(SemaRef.Context),
+        SrcContext(DC) {}
 
   // Always rebuild nodes; we're effectively copying from one AST to another.
   bool AlwaysRebuild() const { return true; }
@@ -259,7 +263,7 @@ public:
     transformedLocalDecl(From, To);
   }
 
-  // QualType TransformReflectedType(TypeLocBuilder &TLB, ReflectedTypeLoc TL);
+  TypeSourceInfo *TransformNonReflectedType(TypeSourceInfo *TSI);
 
   Decl *TransformDecl(Decl *D);
   Decl *TransformDecl(SourceLocation, Decl *D);
@@ -283,14 +287,19 @@ Decl *SourceCodeInjector::TransformDecl(Decl *D) {
   return TransformDecl(D->getLocation(), D);
 }
 
-// // Canonicalize reflected types; we don't want these in the output AST.
-// QualType SourceCodeInjector::TransformReflectedType(TypeLocBuilder &TLB, 
-//                                                     ReflectedTypeLoc TL)
-// {
-//   return BaseType::TransformReflectedType(TLB, TL);
-//   // TLB.clear();
-//   // return TransformType(getSema().Context.getCanonicalType(T));
-// }
+/// Transform the given type. Strip reflected types from the result so that
+/// the resulting AST no longer contains references to a reflected name.
+TypeSourceInfo * SourceCodeInjector::TransformNonReflectedType(
+                                                          TypeSourceInfo *TSI) {
+  TSI = TransformType(TSI);
+  QualType T = TSI->getType();
+  TypeLoc TL = TSI->getTypeLoc();
+  if (T->isReflectedType()) {
+    T = Ctx.getCanonicalType(TSI->getType());
+    TSI = Ctx.getTrivialTypeSourceInfo(T, TL.getLocStart());
+  }
+  return TSI;
+}
 
 Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   if (!D)
@@ -342,14 +351,10 @@ Decl *SourceCodeInjector::TransformDeclImpl(SourceLocation Loc, Decl *D) {
 }
 
 Decl *SourceCodeInjector::TransformVarDecl(VarDecl *D) {
-  TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
-  VarDecl *R = VarDecl::Create(SemaRef.Context, 
-                               SemaRef.CurContext, 
-                               D->getLocation(), 
-                               D->getLocation(),
-                               D->getIdentifier(), 
-                               TypeInfo->getType(), 
-                               TypeInfo, 
+  TypeSourceInfo *TypeInfo = TransformNonReflectedType(D->getTypeSourceInfo());
+  VarDecl *R = VarDecl::Create(Ctx, SemaRef.CurContext, D->getLocation(),
+                               D->getLocation(), D->getIdentifier(),
+                               TypeInfo->getType(), TypeInfo,
                                D->getStorageClass());
   transformedLocalDecl(D, R);
 
@@ -394,8 +399,8 @@ Decl *SourceCodeInjector::TransformVarDecl(VarDecl *D) {
 
 
 Decl *SourceCodeInjector::TransformParmVarDecl(ParmVarDecl *D) {
-  TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
-  auto *R = SemaRef.CheckParameter(SemaRef.Context.getTranslationUnitDecl(),
+  TypeSourceInfo *TypeInfo = TransformNonReflectedType(D->getTypeSourceInfo());
+  auto *R = SemaRef.CheckParameter(Ctx.getTranslationUnitDecl(),
                                    D->getLocation(), D->getLocation(),
                                    D->getIdentifier(), TypeInfo->getType(),
                                    TypeInfo, D->getStorageClass());
@@ -409,7 +414,7 @@ Decl *SourceCodeInjector::TransformParmVarDecl(ParmVarDecl *D) {
 
 Decl *SourceCodeInjector::TransformFunctionDecl(FunctionDecl *D) {
   DeclarationNameInfo NameInfo = TransformDeclarationNameInfo(D->getNameInfo());
-  TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
+  TypeSourceInfo *TypeInfo = TransformNonReflectedType(D->getTypeSourceInfo());
   FunctionDecl *R = FunctionDecl::Create(
       SemaRef.Context, SemaRef.CurContext, D->getLocation(), NameInfo.getLoc(),
       NameInfo.getName(), TypeInfo->getType(), TypeInfo, D->getStorageClass(),
@@ -431,7 +436,7 @@ Decl *SourceCodeInjector::TransformFunctionDecl(FunctionDecl *D) {
 }
 
 Decl *SourceCodeInjector::TransformFieldDecl(FieldDecl *D) {
-  TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
+  TypeSourceInfo *TypeInfo = TransformNonReflectedType(D->getTypeSourceInfo());
   FieldDecl *R = FieldDecl::Create(
       SemaRef.Context, SemaRef.CurContext, D->getLocation(), D->getLocation(),
       D->getIdentifier(), TypeInfo->getType(), TypeInfo,
@@ -496,26 +501,26 @@ Decl *SourceCodeInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
 
   // FIXME: The exception specification is not being translated correctly
   // for destructors (probably others).
-  TypeSourceInfo *TypeInfo = TransformType(D->getTypeSourceInfo());
+  TypeSourceInfo *TSI = TransformNonReflectedType(D->getTypeSourceInfo());
 
   // FIXME: Handle conversion operators.
   CXXRecordDecl *CurClass = cast<CXXRecordDecl>(SemaRef.CurContext);
   CXXMethodDecl *R;
   if (auto *Ctor = dyn_cast<CXXConstructorDecl>(D))
-    R = CXXConstructorDecl::Create(SemaRef.Context, CurClass, D->getLocation(),
-                                   NameInfo, TypeInfo->getType(), TypeInfo,
+    R = CXXConstructorDecl::Create(Ctx, CurClass, D->getLocation(),
+                                   NameInfo, TSI->getType(), TSI,
                                    Ctor->isExplicitSpecified(),
                                    Ctor->isInlineSpecified(),
                                    /*isImplicitlyDeclared=*/false,
                                    Ctor->isConstexpr(), InheritedConstructor());
   else if (isa<CXXDestructorDecl>(D))
-    R = CXXDestructorDecl::Create(SemaRef.Context, CurClass, D->getLocation(),
-                                  NameInfo, TypeInfo->getType(), TypeInfo,
+    R = CXXDestructorDecl::Create(Ctx, CurClass, D->getLocation(),
+                                  NameInfo, TSI->getType(), TSI,
                                   D->isInlineSpecified(),
                                   /*isImplicitlyDeclared=*/false);
   else
-    R = CXXMethodDecl::Create(SemaRef.Context, CurClass, D->getLocStart(),
-                              NameInfo, TypeInfo->getType(), TypeInfo,
+    R = CXXMethodDecl::Create(Ctx, CurClass, D->getLocStart(),
+                              NameInfo, TSI->getType(), TSI, 
                               D->getStorageClass(), D->isInlineSpecified(),
                               D->isConstexpr(), D->getLocEnd());
   transformedLocalDecl(D, R);

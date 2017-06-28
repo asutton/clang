@@ -1705,6 +1705,7 @@ public:
   bool isInterfaceType() const;
   bool isStructureOrClassType() const;
   bool isUnionType() const;
+  bool isReflectedType() const;
   bool isComplexIntegerType() const;            // GCC _Complex integer type.
   bool isVectorType() const;                    // GCC vector type.
   bool isExtVectorType() const;                 // Extended vector type.
@@ -5833,6 +5834,9 @@ inline bool Type::isRecordType() const {
 }
 inline bool Type::isEnumeralType() const {
   return isa<EnumType>(CanonicalType);
+}
+inline bool Type::isReflectedType() const {
+  return isa<ReflectedType>(CanonicalType);
 }
 inline bool Type::isAnyComplexType() const {
   return isa<ComplexType>(CanonicalType);
