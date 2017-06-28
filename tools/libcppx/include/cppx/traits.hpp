@@ -35,6 +35,7 @@ enum access_kind : unsigned {
   public_access,
   private_access,
   protected_access,
+  default_access, // Not a real access specifier
 };
 
 // Access specifiers are always stored in bits 3 and 4.
@@ -56,7 +57,7 @@ static constexpr storage_kind get_storage(unsigned n) {
   return storage_kind((n & 0x30) >> 2);
 }
 
-// All declarations have linkage and access.
+// All named declarations have linkage and access.
 struct decl_traits {
   constexpr explicit decl_traits(unsigned n)
     : linkage      (get_linkage(n)), // 0x01 | 0x02

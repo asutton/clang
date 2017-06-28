@@ -591,8 +591,9 @@ static char const *GetReflectionClass(Decl *D) {
     return "tu";
   case Decl::Var:
     return "variable";
-  case Decl::Constexpr:
   case Decl::AccessSpec:
+    return "access_spec";
+  case Decl::Constexpr:
     // Return a placeholder for a declaration. These shouldn't be exposed in
     // the AST, but it's difficult to suppress (we'd have to filter the tuple
     // accessors). For now, push this responsibility onto the library.
@@ -655,6 +656,20 @@ ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
 static char const *GetReflectionClass(QualType T) {
   T = T.getCanonicalType();
   switch (T->getTypeClass()) {
+  case Type::Pointer:
+    return "pointer_type";
+  case Type::LValueReference:
+  case Type::RValueReference:
+    // FIXME: Differentiate lvalue/rvlaue.
+    return "reference_type";
+  case Type::MemberPointer:
+    return "member_pointer";
+  case Type::ConstantArray:
+  case Type::IncompleteArray:
+    return "array_type";
+  case Type::FunctionProto:
+  case Type::FunctionNoProto:
+    return "function_type";
   case Type::Record:
     if (T->isUnionType())
       return "union_type";
@@ -662,7 +677,9 @@ static char const *GetReflectionClass(QualType T) {
   case Type::Enum:
     return "enum_type";
   default:
-    return "type"; // FIXME: Wrong! We should have a class for each type.
+    // FIXME: This probably isn't what we want. We should have a class 
+    // for each type.
+    return "fundamental_type"; 
   }
 }
 
@@ -1138,9 +1155,25 @@ static StorageTrait getStorage(VarDecl *D) {
   return NoStorage;
 }
 
+// Traits for access specifiers.
+//
+// We keep linkage in the object for ease of library implementation. This
+// is always set to LinkNone.
+struct BasicTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+};
+
+static BasicTraits getBasicTraits(Decl *D) {
+  BasicTraits T = BasicTraits();
+  T.Linkage = LinkNone;
+  T.Access = getAccess(D);
+  return T;
+}
+
 /// Traits for named objects.
 ///
-/// Note that a variable can be declared \c extern and not be defined.
+/// Note that a variable can be declared extern and not be defined.
 struct VariableTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
@@ -1392,6 +1425,7 @@ static inline std::uint32_t LaunderTraits(Traits S) {
 ExprResult Reflector::ReflectTraits(Decl *D) {
   ASTContext &C = S.Context;
 
+  // FIXME: Use a switch.
   std::uint32_t Traits;
   if (VarDecl *Var = dyn_cast<VarDecl>(D))
     Traits = LaunderTraits(getVariableTraits(Var));
@@ -1411,8 +1445,11 @@ ExprResult Reflector::ReflectTraits(Decl *D) {
     Traits = LaunderTraits(getValueTraits(Enum));
   else if (NamespaceDecl *Ns = dyn_cast<NamespaceDecl>(D))
     Traits = LaunderTraits(getNamespaceTraits(Ns));
+  else if (AccessSpecDecl *Access = dyn_cast<AccessSpecDecl>(D)) {
+    Traits = LaunderTraits(getBasicTraits(Access));
+  }
   else
-    llvm_unreachable("Unsupported declaration");
+    llvm_unreachable("Requested traits for unsupported declaration");
 
   // FIXME: This needs to be at least 32 bits, 0 extended if greater.
   llvm::APSInt N = C.MakeIntValue(Traits, C.UnsignedIntTy);
@@ -1696,7 +1733,6 @@ bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
   // But it's only pure when the 2nd operand is non-zero.
   if (Vals[1].getExtValue()) {
     int Err = 0;
-    Method->dump();
     if (Method->isDefaulted()) Err = 2;
     else if (Method->isDeleted()) Err = 3;
     else if (Method->isDefined()) Err = 1;
@@ -1859,7 +1895,8 @@ void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD,
   Definition = CXXRecordDecl::Create(
       Context, Kind, CurContext, Metaclass->getLocStart(),
       Metaclass->getLocation(), Metaclass->getIdentifier());
-  Definition->setImplicit();
+  Definition->setImplicit(true);
+  Definition->setFragment(true);
   CurContext->addHiddenDecl(Definition);
   Definition->startDefinition();
   assert(Definition->isMetaclassDefinition() && "Broken metaclass definition");

@@ -344,9 +344,12 @@ Decl *SourceCodeInjector::TransformDeclImpl(SourceLocation Loc, Decl *D) {
     return TransformCXXDestructorDecl(cast<CXXDestructorDecl>(D));
   case Decl::Field:
     return TransformFieldDecl(cast<FieldDecl>(D));
+  case Decl::AccessSpec:
+    return D;
   case Decl::Constexpr:
     return TransformConstexprDecl(cast<ConstexprDecl>(D));
   }
+  D->dump();
   llvm_unreachable("Injecting unknown declaration");
 }
 

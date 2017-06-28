@@ -27,12 +27,103 @@ template<typename T> struct is_function_or_method_trait;
 // The type of a reflected AST node.
 using reflection_t = std::intptr_t;
 
-// Reflections for all traits
-template<reflection_t X>
-struct decl {
+/// The many different kinds of reflections.
+enum reflection_kind {
+  translation_unit_kind,
+  namespace_decl_kind,
+  variable_decl_kind,
+  function_decl_kind,
+  parameter_decl_kind,
+  member_variable_decl_kind,
+  member_function_decl_kind,
+  access_decl_kind,
+  enumerator_decl_kind,
+  internal_decl_kind,
+  
+  fundamental_type_kind,
+  pointer_type_kind,
+  array_type_kind,
+  function_type_kind,
+  reference_type_kind,
+  member_pointer_type_kind,
+  class_type_kind,
+  union_type_kind,
+  enum_type_kind,
+};
+
+// The base class of all reflected entities.
+template<reflection_t X, reflection_kind K>
+struct entity {
   static constexpr void print() {
     return __reflect_print(X);
   }
+  
+  static constexpr reflection_kind kind() {
+    return K;
+  }
+  static constexpr bool is_translation_unit() {
+    return K == translation_unit_kind;
+  }
+  static constexpr bool is_namespace() {
+    return K == namespace_decl_kind;
+  }
+  static constexpr bool is_variable() {
+    return K == variable_decl_kind;
+  }
+  static constexpr bool is_function() {
+    return K == function_decl_kind;
+  }
+  static constexpr bool is_parameter() {
+    return K == parameter_decl_kind;
+  }
+  static constexpr bool is_member_function() {
+    return K == member_function_decl_kind;
+  }
+  static constexpr bool is_member_variable() {
+    return K == member_variable_decl_kind;
+  }
+  static constexpr bool is_access_specifier() {
+    return K == access_decl_kind;
+  }
+  static constexpr bool is_enumerator() {
+    return K == enumerator_decl_kind;
+  }
+  static constexpr bool is_internal() {
+    return K == internal_decl_kind;
+  }
+  static constexpr bool is_fundamental_type() {
+    return K == fundamental_type_kind;
+  }
+  static constexpr bool is_pointer_type() {
+    return K == pointer_type_kind;
+  }
+  static constexpr bool is_array_type() {
+    return K == array_type_kind;
+  }
+  static constexpr bool is_function_type() {
+    return K == function_type_kind;
+  }
+  static constexpr bool is_reference_type() {
+    return K == reference_type_kind;
+  }
+  static constexpr bool is_member_pointer_type() {
+    return K == member_pointer_type_kind;
+  }
+  static constexpr bool is_class_type() {
+    return K == class_type_kind;
+  }
+  static constexpr bool is_union_type() {
+    return K == union_type_kind;
+  }
+  static constexpr bool is_enum_type() {
+    return K == enum_type_kind;
+  }
+};
+
+
+// The base class of all declarations.
+template<reflection_t X, reflection_kind K>
+struct decl : entity<X, K> {
   static constexpr decl_traits traits() {
     return decl_traits(__reflect_traits(X));
   }
@@ -40,12 +131,32 @@ struct decl {
 
 // A reflection of an internal entity.
 template<reflection_t X>
-struct internal {
+struct internal : decl<X, internal_decl_kind> {
+};
+
+// A reflection of an access specifier within a class definition.
+template<reflection_t X>
+struct access_spec : decl<X, access_decl_kind> {
+  static constexpr access_kind access() {
+    return decl<X, access_decl_kind>::traits().access;
+  }
+  static constexpr bool has_access() {
+    return access() != no_access;
+  }
+  static constexpr bool is_public() {
+    return access() == public_access;
+  }
+  static constexpr bool is_private() {
+    return access() == private_access;
+  }
+  static constexpr bool is_protected() {
+    return access() == protected_access;
+  }
 };
 
 // A helper class that provides support for named entities.
-template<reflection_t X>
-struct named : decl<X> {
+template<reflection_t X, reflection_kind K>
+struct named : decl<X, K> {
   static constexpr char const* name() {
     return __reflect_name(X);
   }
@@ -61,7 +172,7 @@ struct named : decl<X> {
   }
 
   static constexpr linkage_kind linkage() {
-    return decl<X>::traits().linkage;
+    return decl<X, K>::traits().linkage;
   }
   static constexpr bool has_linkage() {
     return linkage() != no_linkage;
@@ -74,7 +185,7 @@ struct named : decl<X> {
   }
 
   static constexpr access_kind access() {
-    return decl<X>::traits().access;
+    return decl<X, K>::traits().access;
   }
   static constexpr bool has_access() {
     return access() != no_access;
@@ -107,10 +218,8 @@ struct named : decl<X> {
 //
 // Scoped declarations are also tuples over their members.
 template<reflection_t X>
-struct scope
-{
-  struct member_info
-  {
+struct scope {
+  struct member_info {
     static constexpr std::size_t size() {
       return __reflect_num_members(X);
     }
@@ -137,29 +246,25 @@ struct scope
 // Returns the Ith element in the filtered tuple.
 template<std::size_t I, reflection_t X>
 constexpr auto
-get(scope<X> const& t)
-{
+get(scope<X> const& t) {
   return get<I>(t.members());
 }
 
 // Returns the Ith element in the filtered tuple as a constant expression.
 template<std::size_t I, reflection_t X>
 constexpr auto
-cget(scope<X> const& t)
-{
+cget(scope<X> const& t) {
   return get<I>(t.members());
 }
 
 // Reflects the current translation unit.
 template<reflection_t X>
-struct tu : scope<X>
-{
+struct tu : decl<X, translation_unit_kind>, scope<X> {
 };
 
 // Reflects a namespace.
 template<reflection_t X>
-struct ns : named<X>, scope<X>
-{
+struct ns : named<X, namespace_decl_kind>, scope<X> {
   static constexpr namespace_traits traits() {
     return namespace_traits(__reflect_traits(X));
   }
@@ -169,21 +274,44 @@ struct ns : named<X>, scope<X>
 };
 
 // Base class of the type hierarchy.
+//
+// FIXME: This is woefully incomplete. Also, types are named declarations.
+template<reflection_t X, reflection_kind K>
+struct type : named<X, K> {
+};
+
 template<reflection_t X>
-struct type : named<X>
-{
+struct fundamental_type : type<X, fundamental_type_kind> {
+};
+
+template<reflection_t X>
+struct pointer_type : type<X, pointer_type_kind> {
+};
+
+template<reflection_t X>
+struct reference_type : type<X, reference_type_kind> {
+};
+
+template<reflection_t X>
+struct array_type : type<X, array_type_kind> {
+};
+
+template<reflection_t X>
+struct function_type : type<X, function_type_kind> {
+};
+
+template<reflection_t X>
+struct member_pointer_type : type<X, member_pointer_type_kind> {
 };
 
 // All user-defined types define a scope.
-template<reflection_t X>
-struct user_defined_type : type<X>, scope<X>
-{
+template<reflection_t X, reflection_kind K>
+struct user_defined_type : type<X, K>, scope<X> {
 };
 
 // A useful base class for class and union types.
-template<reflection_t X>
-struct member_type : user_defined_type<X>
-{
+template<reflection_t X, reflection_kind K>
+struct member_type : user_defined_type<X, K> {
   using member_info = typename scope<X>::member_info;
   using var_tuple = filtered_tuple<member_info, is_variable_or_field_trait>;
   using memvar_tuple = filtered_tuple<member_info, is_member_variable_trait>;
@@ -235,31 +363,30 @@ struct member_type : user_defined_type<X>
 };
 
 template<reflection_t X>
-struct class_type : member_type<X>
-{
+struct class_type : member_type<X, class_type_kind> {
   static constexpr bool is_polymorphic() {
-    return member_type<X>::traits().is_polymorphic;
+    return member_type<X, class_type_kind>::traits().is_polymorphic;
   }
   static constexpr bool is_abstract() {
-    return member_type<X>::traits().is_abstract;
+    return member_type<X, class_type_kind>::traits().is_abstract;
   }
   static constexpr bool is_final() {
-    return member_type<X>::traits().is_final;
+    return member_type<X, class_type_kind>::traits().is_final;
   }
   static constexpr bool is_empty() {
-    return member_type<X>::traits().is_empty;
+    return member_type<X, class_type_kind>::traits().is_empty;
   }
+
+  using entity<X, class_type_kind>::is_member_variable;
 };
 
 template<reflection_t X>
-struct union_type : member_type<X>
-{
+struct union_type : member_type<X, union_type_kind> {
   // TODO: Are there any interesting traits here?
 };
 
 template<reflection_t X>
-struct enum_type : user_defined_type<X>
-{
+struct enum_type : user_defined_type<X, enum_type_kind> {
   static constexpr enum_traits traits() {
     return enum_traits(__reflect_traits(X));
   }
@@ -276,9 +403,8 @@ struct enum_type : user_defined_type<X>
 // A typed entity is an entity described by a type: objects, references,
 // and functions (and presumably also values?). Note that an expression
 // is not an entity.
-template<reflection_t X>
-struct typed
-{
+template<reflection_t X, reflection_kind K>
+struct typed : named<X, K> {
   static constexpr auto type() {
     return __reflect_type(X);
   }
@@ -288,9 +414,8 @@ struct typed
   }
 };
 
-template<reflection_t X>
-struct variable : named<X>, typed<X>
-{
+template<reflection_t X, reflection_kind K>
+struct valued : typed<X, K> {
   static constexpr variable_traits traits() {
     return variable_traits(__reflect_traits(X));
   }
@@ -312,7 +437,7 @@ struct variable : named<X>, typed<X>
     return traits().is_inline;
   }
   static constexpr bool is_constexpr() {
-    return decl<X>::is_constexpr;
+    return traits().is_constexpr;
   }
 
   static constexpr auto pointer() {
@@ -320,9 +445,13 @@ struct variable : named<X>, typed<X>
   }
 };
 
+
 template<reflection_t X>
-struct function : named<X>, typed<X>
-{
+struct variable : valued<X, variable_decl_kind> {
+};
+
+template<reflection_t X>
+struct function : typed<X, function_decl_kind> {
   struct parm_info
   {
     static constexpr std::size_t size() {
@@ -369,7 +498,7 @@ struct function : named<X>, typed<X>
 
 // A helper class for member functions.
 template<reflection_t X>
-struct method : named<X>, typed<X> {
+struct method : typed<X, member_function_decl_kind> {
   static constexpr method_traits traits() {
     return method_traits(__reflect_traits(X));
   }
@@ -481,7 +610,7 @@ struct method : named<X>, typed<X> {
 
 // A member variable is a non-static data member.
 template<reflection_t X>
-struct field : named<X>, typed<X> {
+struct field : typed<X, member_variable_decl_kind> {
   static constexpr field_traits traits() {
     return field_traits(__reflect_traits(X));
   }
@@ -497,16 +626,14 @@ struct field : named<X>, typed<X> {
 
 // A function parameter is essentially a variable.
 template<reflection_t X>
-struct parameter : variable<X>
-{
+struct parameter : valued<X, parameter_decl_kind> {
 };
 
 // An enumeration value.
 //
 // NOTE: Value traits do not currently differ from decl traits.
 template<reflection_t X>
-struct enumerator : named<X>, typed<X>
-{
+struct enumerator : typed<X, enumerator_decl_kind> {
   static constexpr auto value() {
     return __reflect_value(X);
   }

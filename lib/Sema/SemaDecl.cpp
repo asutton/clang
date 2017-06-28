@@ -14704,11 +14704,11 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
 
   // If the record subscribes to a metaclass, then we need to inject and
   // apply those declarations prior to analysis.
+  bool HasMetaclass = false;
   if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
     if (MetaclassDecl *Metaclass = Class->getMetaclass()) {
+      HasMetaclass = true;
       SmallVector<Decl *, 32> InjectedFields;
-      
-      // FIXME: Re-enable injection.
       InjectMetaclassMembers(Metaclass, Class, InjectedFields);
     }
   }
@@ -14928,8 +14928,10 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
         }
 
         if (!CXXRecord->isInvalidDecl()) {
-          // Add any implicitly-declared members to this class.
-          AddImplicitlyDeclaredMembersToClass(CXXRecord);
+          // Add any implicitly-declared members to this class, unless the
+          // class was defined using a metaclass.
+          if (!HasMetaclass)
+            AddImplicitlyDeclaredMembersToClass(CXXRecord);
 
           // If we have virtual base classes, we may end up finding multiple
           // final overriders for a given virtual function. Check for this

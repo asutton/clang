@@ -74,6 +74,7 @@ namespace {
     void VisitUsingDirectiveDecl(UsingDirectiveDecl *D);
     void VisitNamespaceAliasDecl(NamespaceAliasDecl *D);
     void VisitCXXRecordDecl(CXXRecordDecl *D);
+    void VisitAccessSpecDecl(AccessSpecDecl *D);
     void VisitMetaclassDecl(MetaclassDecl *D);
     void VisitLinkageSpecDecl(LinkageSpecDecl *D);
     void VisitConstexprDecl(ConstexprDecl *D);
@@ -945,6 +946,12 @@ void DeclPrinter::VisitCXXRecordDecl(CXXRecordDecl *D) {
       Indent() << "}";
     }
   }
+}
+
+void DeclPrinter::VisitAccessSpecDecl(AccessSpecDecl *D) {
+  // This is not called directly by any other methods.
+  Print(D->getAccess());
+  Out << ":";
 }
 
 void DeclPrinter::VisitMetaclassDecl(MetaclassDecl *D) {
