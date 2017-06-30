@@ -8415,6 +8415,7 @@ public:
                                   SourceLocation RParenLoc);
   bool ModifyDeclarationAccess(ReflectionTraitExpr *E);
   bool ModifyDeclarationVirtual(ReflectionTraitExpr *E);
+  bool ModifyDeclarationConstexpr(ReflectionTraitExpr *E);
 
   // __compiler_error(constExpr)
   ExprResult ActOnCompilerErrorExpr(Expr *MessageExpr,

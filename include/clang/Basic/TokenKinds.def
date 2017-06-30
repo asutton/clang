@@ -529,6 +529,7 @@ REFLECTION_TRAIT_1(__reflect_num_members, ReflectNumMembers)
 REFLECTION_TRAIT_2(__reflect_member, ReflectMember)
 REFLECTION_TRAIT_2(__modify_access, ModifyAccess)
 REFLECTION_TRAIT_2(__modify_virtual, ModifyVirtual)
+REFLECTION_TRAIT_1(__modify_constexpr, ModifyConstexpr)
 KEYWORD(__compiler_error            , KEYALL)
 
 // Apple Extension.

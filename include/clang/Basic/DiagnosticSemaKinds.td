@@ -9016,6 +9016,8 @@ def err_invalid_access_specifier : Error<
   "invalid access specifier">;
 def err_pure_function_with_definition : Error<
   "making a defined function pure virtual">;
+def err_declration_cannot_be_made_constexpr : Error<
+  "declaration cannot be made 'constexpr'">;
 def err_range_loop_over_tuple : Error<
   "range-based loop over a tuple with type %0">;
 def note_use_loop_expansion : Note<

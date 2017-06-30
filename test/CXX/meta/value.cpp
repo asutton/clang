@@ -1,3 +1,5 @@
+// RUN: echo
+
 #include <cppx/meta>
 #include <cppx/compiler>
 

@@ -263,7 +263,7 @@ public:
     transformedLocalDecl(From, To);
   }
 
-  TypeSourceInfo *TransformNonReflectedType(TypeSourceInfo *TSI);
+  TypeSourceInfo *TransformInjectedType(TypeSourceInfo *TSI);
 
   Decl *TransformDecl(Decl *D);
   Decl *TransformDecl(SourceLocation, Decl *D);
@@ -277,6 +277,9 @@ public:
   Decl *TransformCXXDestructorDecl(CXXDestructorDecl *D);
   Decl *TransformFieldDecl(FieldDecl *D);
   Decl *TransformConstexprDecl(ConstexprDecl *D);
+  Decl *TransformTypedefNameDecl(TypedefNameDecl *D);
+  Decl *TransformTypeAliasDecl(TypeAliasDecl *D);
+  Decl *TransformTypedefDecl(TypedefDecl *D);
 
   void TransformFunctionParameters(FunctionDecl *D, FunctionDecl *R);
   void TransformFunctionDefinition(FunctionDecl *D, FunctionDecl *R);
@@ -289,8 +292,7 @@ Decl *SourceCodeInjector::TransformDecl(Decl *D) {
 
 /// Transform the given type. Strip reflected types from the result so that
 /// the resulting AST no longer contains references to a reflected name.
-TypeSourceInfo * SourceCodeInjector::TransformNonReflectedType(
-                                                          TypeSourceInfo *TSI) {
+TypeSourceInfo *SourceCodeInjector::TransformInjectedType(TypeSourceInfo *TSI) {
   TSI = TransformType(TSI);
   QualType T = TSI->getType();
   TypeLoc TL = TSI->getTypeLoc();
@@ -348,22 +350,26 @@ Decl *SourceCodeInjector::TransformDeclImpl(SourceLocation Loc, Decl *D) {
     return D;
   case Decl::Constexpr:
     return TransformConstexprDecl(cast<ConstexprDecl>(D));
+  case Decl::TypeAlias:
+    return TransformTypeAliasDecl(cast<TypeAliasDecl>(D));
   }
+
   D->dump();
   llvm_unreachable("Injecting unknown declaration");
 }
 
 Decl *SourceCodeInjector::TransformVarDecl(VarDecl *D) {
-  TypeSourceInfo *TypeInfo = TransformNonReflectedType(D->getTypeSourceInfo());
-  VarDecl *R = VarDecl::Create(Ctx, SemaRef.CurContext, D->getLocation(),
+  DeclContext *Owner = SemaRef.CurContext;
+  TypeSourceInfo *TypeInfo = TransformInjectedType(D->getTypeSourceInfo());
+  VarDecl *R = VarDecl::Create(Ctx, Owner, D->getLocation(),
                                D->getLocation(), D->getIdentifier(),
                                TypeInfo->getType(), TypeInfo,
                                D->getStorageClass());
   transformedLocalDecl(D, R);
 
-  // FIXME: Transform attributes.
+  TransformAttributes(D, R);
 
-  SemaRef.CurContext->addDecl(R);
+  Owner->addDecl(R);
 
   // Transform the initializer and associated properties of the definition.
   if (D->getInit()) {
@@ -402,7 +408,7 @@ Decl *SourceCodeInjector::TransformVarDecl(VarDecl *D) {
 
 
 Decl *SourceCodeInjector::TransformParmVarDecl(ParmVarDecl *D) {
-  TypeSourceInfo *TypeInfo = TransformNonReflectedType(D->getTypeSourceInfo());
+  TypeSourceInfo *TypeInfo = TransformInjectedType(D->getTypeSourceInfo());
   auto *R = SemaRef.CheckParameter(Ctx.getTranslationUnitDecl(),
                                    D->getLocation(), D->getLocation(),
                                    D->getIdentifier(), TypeInfo->getType(),
@@ -416,10 +422,11 @@ Decl *SourceCodeInjector::TransformParmVarDecl(ParmVarDecl *D) {
 }
 
 Decl *SourceCodeInjector::TransformFunctionDecl(FunctionDecl *D) {
+  DeclContext *Owner = SemaRef.CurContext;
   DeclarationNameInfo NameInfo = TransformDeclarationNameInfo(D->getNameInfo());
-  TypeSourceInfo *TypeInfo = TransformNonReflectedType(D->getTypeSourceInfo());
+  TypeSourceInfo *TypeInfo = TransformInjectedType(D->getTypeSourceInfo());
   FunctionDecl *R = FunctionDecl::Create(
-      SemaRef.Context, SemaRef.CurContext, D->getLocation(), NameInfo.getLoc(),
+      SemaRef.Context, Owner, D->getLocation(), NameInfo.getLoc(),
       NameInfo.getName(), TypeInfo->getType(), TypeInfo, D->getStorageClass(),
       D->isInlineSpecified(), D->hasWrittenPrototype(), D->isConstexpr());
   transformedLocalDecl(D, R);
@@ -427,36 +434,41 @@ Decl *SourceCodeInjector::TransformFunctionDecl(FunctionDecl *D) {
   TransformFunctionParameters(D, R);
 
   // Copy other properties.
-  R->setAccess(D->getAccess()); // FIXME: Is this right?
+  R->setAccess(D->getAccess());
   if (D->isDeletedAsWritten())
     SemaRef.SetDeclDeleted(R, R->getLocation());
 
+  TransformAttributes(D, R);
+
   // FIXME: Make sure that we aren't overriding an existing declaration.
-  SemaRef.CurContext->addDecl(R);
+  Owner->addDecl(R);
 
   TransformFunctionDefinition(D, R);
   return R;
 }
 
 Decl *SourceCodeInjector::TransformFieldDecl(FieldDecl *D) {
-  TypeSourceInfo *TypeInfo = TransformNonReflectedType(D->getTypeSourceInfo());
+  DeclContext *Owner = SemaRef.CurContext;
+  TypeSourceInfo *TypeInfo = TransformInjectedType(D->getTypeSourceInfo());
   FieldDecl *R = FieldDecl::Create(
-      SemaRef.Context, SemaRef.CurContext, D->getLocation(), D->getLocation(),
+      SemaRef.Context, Owner, D->getLocation(), D->getLocation(),
       D->getIdentifier(), TypeInfo->getType(), TypeInfo,
       /*Bitwidth*/ nullptr, D->isMutable(), D->getInClassInitStyle());
 
   transformedLocalDecl(D, R);
 
-  // FIXME: What other properties do we need to copy?
   R->setAccess(D->getAccess());
 
-  SemaRef.CurContext->addDecl(R);
+  TransformAttributes(D, R);
+
+  Owner->addDecl(R);
 
   // FIXME: Transform the initializer, if present.
   return R;
 }
 
 Decl *SourceCodeInjector::TransformCXXRecordDecl(CXXRecordDecl *D) {
+  DeclContext *Owner = SemaRef.CurContext;
   DeclarationNameInfo DN(D->getDeclName(), D->getLocation());
   DeclarationNameInfo DNI = TransformDeclarationNameInfo(DN);
 
@@ -464,15 +476,15 @@ Decl *SourceCodeInjector::TransformCXXRecordDecl(CXXRecordDecl *D) {
   // previous declaration of R.
 
   CXXRecordDecl *R = CXXRecordDecl::Create(SemaRef.Context, D->getTagKind(),
-                                           SemaRef.CurContext, D->getLocStart(), 
+                                           Owner, D->getLocStart(), 
                                            D->getLocation(),
                                            DNI.getName().getAsIdentifierInfo(),
                                            /*PrevDecl=*/nullptr);
   transformedLocalDecl(D, R);
 
-  // FIXME: Propagate attributes of the class.
+  TransformAttributes(D, R);
 
-  SemaRef.CurContext->addDecl(R);
+  Owner->addDecl(R);
 
   if (D->hasDefinition()) {
     R->startDefinition();
@@ -504,7 +516,7 @@ Decl *SourceCodeInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
 
   // FIXME: The exception specification is not being translated correctly
   // for destructors (probably others).
-  TypeSourceInfo *TSI = TransformNonReflectedType(D->getTypeSourceInfo());
+  TypeSourceInfo *TSI = TransformInjectedType(D->getTypeSourceInfo());
 
   // FIXME: Handle conversion operators.
   CXXRecordDecl *CurClass = cast<CXXRecordDecl>(SemaRef.CurContext);
@@ -541,8 +553,10 @@ Decl *SourceCodeInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
   if (D->isPure())
     SemaRef.CheckPureMethod(R, SourceRange());
 
+  TransformAttributes(D, R);
+
   // FIXME: Make sure that we aren't overriding an existing declaration.
-  SemaRef.CurContext->addDecl(R);
+  CurClass->addDecl(R);
 
   TransformFunctionDefinition(D, R);
   return R;
@@ -554,6 +568,70 @@ Decl *SourceCodeInjector::TransformCXXConstructorDecl(CXXConstructorDecl *D) {
 
 Decl *SourceCodeInjector::TransformCXXDestructorDecl(CXXDestructorDecl *D) {
   return TransformCXXMethodDecl(D);
+}
+
+Decl *SourceCodeInjector::TransformConstexprDecl(ConstexprDecl *D) {
+  // We can use the ActOn* members since the initial parsing for these
+  // declarations is trivial (i.e., don't have to translate declarators).
+  unsigned ScopeFlags; // Unused
+  Decl *New = SemaRef.ActOnConstexprDecl(SemaRef.getCurScope(),
+                                         D->getLocation(), ScopeFlags);
+  SemaRef.ActOnStartConstexprDecl(SemaRef.getCurScope(), New);
+  StmtResult S = TransformStmt(D->getBody());
+  if (!S.isInvalid())
+    SemaRef.ActOnFinishConstexprDecl(SemaRef.getCurScope(), New, S.get());
+  else
+    SemaRef.ActOnConstexprDeclError(SemaRef.getCurScope(), New);
+  return New;
+}
+
+Decl *SourceCodeInjector::TransformTypedefNameDecl(TypedefNameDecl *D) {
+  DeclContext *Owner = SemaRef.CurContext;
+
+  // Transform the type, guaranteeing a valid result.
+  bool Invalid = false;
+  TypeSourceInfo *TSI = TransformInjectedType (D->getTypeSourceInfo());
+  if (!TSI) {
+    TSI = Ctx.getTrivialTypeSourceInfo(D->getTypeSourceInfo()->getType());
+    Invalid = true;
+  }
+  
+
+  // Create the new typedef
+  TypedefNameDecl *R;
+  if (isa<TypeAliasDecl>(D))
+    R = TypeAliasDecl::Create(SemaRef.Context, Owner, D->getLocStart(),
+                                    D->getLocation(), D->getIdentifier(), TSI);
+  else
+    R = TypedefDecl::Create(SemaRef.Context, Owner, D->getLocStart(),
+                                  D->getLocation(), D->getIdentifier(), TSI);
+  if (Invalid)
+    R->setInvalidDecl();
+
+  // If the old typedef was the name for linkage purposes of an anonymous
+  // tag decl, re-establish that relationship for the new typedef.
+  if (const TagType *oldTagType = D->getUnderlyingType()->getAs<TagType>()) {
+    TagDecl *oldTag = oldTagType->getDecl();
+    if (oldTag->getTypedefNameForAnonDecl() == D && !Invalid) {
+      TagDecl *newTag = TSI->getType()->castAs<TagType>()->getDecl();
+      assert(!newTag->hasNameForLinkage());
+      newTag->setTypedefNameForAnonDecl(R);
+    }
+  }
+
+  R->setAccess(D->getAccess());
+  
+  TransformAttributes(D, R);
+
+  return R;
+}
+
+Decl *SourceCodeInjector::TransformTypeAliasDecl(TypeAliasDecl *D) {
+  return TransformTypedefNameDecl(D);
+}
+
+Decl *SourceCodeInjector::TransformTypedefDecl(TypedefDecl *D) {
+  return TransformTypedefNameDecl(D);
 }
 
 /// Transform each parameter of a function.
@@ -729,27 +807,14 @@ bool Sema::ApplySourceCodeModifications(SourceLocation POI,
         ModifyDeclarationAccess(E);
       else if (RTE->getTrait() == BRT_ModifyVirtual)
         ModifyDeclarationVirtual(E);
+      else if (RTE->getTrait() == URT_ModifyConstexpr)
+        ModifyDeclarationConstexpr(E);
       else
         llvm_unreachable("Unknown reflection trait");
     } else
       llvm_unreachable("Invalid injection");
   }
   return true;
-}
-
-Decl *SourceCodeInjector::TransformConstexprDecl(ConstexprDecl *D) {
-  // We can use the ActOn* members since the initial parsing for these
-  // declarations is trivial (i.e., don't have to translate declarators).
-  unsigned ScopeFlags; // Unused
-  Decl *New = SemaRef.ActOnConstexprDecl(SemaRef.getCurScope(),
-                                         D->getLocation(), ScopeFlags);
-  SemaRef.ActOnStartConstexprDecl(SemaRef.getCurScope(), New);
-  StmtResult S = TransformStmt(D->getBody());
-  if (!S.isInvalid())
-    SemaRef.ActOnFinishConstexprDecl(SemaRef.getCurScope(), New, S.get());
-  else
-    SemaRef.ActOnConstexprDeclError(SemaRef.getCurScope(), New);
-  return New;
 }
 
 
@@ -763,7 +828,7 @@ Decl *SourceCodeInjector::TransformConstexprDecl(ConstexprDecl *D) {
 /// as if the declarations were being written in-place.
 void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
                                   SmallVectorImpl<Decl *> &Fields) {
-  // llvm::errs() << "INJECT MEMBERS\n";
+  // llvm::errs() << "INJECT MEMBERS: " << Meta->getName() << '\n';
   // Meta->dump();
 
   // Make the receiving class the top-level context.
@@ -804,6 +869,7 @@ void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
     }
   }
 
+  // llvm::errs() << "DONE INJECTING: " << Meta->getName() << '\n';
   // llvm::errs() << "RESULTING CLASS\n";
   // Class->dump();
 }

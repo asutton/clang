@@ -138,7 +138,8 @@ namespace clang {
     /// \name Modifiers
     /// @{
     BRT_ModifyAccess,  ///< Second operand indicates access level.
-    BRT_ModifyVirtual  ///< Second operand is \c true to indicate pure virtual.
+    BRT_ModifyVirtual, ///< Second operand is \c true to indicate pure virtual.
+    URT_ModifyConstexpr
     /// @}
   };
 }

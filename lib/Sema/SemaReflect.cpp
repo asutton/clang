@@ -1747,6 +1747,36 @@ bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
   return true;
 }
 
+/// Modify the constexpr specifier of a given declaration.
+bool Sema::ModifyDeclarationConstexpr(ReflectionTraitExpr *E) {
+  llvm::ArrayRef<Expr *> Args(E->getArgs(), E->getNumArgs());
+  SmallVector<llvm::APSInt, 1> Vals;
+
+  CheckReflectionArgs(*this, Args, Vals);
+
+  // FIXME: Verify that this is actually a reflected node.
+  auto Info = ExplodeOpaqueValue(Vals[0].getExtValue());
+  if (Info.first != RK_Decl) {
+    Diag(E->getLocStart(), diag::err_invalid_reflection) << 0;
+    return false;
+  }
+  Decl *D = (Decl *)Info.second;
+
+  if (VarDecl *Var = dyn_cast<VarDecl>(D)) {
+    Var->setConstexpr(true);
+    CheckVariableDeclarationType(Var);
+  } else if (FunctionDecl *Fn = dyn_cast<FunctionDecl>(D)) {
+    Var->setConstexpr(true);
+    CheckConstexprFunctionDecl(Fn);
+  } else {
+    Diag(D->getLocation(), diag::err_declration_cannot_be_made_constexpr);
+    return false;
+  }
+
+  D->getDeclContext()->updateDecl(D);
+  return true;
+}
+
 /// Diagnose a type reflection error and return a type error.
 static QualType TypeReflectionError(Sema &SemaRef, Expr *E) {
   SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_type)

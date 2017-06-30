@@ -6,6 +6,8 @@
 #include <cppx/traits.hpp>
 #include <cppx/tuple.hpp>
 
+#include <cppx/compiler>
+
 namespace cppx
 {
 namespace meta
@@ -120,7 +122,6 @@ struct entity {
   }
 };
 
-
 // The base class of all declarations.
 template<reflection_t X, reflection_kind K>
 struct decl : entity<X, K> {
@@ -128,6 +129,16 @@ struct decl : entity<X, K> {
     return decl_traits(__reflect_traits(X));
   }
 };
+
+template<reflection_t X1, reflection_kind K1, reflection_t X2, reflection_kind K2>
+constexpr bool operator==(decl<X1, K1>, decl<X2, K2>) {
+  return X1 == X2;
+}
+
+template<reflection_t X1, reflection_kind K1, reflection_t X2, reflection_kind K2>
+constexpr bool operator!=(decl<X1, K1>, decl<X2, K2>) {
+  return X1 != X2;
+}
 
 // A reflection of an internal entity.
 template<reflection_t X>
@@ -440,6 +451,10 @@ struct valued : typed<X, K> {
     return traits().is_constexpr;
   }
 
+  static constexpr void make_constexpr() {
+    __modify_constexpr(X);
+  }
+
   static constexpr auto pointer() {
     return __reflect_pointer(X);
   }
@@ -473,6 +488,10 @@ struct function : typed<X, function_decl_kind> {
   }
   static constexpr bool is_noexcept() {
     return traits().is_noexcept;
+  }
+
+  static void make_constexpr() {
+    __modify_constexpr(X);
   }
 
   static constexpr bool is_defined() {
@@ -525,6 +544,10 @@ struct method : typed<X, member_function_decl_kind> {
   }
   static constexpr bool is_explicit() {
     return traits().is_explicit;
+  }
+
+  static constexpr void make_constexpr() {
+    __modify_constexpr(X);
   }
 
   // Virtual functions
@@ -610,7 +633,7 @@ struct method : typed<X, member_function_decl_kind> {
 
 // A member variable is a non-static data member.
 template<reflection_t X>
-struct field : typed<X, member_variable_decl_kind> {
+struct field : valued<X, member_variable_decl_kind> {
   static constexpr field_traits traits() {
     return field_traits(__reflect_traits(X));
   }
@@ -621,6 +644,11 @@ struct field : typed<X, member_variable_decl_kind> {
 
   static constexpr auto pointer() {
     return __reflect_pointer(X);
+  }
+
+  // FIXME: This is dumb.
+  static constexpr void make_constexpr() {
+    compiler.error("cannot make fields constexpr");
   }
 };
 
