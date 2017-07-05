@@ -1365,6 +1365,15 @@ void DeclContext::removeDecl(Decl *D) {
 }
 
 void DeclContext::addHiddenDecl(Decl *D) {
+  if (D->getLexicalDeclContext() != this) {
+    llvm::outs() << "FUCK\n";
+    D->dump();
+    llvm::outs() << "EH: " << getDeclKindName() << '\n';
+    if (CXXRecordDecl *C = dyn_cast<CXXRecordDecl>(D))
+      C->dump();
+    // ((Decl*)this)->dump();
+  }
+
   assert(D->getLexicalDeclContext() == this &&
          "Decl inserted into wrong lexical context");
   assert(!D->getNextDeclInContext() && D != LastDecl &&

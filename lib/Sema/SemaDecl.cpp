@@ -13758,13 +13758,37 @@ CreateNewDecl:
       if (isStdBadAlloc && (!StdBadAlloc || getStdBadAlloc()->isImplicit()))
         StdBadAlloc = Class;
 
-      if (Metaclass)
-        Class->setMetaclass(cast<MetaclassDecl>(Metaclass));
-
       New = Class;
     } else
       New = RecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, Name,
                                cast_or_null<RecordDecl>(PrevDecl));
+  }
+
+  if (Metaclass) {
+    // Bind the class to its metaclass specifier.
+    MetaclassDecl *Meta = cast<MetaclassDecl>(Metaclass);
+    CXXRecordDecl *Class = cast<CXXRecordDecl>(New);
+    Class->setMetaclass(Meta);
+
+    if (TUK == TUK_Definition) {
+      // When defining a prototype, construct a new, empty class of the same
+      // name. All of the normal parsing and processing is applied to the
+      // prototype, which will eventually be replaced by its context.
+      //
+      // Note that the prototype is considered a class fragment; only the
+      // parent class will be a real class.
+      CXXRecordDecl* Prototype = 
+        CXXRecordDecl::Create(Context, Kind, Class, KWLoc, Loc, Name, nullptr);
+      Prototype->setMetaclass(Meta);
+      Prototype->setFragment(true);
+
+      Class->addHiddenDecl(Prototype);
+      Class->startDefinition();
+
+      CurContext->addDecl(Class);
+
+      New = Prototype;
+    }
   }
 
   // C++11 [dcl.type]p3:
@@ -13853,6 +13877,7 @@ CreateNewDecl:
 
   // Set the lexical context. If the tag has a C++ scope specifier, the
   // lexical context will be different from the semantic context.
+  // This will also be the case for prototype classes.
   New->setLexicalDeclContext(CurContext);
 
   // Mark this as a friend decl if applicable.
@@ -13989,6 +14014,16 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
                                     SourceRange BraceRange) {
   AdjustDeclIfTemplate(TagD);
   TagDecl *Tag = cast<TagDecl>(TagD);
+
+  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Tag)) {
+    // We get here when we finish a metaclass. Adjust the tag so that we finish
+    // the right class.
+    if (Class->getMetaclass()) {
+      assert(Class->isFragment() && "expected class fragment");
+      Tag = cast<CXXRecordDecl>(Class->getDeclContext());
+    }
+  }
+
   Tag->setBraceRange(BraceRange);
 
   // Make sure we "complete" the definition even it is invalid.
@@ -14704,12 +14739,26 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
 
   // If the record subscribes to a metaclass, then we need to inject and
   // apply those declarations prior to analysis.
-  bool HasMetaclass = false;
+  bool ApplyDefaults = true;
   if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
     if (MetaclassDecl *Metaclass = Class->getMetaclass()) {
-      HasMetaclass = true;
+      assert(Class->isFragment() && "expected a class fragment");
+
+      // Mark the prototype complete before we apply the metaclass.
+      Class->completeDefinition();
+
+      CXXRecordDecl *Final = cast<CXXRecordDecl>(Class->getDeclContext());
+  
+      // Make the final class available in its declaring scope.
+      PushOnScopeChains(Final, getCurScope()->getParent(), false);
+
       SmallVector<Decl *, 32> InjectedFields;
-      InjectMetaclassMembers(Metaclass, Class, InjectedFields);
+      // InjectMetaclassMembers(Metaclass, Class, InjectedFields);
+
+      // Replace the prototype with final class.
+      Record = Final;
+      Fields = InjectedFields;
+      ApplyDefaults = false;
     }
   }
 
@@ -14928,9 +14977,7 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
         }
 
         if (!CXXRecord->isInvalidDecl()) {
-          // Add any implicitly-declared members to this class, unless the
-          // class was defined using a metaclass.
-          if (!HasMetaclass)
+          if (ApplyDefaults)
             AddImplicitlyDeclaredMembersToClass(CXXRecord);
 
           // If we have virtual base classes, we may end up finding multiple
