@@ -327,6 +327,11 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   if (!D)
     return nullptr;
 
+  // Search for a previous transformation.
+  auto Known = TransformedLocalDecls.find(D);
+  if (Known != TransformedLocalDecls.end())
+    return Known->second;
+
   // Don't transform declarations that are not local to the source context.
   //
   // FIXME: Is there a better way to determine nesting?
@@ -337,11 +342,6 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
     if (!DC)
       return D;
   }
-
-  // Search for a previous transformation.
-  auto Known = TransformedLocalDecls.find(D);
-  if (Known != TransformedLocalDecls.end())
-    return Known->second;
 
   if (Decl *R = TransformDeclImpl(Loc, D)) {
     R->setInjected(true);
@@ -857,12 +857,7 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
                           CXXRecordDecl *Proto,
                           CXXRecordDecl *Final,
                           SmallVectorImpl<Decl *> &Fields) {
-  // llvm::errs() << "INJECT MEMBERS: " << Meta->getName() << '\n';
-  // Meta->dump();
-
   CXXRecordDecl *Def = Meta->getDefinition();
-
-  llvm::outs() << "PROTO: " << Proto << '\n';
 
   // Build a new class to use as an intermediary for containing transformed
   // declarations. We'll perform a second set of substitutions to move the
@@ -897,10 +892,10 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
 
   // Perform a second transformation that injects the scratch injections into
   // the final class.
-  llvm::outs() << "FINAL: " << Final << '\n';
   {
     Sema::ContextRAII SavedContext(*this, Final);
     SourceCodeInjector Injector(*this, Scratch);
+    Injector.AddSubstitution(Scratch, Final);
     Injector.AddSubstitution(Proto, Final);
 
     for (Decl *D : Scratch->decls()) {
@@ -913,7 +908,4 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
         Fields.push_back(R);
     }
   }
-
-  // llvm::outs() << "RESULTING CLASS\n";
-  // Final->dump();
 }

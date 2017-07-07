@@ -629,12 +629,11 @@ ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
 
   // Build a template specialization, instantiate it, and then complete it.
   QualType IntPtrTy = Context.getIntPtrType();
-  llvm::APSInt IntPtrVal = Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
-  TemplateArgument Arg(Context, IntPtrVal, IntPtrTy);
-  // FIXME: WE Probably want to create a TemplateArgumentLocInfo with an
-  // expression just in case this somehow fails to be a valid template
-  // argument.
-  TemplateArgumentLoc ArgLoc(Arg, TemplateArgumentLocInfo());
+  llvm::APSInt Val = Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
+  Expr *Literal = new (Context) IntegerLiteral(Context, Val, IntPtrTy, Loc);
+  TemplateArgument Arg(Literal);
+  TemplateArgumentLocInfo ArgLocInfo(Literal);
+  TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
   TemplateArgumentListInfo TempArgs(Loc, Loc);
   TempArgs.addArgument(ArgLoc);
   QualType TempType = CheckTemplateIdType(TempName, Loc, TempArgs);
@@ -720,9 +719,11 @@ ExprResult Sema::BuildTypeReflection(SourceLocation Loc, QualType QT) {
 
   // Build a template specialization, instantiate it, and then complete it.
   QualType IntPtrTy = Context.getIntPtrType();
-  llvm::APSInt IntPtrVal = Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
-  TemplateArgument Arg(Context, IntPtrVal, IntPtrTy);
-  TemplateArgumentLoc ArgLoc(Arg, TemplateArgumentLocInfo());
+  llvm::APSInt Val = Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
+  Expr *Literal = new (Context) IntegerLiteral(Context, Val, IntPtrTy, Loc);
+  TemplateArgument Arg(Literal);
+  TemplateArgumentLocInfo ArgLocInfo(Literal);
+  TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
   TemplateArgumentListInfo TempArgs(Loc, Loc);
   TempArgs.addArgument(ArgLoc);
   QualType TempType = CheckTemplateIdType(TempName, Loc, TempArgs);

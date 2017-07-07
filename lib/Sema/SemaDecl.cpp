@@ -1212,15 +1212,6 @@ DeclContext *Sema::getContainingDC(DeclContext *DC) {
 }
 
 void Sema::PushDeclContext(Scope *S, DeclContext *DC) {
-  if (getContainingDC(DC) != CurContext) {
-    llvm::outs() << "FUCK AGAIN\n";
-    llvm::outs() << "PUSHED: " << DC->getDeclKindName() << '\n';
-    cast<FunctionDecl>(DC)->dump();
-    llvm::outs() << "ONTO: " << CurContext->getDeclKindName() << '\n';
-    cast<CXXRecordDecl>(CurContext)->dump();
-    llvm::outs() << "CONTAINING: " << getContainingDC(DC)->getDeclKindName() << '\n';
-    cast<CXXRecordDecl>(getContainingDC(DC))->dump();
-  }
   assert(getContainingDC(DC) == CurContext &&
       "The next DeclContext should be lexically contained in the current one.");
   CurContext = DC;
@@ -14756,6 +14747,7 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
   if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
     if (MetaclassDecl *Metaclass = Class->getMetaclass()) {
       assert(Class->isFragment() && "expected a class fragment");
+      assert(CurContext == Class && "current context is not the prototype");
       CXXRecordDecl *Final = cast<CXXRecordDecl>(Class->getDeclContext());
 
       // Update the prototype so we can manipulate it later.
@@ -14769,9 +14761,10 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
       ApplyMetaclass(Metaclass, Class, Final, InjectedFields);
 
       // Remove the prototype so it doesn't appear in the final AST.
-      // Final->removeDecl(Class);
+      Final->removeDecl(Class);
 
-      // Replace the prototype with final class.
+      // Replace the prototype with final class and update context, fields, etc.
+      CurContext = Final;
       Record = Final;
       Fields = InjectedFields;
       ApplyDefaults = false;
