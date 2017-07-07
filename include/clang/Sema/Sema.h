@@ -8480,8 +8480,10 @@ public:
   bool InjectClassMembers(SourceLocation POI, InjectionInfo &II);
   bool InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II);
 
-  void InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
-                              SmallVectorImpl<Decl *> &Fields);
+  void ApplyMetaclass(MetaclassDecl *Meta, 
+                      CXXRecordDecl *Proto, 
+                      CXXRecordDecl *Final,
+                      SmallVectorImpl<Decl *> &Fields);
 
   // Statements resulting from injection.
   SmallVector<Stmt *, 8> InjectedStmts;

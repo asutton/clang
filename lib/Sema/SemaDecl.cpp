@@ -1193,6 +1193,10 @@ DeclContext *Sema::getContainingDC(DeclContext *DC) {
     if (!isa<CXXRecordDecl>(DC))
       return DC;
 
+    // A function defined within its fragment is in its lexical context.
+    if (DC->isFragment())
+      return DC;
+
     // A C++ inline method/friend is parsed *after* the topmost class
     // it was declared in is fully parsed ("complete");  the topmost
     // class is the context we need to return to.
@@ -1208,6 +1212,15 @@ DeclContext *Sema::getContainingDC(DeclContext *DC) {
 }
 
 void Sema::PushDeclContext(Scope *S, DeclContext *DC) {
+  if (getContainingDC(DC) != CurContext) {
+    llvm::outs() << "FUCK AGAIN\n";
+    llvm::outs() << "PUSHED: " << DC->getDeclKindName() << '\n';
+    cast<FunctionDecl>(DC)->dump();
+    llvm::outs() << "ONTO: " << CurContext->getDeclKindName() << '\n';
+    cast<CXXRecordDecl>(CurContext)->dump();
+    llvm::outs() << "CONTAINING: " << getContainingDC(DC)->getDeclKindName() << '\n';
+    cast<CXXRecordDecl>(getContainingDC(DC))->dump();
+  }
   assert(getContainingDC(DC) == CurContext &&
       "The next DeclContext should be lexically contained in the current one.");
   CurContext = DC;
@@ -14743,17 +14756,20 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
   if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
     if (MetaclassDecl *Metaclass = Class->getMetaclass()) {
       assert(Class->isFragment() && "expected a class fragment");
-
-      // Mark the prototype complete before we apply the metaclass.
-      Class->completeDefinition();
-
       CXXRecordDecl *Final = cast<CXXRecordDecl>(Class->getDeclContext());
+
+      // Update the prototype so we can manipulate it later.
+      Class->setLexicalDeclContext(Final);
+      Class->completeDefinition();
   
       // Make the final class available in its declaring scope.
       PushOnScopeChains(Final, getCurScope()->getParent(), false);
 
       SmallVector<Decl *, 32> InjectedFields;
-      // InjectMetaclassMembers(Metaclass, Class, InjectedFields);
+      ApplyMetaclass(Metaclass, Class, Final, InjectedFields);
+
+      // Remove the prototype so it doesn't appear in the final AST.
+      // Final->removeDecl(Class);
 
       // Replace the prototype with final class.
       Record = Final;

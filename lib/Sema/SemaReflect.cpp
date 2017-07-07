@@ -1608,8 +1608,7 @@ template <typename I>
 ExprResult Reflector::GetNumMembers(I First, I Limit) {
   ASTContext &C = S.Context;
   QualType T = C.UnsignedIntTy;
-  unsigned D = std::distance(First, Limit);
-  llvm::APSInt N = C.MakeIntValue(D, T);
+  llvm::APSInt N = C.MakeIntValue(std::distance(First, Limit), T);
   return IntegerLiteral::Create(C, N, T, KWLoc);
 }
 

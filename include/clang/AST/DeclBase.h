@@ -283,7 +283,14 @@ private:
   unsigned Referenced : 1;
 
   /// \brief Whether this declaration is a member of a fragment.
-  mutable bool Injectable;
+  unsigned Injectable : 1;
+
+  /// \brief Whether this declaration was injected from a fragment.
+  /// Injectable declarations become injected declarations.
+  ///
+  /// \todo It might be worthwhile to link injected declarations to their
+  /// injectable declaration.
+  unsigned Injected : 1;
 
   /// \brief Whether statistic collection is enabled.
   static bool StatisticsEnabled;
@@ -550,11 +557,16 @@ public:
 
   void setReferenced(bool R = true) { Referenced = R; }
 
-  /// \brief Whether this declaration is is injected. Only members of a 
+  /// \brief Whether this declaration is is injectable. Only members of a 
   /// fragment are injectable.
   bool isInjectable() const { return Injectable; }
 
   void setInjectable(bool B = true) { Injectable = true; }
+
+  /// \brief Whether this declaration is is injected.
+  bool isInjected() const { return Injected; }
+
+  void setInjected(bool B = true) { Injected = true; }
 
   /// \brief Whether this declaration is a top-level declaration (function,
   /// global variable, etc.) that is lexically inside an objc container

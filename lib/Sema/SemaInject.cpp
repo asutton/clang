@@ -286,10 +286,6 @@ public:
   void TransformAttributes(Decl *D, Decl *R);
 };
 
-Decl *SourceCodeInjector::TransformDecl(Decl *D) {
-  return TransformDecl(D->getLocation(), D);
-}
-
 /// Transform the given type. Strip reflected types from the result so that
 /// the resulting AST no longer contains references to a reflected name.
 TypeSourceInfo *SourceCodeInjector::TransformInjectedType(TypeSourceInfo *TSI) {
@@ -303,6 +299,30 @@ TypeSourceInfo *SourceCodeInjector::TransformInjectedType(TypeSourceInfo *TSI) {
   return TSI;
 }
 
+Decl *SourceCodeInjector::TransformDecl(Decl *D) {
+  return TransformDecl(D->getLocation(), D);
+}
+
+/// Returns tru
+static bool IsDeclarationContext(Decl *D, DeclContext *DC) {
+  switch (D->getKind()) {
+    default:
+      return false;
+    case Decl::TranslationUnit:
+      return cast<TranslationUnitDecl>(D) == DC;
+    case Decl::Namespace:
+      return cast<NamespaceDecl>(D) == DC;
+    case Decl::CXXRecord:
+      return cast<CXXRecordDecl>(D) == DC;
+    case Decl::Function:
+    case Decl::CXXMethod:
+    case Decl::CXXConstructor:
+    case Decl::CXXDestructor:
+    case Decl::CXXConversion:
+      return cast<FunctionDecl>(D) == DC;
+  }
+}
+
 Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   if (!D)
     return nullptr;
@@ -310,20 +330,26 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   // Don't transform declarations that are not local to the source context.
   //
   // FIXME: Is there a better way to determine nesting?
-  DeclContext *DC = D->getDeclContext();
-  while (DC && DC != SrcContext)
-    DC = DC->getParent();
-  if (!DC)
-    return D;
+  if (!IsDeclarationContext(D, SrcContext)) {
+    DeclContext *DC = D->getDeclContext();
+    while (DC && DC != SrcContext)
+      DC = DC->getParent();
+    if (!DC)
+      return D;
+  }
 
   // Search for a previous transformation.
   auto Known = TransformedLocalDecls.find(D);
   if (Known != TransformedLocalDecls.end())
     return Known->second;
 
-  Decl *R = TransformDeclImpl(Loc, D);
-  TransformAttributes(D, R);
-  return R;
+  if (Decl *R = TransformDeclImpl(Loc, D)) {
+    R->setInjected(true);
+    TransformAttributes(D, R);
+    return R;
+  }
+  
+  return nullptr;
 }
 
 Decl *SourceCodeInjector::TransformDeclImpl(SourceLocation Loc, Decl *D) {
@@ -559,6 +585,7 @@ Decl *SourceCodeInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
   CurClass->addDecl(R);
 
   TransformFunctionDefinition(D, R);
+
   return R;
 }
 
@@ -826,50 +853,67 @@ bool Sema::ApplySourceCodeModifications(SourceLocation POI,
 ///
 /// Note that this is always called within the scope of the receiving class,
 /// as if the declarations were being written in-place.
-void Sema::InjectMetaclassMembers(MetaclassDecl *Meta, CXXRecordDecl *Class,
-                                  SmallVectorImpl<Decl *> &Fields) {
+void Sema::ApplyMetaclass(MetaclassDecl *Meta, 
+                          CXXRecordDecl *Proto,
+                          CXXRecordDecl *Final,
+                          SmallVectorImpl<Decl *> &Fields) {
   // llvm::errs() << "INJECT MEMBERS: " << Meta->getName() << '\n';
   // Meta->dump();
 
-  // Make the receiving class the top-level context.
-  Sema::ContextRAII SavedContext(*this, Class);
-
-  // Inject each metaclass member in turn.
   CXXRecordDecl *Def = Meta->getDefinition();
 
-  SourceCodeInjector Injector(*this, Meta);
-  Injector.AddSubstitution(Def, Class);
+  llvm::outs() << "PROTO: " << Proto << '\n';
 
-  // Propagate attributes on a metaclass to the destination class.
-  Injector.TransformAttributes(Def, Class);
+  // Build a new class to use as an intermediary for containing transformed
+  // declarations. We'll perform a second set of substitutions to move the
+  // content into the final class.
+  CXXRecordDecl *Scratch = CXXRecordDecl::Create(Context, Proto->getTagKind(),
+                                                 CurContext, 
+                                                 Proto->getLocStart(), 
+                                                 Proto->getLocation(),
+                                                 Proto->getIdentifier(),
+                                                 /*PrevDecl=*/nullptr);
+  Scratch->setFragment(true);
+  Scratch->startDefinition();
+  {
+    Sema::ContextRAII SavedContext(*this, Scratch);
+    SourceCodeInjector Injector(*this, Def);
+    Injector.AddSubstitution(Def, Proto);
 
-  // Recursively inject base classes.
-  for (CXXBaseSpecifier &B : Def->bases()) {
-    QualType T = B.getType();
-    CXXRecordDecl *BaseClass = T->getAsCXXRecordDecl();
-    assert(BaseClass->isMetaclassDefinition() && 
-           "Metaclass inheritance from regular class");
-    MetaclassDecl *BaseMeta = cast<MetaclassDecl>(BaseClass->getDeclContext());
-    InjectMetaclassMembers(BaseMeta, Class, Fields);
-  }
+    for (Decl *D : Def->decls()) {
+      if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {
+        if (RD->isInjectedClassName())
+          // Skip the injected class name.
+          continue;
+      }
 
-  // Inject the members.
-  for (Decl *D : Def->decls()) {
-    if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {
-      if (RD->isInjectedClassName())
-        // Skip the injected class name.
-        continue;
+      if (!Injector.TransformDecl(D)) {
+        Final->setInvalidDecl(true);
+        return;
+      }
     }
+  }
+  Scratch->completeDefinition();
 
-    // Inject the declaration into the class. The injection site is the
-    // closing brace of the class body.
-    if (Decl *R = Injector.TransformDecl(D)) {
+  // Perform a second transformation that injects the scratch injections into
+  // the final class.
+  llvm::outs() << "FINAL: " << Final << '\n';
+  {
+    Sema::ContextRAII SavedContext(*this, Final);
+    SourceCodeInjector Injector(*this, Scratch);
+    Injector.AddSubstitution(Proto, Final);
+
+    for (Decl *D : Scratch->decls()) {
+      Decl *R = Injector.TransformDecl(D);
+      if (!R) {
+        Final->setInvalidDecl(true);
+        return;
+      }
       if (isa<FieldDecl>(R))
         Fields.push_back(R);
     }
   }
 
-  // llvm::errs() << "DONE INJECTING: " << Meta->getName() << '\n';
-  // llvm::errs() << "RESULTING CLASS\n";
-  // Class->dump();
+  // llvm::outs() << "RESULTING CLASS\n";
+  // Final->dump();
 }
