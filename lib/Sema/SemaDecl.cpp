@@ -14765,6 +14765,7 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
 
       // Replace the prototype with final class and update context, fields, etc.
       CurContext = Final;
+      EnclosingDecl = Final;
       Record = Final;
       Fields = InjectedFields;
       ApplyDefaults = false;

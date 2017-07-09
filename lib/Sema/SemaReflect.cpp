@@ -551,8 +551,7 @@ ExprResult Sema::ActOnHasNameExpr(SourceLocation KWLoc, Expr *E,
     N1 = C->getDeclName();
   }
 
-  DeclarationName N2 = GetNameFromUnqualifiedId(I).getName();
-
+  // DeclarationName N2 = GetNameFromUnqualifiedId(I).getName();
   // if (N1 == N2)
   //   llvm::outs() << "TRUE\n";
   // else
@@ -2413,6 +2412,7 @@ bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E) {
 bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   // Associate the call expression with the declaration.
   CD->setCallExpr(Call);
+
 
   // Don't evaluate the call if this declaration appears within a metaclass.
   if (CXXRecordDecl *RD = dyn_cast_or_null<CXXRecordDecl>(CurContext)) {

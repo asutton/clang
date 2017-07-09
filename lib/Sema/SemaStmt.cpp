@@ -3054,7 +3054,7 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
   if (S->getRangeInit()->isTypeDependent())
     return S;
 
-  // Return an empty compound statement.
+  // When there are no members, return an empty compound statement.
   if (S->getSize() == 0) {
     return new (Context)
         CompoundStmt(Context, None, SourceLocation(), SourceLocation());

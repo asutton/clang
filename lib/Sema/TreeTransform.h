@@ -91,7 +91,7 @@ using namespace sema;
 /// (\c AlreadyTransformed()), force rebuilding AST nodes even when their
 /// operands have not changed (\c AlwaysRebuild()), and customize the
 /// default locations and entity names used for type-checking
-/// (\c getBaseLocation(), \c getBaseEntity()).
+/// (\c getBaseLocation(), \c getBaseEntity()). 
 template<typename Derived>
 class TreeTransform {
   /// \brief Private RAII object that helps us forget and then re-remember
@@ -407,20 +407,75 @@ public:
                       SmallVectorImpl<Expr *> &Outputs,
                       bool *ArgChanged = nullptr);
 
+  /// \brief Transform the given declaration.
+  Decl *TransformDecl(Decl *D) {
+    return getDerived().TransformDecl(D->getLocation(), D);
+  }
+  
   /// \brief Transform the given declaration, which is referenced from a type
   /// or expression.
   ///
-  /// By default, acts as the identity function on declarations, unless the
-  /// transformer has had to transform the declaration itself. Subclasses
-  /// may override this function to provide alternate behavior.
+  /// Unless the declaration is injectable, the default acts as the identity 
+  /// function on declarations, unless the transformer has had to transform the 
+  /// declaration itself. Subclasses may override this function to provide 
+  /// alternate behavior.
   Decl *TransformDecl(SourceLocation Loc, Decl *D) {
     llvm::DenseMap<Decl *, Decl *>::iterator Known
       = TransformedLocalDecls.find(D);
     if (Known != TransformedLocalDecls.end())
       return Known->second;
 
+    if (D->isInjectable() || D->getDeclContext()->isFragment())
+      return getDerived().TransformLocalDecl(Loc, D);
+
     return D;
   }
+
+  /// \brief Transform the given declaration.
+  Decl *TransformLocalDecl(Decl *D) {
+    return getDerived().TransformLocalDecl(D->getLocation(), D);
+  }
+
+  /// \brief Transform the declaration as a member of the current 
+  /// transformation, generating a new declaration.
+  ///
+  /// The input/output mapping is registered with the TransformedLocalDecls map 
+  /// so that subsequent references to the original are replaced with the 
+  /// result.
+  ///
+  /// This is primarily used to ensure that injection statements and source
+  /// code injection produce new ASTs as needed.
+  ///
+  /// \todo There is a lot of overlap between the code here and that in 
+  /// the SubstDecl frameworks. It would be nice to unify the implementations
+  /// where
+  Decl* TransformLocalDecl(SourceLocation Loc, Decl *D);
+
+  Decl *TransformLocalVarDecl(VarDecl *D);
+  Decl *TransformLocalParmVarDecl(ParmVarDecl *D);
+  Decl *TransformLocalFunctionDecl(FunctionDecl *D);
+  Decl *TransformLocalCXXRecordDecl(CXXRecordDecl *D);
+  Decl *TransformLocalCXXMethodDecl(CXXMethodDecl *D);
+  Decl *TransformLocalCXXConstructorDecl(CXXConstructorDecl *D);
+  Decl *TransformLocalCXXDestructorDecl(CXXDestructorDecl *D);
+  Decl *TransformLocalFieldDecl(FieldDecl *D);
+  Decl *TransformLocalAccessSpecDecl(AccessSpecDecl *D);
+  Decl *TransformLocalConstexprDecl(ConstexprDecl *D);
+  Decl *TransformLocalTypedefNameDecl(TypedefNameDecl *D);
+  Decl *TransformLocalTypeAliasDecl(TypeAliasDecl *D);
+  Decl *TransformLocalTypedefDecl(TypedefDecl *D);
+
+  // \brief Transforms function parameter in D, adding them to R.
+  void TransformFunctionParameters(FunctionDecl *D, FunctionDecl *R);
+
+  /// \brief Transforms the function definition of D and associates it with R.
+  void TransformFunctionDefinition(FunctionDecl *D, FunctionDecl *R);
+  
+  /// \brief Transforms the attributes of D and associates them with R.
+  ///
+  /// This is different than transformAttrs(), which does nothing by default;
+  /// This will apply TrnsformAttr to each attribute in D.
+  void TransformAttributes(Decl *D, Decl *R);
 
   /// \brief Transform the specified condition.
   ///
@@ -7519,7 +7574,8 @@ TreeTransform<Derived>::TransformCXXTupleExpansionStmt(
     return StmtError();
 
   StmtResult NewStmt = S;
-  if (getDerived().AlwaysRebuild() || RangeVar.get() != S->getRangeVarStmt() ||
+  if (getDerived().AlwaysRebuild() || 
+      RangeVar.get() != S->getRangeVarStmt() ||
       LoopVar.get() != S->getLoopVarStmt()) {
     NewStmt = getDerived().RebuildCXXTupleExpansionStmt(
         S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(), RangeVar.get(),
@@ -7579,30 +7635,26 @@ TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
   if (Result.isInvalid())
     return StmtError();
   CXXInjectionStmt *Injection = cast<CXXInjectionStmt>(Result.get());
-  
+
   // Replay the construction of statement.
   switch (S->getInjectionKind()) {
   case CXXInjectionStmt::Block: {
     getSema().ActOnStartBlockFragment(nullptr);
-    StmtResult Body = TransformStmt(S->getInjectedBlock());
+    StmtResult Body = getDerived().TransformStmt(S->getInjectedBlock());
     getSema().ActOnFinishBlockFragment(nullptr, Body.get());
     break;
   }
   case CXXInjectionStmt::Class: {
-    // FIXME: This is wrong. We need to replay the construction and then
-    // transform each member of the original fragment. 
-    Decl *D = TransformDecl(S->getArrowLoc(), S->getInjectedClass());
-    if (!D)
-      return StmtError();
-    Injection->setClassInjection(cast<CXXRecordDecl>(D));
+    // Locally transform the fragment, to produce a new one.
+    CXXRecordDecl *Src = S->getInjectedClass();
+    Decl *Dst = getDerived().TransformLocalDecl(Src);
+    Injection->setClassInjection(cast<CXXRecordDecl>(Dst));
     break;
   }
   case CXXInjectionStmt::Namespace: {
-    // FIXME: This is wrong. See the comments above.
-    Decl *D = TransformDecl(S->getArrowLoc(), S->getInjectedClass());
-    if (!D)
-      return StmtError();
-    Injection->setNamespaceInjection(cast<NamespaceDecl>(D));
+    // FIXME: This is wrong. Do the same thing above: create a new namespace
+    // and then transform members in turn.
+    llvm_unreachable("namespace fragment transformation not implemented");
     break;
   }
   }
@@ -12845,6 +12897,454 @@ TreeTransform<Derived>::TransformCapturedStmt(CapturedStmt *S) {
   }
 
   return getSema().ActOnCapturedRegionEnd(Body.get());
+}
+
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalDecl(SourceLocation Loc, Decl *D) {
+  switch (D->getKind()) {
+  default:
+    break;
+  case Decl::Var:
+    return getDerived().TransformLocalVarDecl(cast<VarDecl>(D));
+  case Decl::ParmVar:
+    return getDerived().TransformLocalParmVarDecl(cast<ParmVarDecl>(D));
+  case Decl::Function:
+    return getDerived().TransformLocalFunctionDecl(cast<FunctionDecl>(D));
+  case Decl::CXXRecord:
+    return getDerived().TransformLocalCXXRecordDecl(cast<CXXRecordDecl>(D));
+  case Decl::CXXMethod:
+    return getDerived().TransformLocalCXXMethodDecl(cast<CXXMethodDecl>(D));
+  case Decl::CXXConstructor:
+    return getDerived().
+      TransformLocalCXXConstructorDecl(cast<CXXConstructorDecl>(D));
+  case Decl::CXXDestructor:
+    return getDerived().
+      TransformLocalCXXDestructorDecl(cast<CXXDestructorDecl>(D));
+  case Decl::Field:
+    return getDerived().TransformLocalFieldDecl(cast<FieldDecl>(D));
+  case Decl::AccessSpec:
+    return getDerived().TransformLocalAccessSpecDecl(cast<AccessSpecDecl>(D));
+  case Decl::Constexpr:
+    return getDerived().TransformLocalConstexprDecl(cast<ConstexprDecl>(D));
+  case Decl::TypeAlias:
+    return getDerived().TransformLocalTypeAliasDecl(cast<TypeAliasDecl>(D));
+  }
+
+  D->dump();
+  llvm_unreachable("Injecting unknown declaration");
+}
+
+// Returns the canonical transformed type.
+//
+// FIXME: This is fragile. We should be canonicalize reflected types on the fly.
+template<typename Transformer, typename DeclWithTypeInfo>
+inline TypeSourceInfo *
+TransformTypeCanonical(Transformer &X, DeclWithTypeInfo *D) {
+  TypeSourceInfo *TSI = X.getDerived().TransformType(D->getTypeSourceInfo());
+  QualType T = X.getSema().Context.getCanonicalType(TSI->getType());
+  TypeLoc TL = TSI->getTypeLoc();
+  return X.getSema().Context.getTrivialTypeSourceInfo(T, TL.getLocStart());
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalVarDecl(VarDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+  
+  TypeSourceInfo *TSI = TransformTypeCanonical(getDerived(), D);
+  
+  VarDecl *R 
+    = VarDecl::Create(getSema().Context, Owner, D->getLocation(), 
+                      D->getLocation(), D->getIdentifier(), TSI->getType(), 
+                      TSI, D->getStorageClass());
+  transformedLocalDecl(D, R);
+
+  TransformAttributes(D, R);
+
+  R->setInjectable(D->isInjectable());
+
+  Owner->addDecl(R);
+
+  // Transform the initializer and associated properties of the definition.
+  if (D->getInit()) {
+    if (D->isInlineSpecified())
+      R->setInlineSpecified();
+    else if (D->isInline())
+      R->setImplicitlyInline();
+
+    if (D->getInit()) {
+      if (R->isStaticDataMember() && !D->isOutOfLine())
+        getSema().PushExpressionEvaluationContext(
+          Sema::ExpressionEvaluationContext::ConstantEvaluated, D);
+      else
+        getSema().PushExpressionEvaluationContext(
+          Sema::ExpressionEvaluationContext::PotentiallyEvaluated, D);
+
+      ExprResult Init;
+      {
+        Sema::ContextRAII SwitchContext(SemaRef, R->getDeclContext());
+        Init = getDerived().TransformInitializer(D->getInit(),
+                                    D->getInitStyle() == VarDecl::CallInit);
+      }
+      if (!Init.isInvalid()) {
+        if (Init.get())
+          getSema().AddInitializerToDecl(R, Init.get(), D->isDirectInit());
+        else
+          getSema().ActOnUninitializedDecl(R);
+      } else
+        R->setInvalidDecl();
+    }
+  }
+
+  return R;
+}
+
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalParmVarDecl(ParmVarDecl *D) {
+  TypeSourceInfo *TSI = TransformTypeCanonical(getDerived(), D); 
+  ParmVarDecl *R 
+    = getSema().CheckParameter(getSema().Context.getTranslationUnitDecl(),
+                               D->getLocation(), D->getLocation(),
+                               D->getIdentifier(), TSI->getType(),
+                               TSI, D->getStorageClass());
+  transformedLocalDecl(D, R);
+  
+  TransformAttributes(D, R);
+
+  // FIXME: Are there any attributes we need to set?
+  // FIXME: Transform the default argument also.
+  
+  // FIXME: Can parameters be injectable?
+  R->setInjectable(D->isInjectable());
+
+  return R;
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalFunctionDecl(FunctionDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+  DeclarationNameInfo NameInfo 
+    = getDerived().TransformDeclarationNameInfo(D->getNameInfo());
+  TypeSourceInfo *TypeInfo 
+    = TransformTypeCanonical(getDerived(), D);
+  FunctionDecl *R 
+    = FunctionDecl::Create(getSema().Context, Owner, D->getLocation(), 
+                           NameInfo.getLoc(), NameInfo.getName(), 
+                           TypeInfo->getType(), TypeInfo, D->getStorageClass(), 
+                           D->isInlineSpecified(), D->hasWrittenPrototype(), 
+                           D->isConstexpr());
+  transformedLocalDecl(D, R);
+
+  TransformAttributes(D, R);
+
+  TransformFunctionParameters(D, R);
+
+  // Copy other properties.
+  R->setAccess(D->getAccess());
+  if (D->isDeletedAsWritten())
+    getSema().SetDeclDeleted(R, R->getLocation());
+  R->setInjectable(D->isInjectable());
+
+  TransformAttributes(D, R);
+
+  // FIXME: Make sure that we aren't overriding an existing declaration.
+  Owner->addDecl(R);
+
+  TransformFunctionDefinition(D, R);
+  
+  return R;
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalFieldDecl(FieldDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+  TypeSourceInfo *TypeInfo 
+    = TransformTypeCanonical(getDerived(), D);
+  FieldDecl *R 
+    = FieldDecl::Create(getSema().Context, Owner, D->getLocation(), 
+                        D->getLocation(), D->getIdentifier(), 
+                        TypeInfo->getType(), TypeInfo, /*Bitwidth*/nullptr, 
+                        D->isMutable(), D->getInClassInitStyle());
+
+  transformedLocalDecl(D, R);
+
+  TransformAttributes(D, R);
+
+  R->setAccess(D->getAccess());
+  R->setInjectable(D->isInjectable());
+
+  Owner->addDecl(R);
+
+  // FIXME: Transform the initializer, if present.
+  return R;
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalAccessSpecDecl(AccessSpecDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+  Decl *R = AccessSpecDecl::Create(getSema().Context, D->getAccess(), Owner,
+                                   D->getAccessSpecifierLoc(),
+                                   D->getColonLoc());
+  R->setInjectable(D->isInjectable());
+  Owner->addDecl(R);
+  return R;
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalCXXRecordDecl(CXXRecordDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+  DeclarationNameInfo DN(D->getDeclName(), D->getLocation());
+  DeclarationNameInfo DNI = getDerived().TransformDeclarationNameInfo(DN);
+
+  // FIXME: If D has a previous declaration, then we need to find the
+  // previous declaration of R.
+
+  CXXRecordDecl *R 
+    = CXXRecordDecl::Create(getSema().Context, D->getTagKind(),
+                            Owner, D->getLocStart(), 
+                            D->getLocation(), 
+                            DNI.getName().getAsIdentifierInfo(), 
+                            /*PrevDecl=*/nullptr);
+  transformedLocalDecl(D, R);
+
+  TransformAttributes(D, R);
+
+  R->setFragment(D->isFragment());
+  R->setInjectable(D->isInjectable());
+  Owner->addDecl(R);
+
+  if (D->hasDefinition()) {
+    R->startDefinition();
+
+    // FIXME: Transform base class specifiers.
+
+    // Recursively transform declarations.
+    Sema::ContextRAII SwitchContext(SemaRef, R);
+    for (Decl *Member : D->decls()) {
+      // Don't transform invalid declarations.
+      if (Member->isInvalidDecl())
+        continue;
+
+      // Don't transform non-members appearing in a class.
+      if (Member->getDeclContext() != D)
+        continue;
+      
+      getDerived().TransformDecl(Member->getLocation(), Member);
+    }
+
+    R->completeDefinition();
+  }
+ 
+  return R;
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalCXXMethodDecl(CXXMethodDecl *D) {
+  DeclarationNameInfo NameInfo 
+    = getDerived().TransformDeclarationNameInfo(D->getNameInfo());
+
+  // FIXME: The exception specification is not being translated correctly
+  // for destructors (probably others).
+  TypeSourceInfo *TSI 
+    = TransformTypeCanonical(getDerived(), D);
+
+  // FIXME: Handle conversion operators.
+  CXXRecordDecl *CurClass = cast<CXXRecordDecl>(getSema().CurContext);
+  CXXMethodDecl *R;
+  if (auto *Ctor = dyn_cast<CXXConstructorDecl>(D))
+    R = CXXConstructorDecl::Create(getSema().Context, CurClass, 
+                                   D->getLocation(), NameInfo, TSI->getType(), 
+                                   TSI, Ctor->isExplicitSpecified(),
+                                   Ctor->isInlineSpecified(),
+                                   /*isImplicitlyDeclared=*/false,
+                                   Ctor->isConstexpr(), InheritedConstructor());
+  else if (isa<CXXDestructorDecl>(D))
+    R = CXXDestructorDecl::Create(getSema().Context, CurClass, D->getLocation(),
+                                  NameInfo, TSI->getType(), TSI,
+                                  D->isInlineSpecified(),
+                                  /*isImplicitlyDeclared=*/false);
+  else
+    R = CXXMethodDecl::Create(getSema().Context, CurClass, D->getLocStart(),
+                              NameInfo, TSI->getType(), TSI, 
+                              D->getStorageClass(), D->isInlineSpecified(),
+                              D->isConstexpr(), D->getLocEnd());
+  transformedLocalDecl(D, R);
+
+  TransformAttributes(D, R);
+
+  TransformFunctionParameters(D, R);
+
+  R->setAccess(D->getAccess());
+  if (D->isExplicitlyDefaulted())
+    SemaRef.SetDeclDefaulted(R, R->getLocation());
+  if (D->isDeletedAsWritten())
+    SemaRef.SetDeclDeleted(R, R->getLocation());
+  if (D->isVirtualAsWritten())
+    R->setVirtualAsWritten(true);
+  if (D->isPure())
+    SemaRef.CheckPureMethod(R, SourceRange());
+  R->setInjectable(D->isInjectable());
+
+  TransformAttributes(D, R);
+
+  // FIXME: Make sure that we aren't overriding an existing declaration.
+  CurClass->addDecl(R);
+
+  TransformFunctionDefinition(D, R);
+
+  return R;
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalCXXConstructorDecl(CXXConstructorDecl *D) {
+  return TransformLocalCXXMethodDecl(D);
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalCXXDestructorDecl(CXXDestructorDecl *D) {
+  return TransformLocalCXXMethodDecl(D);
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalConstexprDecl(ConstexprDecl *D) {
+  // We can use the ActOn* members since the initial parsing for these
+  // declarations is trivial (i.e., don't have to translate declarators).
+  unsigned ScopeFlags; // Unused
+  Decl *New = getSema().ActOnConstexprDecl(getSema().getCurScope(),
+                                           D->getLocation(), ScopeFlags);
+
+  New->setInjectable(D->isInjectable());
+
+  getSema().ActOnStartConstexprDecl(getSema().getCurScope(), New);
+  StmtResult S = TransformStmt(D->getBody());
+  if (!S.isInvalid())
+    getSema().ActOnFinishConstexprDecl(getSema().getCurScope(), New, S.get());
+  else
+    getSema().ActOnConstexprDeclError(getSema().getCurScope(), New);
+
+  return New;
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalTypedefNameDecl(TypedefNameDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  // Transform the type, guaranteeing a valid result.
+  bool Invalid = false;
+  TypeSourceInfo *TSI = TransformTypeCanonical(getDerived(), D);
+  if (!TSI) {
+    QualType T = D->getTypeSourceInfo()->getType();
+    TSI = getSema().Context.getTrivialTypeSourceInfo(T);
+    Invalid = true;
+  }
+  
+  // Create the new typedef
+  TypedefNameDecl *R;
+  if (isa<TypeAliasDecl>(D))
+    R = TypeAliasDecl::Create(getSema().Context, Owner, D->getLocStart(),
+                              D->getLocation(), D->getIdentifier(), TSI);
+  else
+    R = TypedefDecl::Create(getSema().Context, Owner, D->getLocStart(),
+                            D->getLocation(), D->getIdentifier(), TSI);
+  transformedLocalDecl(D, R);
+
+  TransformAttributes(D, R);
+
+  R->setInjectable(D->isInjectable());
+  R->setInvalidDecl(Invalid);
+
+  // If the old typedef was the name for linkage purposes of an anonymous
+  // tag decl, re-establish that relationship for the new typedef.
+  if (const TagType *oldTagType = D->getUnderlyingType()->getAs<TagType>()) {
+    TagDecl *oldTag = oldTagType->getDecl();
+    if (oldTag->getTypedefNameForAnonDecl() == D && !Invalid) {
+      TagDecl *newTag = TSI->getType()->castAs<TagType>()->getDecl();
+      assert(!newTag->hasNameForLinkage());
+      newTag->setTypedefNameForAnonDecl(R);
+    }
+  }
+
+  R->setAccess(D->getAccess());
+  
+  return R;
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalTypeAliasDecl(TypeAliasDecl *D) {
+  return TransformLocalTypedefNameDecl(D);
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalTypedefDecl(TypedefDecl *D) {
+  return TransformLocalTypedefNameDecl(D);
+}
+
+
+template<typename Derived>/// Transform each parameter of a function.
+void 
+TreeTransform<Derived>::TransformFunctionParameters(FunctionDecl *D,
+                                                    FunctionDecl *R) {
+  llvm::SmallVector<ParmVarDecl *, 4> Params;
+  for (ParmVarDecl *Old : D->parameters()) {
+    ParmVarDecl *New 
+      = cast<ParmVarDecl>(getDerived().TransformDecl(Old->getLocation(), Old));
+    New->setOwningFunction(R);
+    Params.push_back(New);
+  }
+  R->setParams(Params);
+}
+
+
+template<typename Derived>/// Transform the body of a function.
+void 
+TreeTransform<Derived>::TransformFunctionDefinition(FunctionDecl *D,
+                                                    FunctionDecl *R) {
+  // Transform the method definition.
+  if (Stmt *S = D->getBody()) {
+    // Set up the semantic context needed to translate the function. We don't
+    // use PushDeclContext() because we don't have a scope.
+    EnterExpressionEvaluationContext EvalContext(getSema(),
+                       Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
+    getSema().ActOnStartOfFunctionDef(nullptr, R);
+    Sema::ContextRAII SavedContext(getSema(), R);
+    StmtResult Body = getDerived().TransformStmt(S);
+    if (Body.isInvalid()) {
+      // FIXME: Diagnose a transformation error?
+      R->setInvalidDecl();
+      return;
+    }
+    getSema().ActOnFinishFunctionBody(R, Body.get());
+  }
+}
+
+template<typename Derived>
+void 
+TreeTransform<Derived>::TransformAttributes(Decl *D, Decl *R) {
+  // FIXME: The general rule for TreeTransform<>::TransformAttr is to simply
+  // return the original attribute. We may actually need to perform 
+  // substitutions in derived kinds of attributes.
+  for (Attr *Old : D->attrs()) {
+    const Attr *New = getDerived().TransformAttr(Old);
+    if (New == Old)
+      R->addAttr(Old->clone(getSema().Context));
+    else
+      R->addAttr(const_cast<Attr *>(New));
+  }
 }
 
 } // end namespace clang
