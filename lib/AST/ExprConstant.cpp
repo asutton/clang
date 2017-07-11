@@ -9897,9 +9897,16 @@ public:
 
   // Queue up modification traits as injections.
   bool VisitReflectionTraitExpr(const ReflectionTraitExpr *E) {
+    // Don't actually evaluate this if we're just checking.
+    if (Info.checkingPotentialConstantExpression())
+      return false;
+    if (Info.checkingForOverflow())
+      return false;
+
     switch (E->getTrait()) {
     case BRT_ModifyAccess:
     case BRT_ModifyVirtual:
+    case URT_ModifyConstexpr:
       return RegisterInjection(E);
     default:
       return Success(E->getValue(), E);

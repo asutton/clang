@@ -551,8 +551,7 @@ ExprResult Sema::ActOnHasNameExpr(SourceLocation KWLoc, Expr *E,
     N1 = C->getDeclName();
   }
 
-  DeclarationName N2 = GetNameFromUnqualifiedId(I).getName();
-
+  // DeclarationName N2 = GetNameFromUnqualifiedId(I).getName();
   // if (N1 == N2)
   //   llvm::outs() << "TRUE\n";
   // else
@@ -894,6 +893,7 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
                                                APValue(), KWLoc, RParenLoc);
     }
   }
+
 
   // Modifications are preserved until constexpr evaluation. These expressions
   // have type void.
@@ -1272,7 +1272,7 @@ struct MethodTraits {
   bool MoveAssign : 1;
 };
 
-static MethodTraits getMethodTraits(ASTContext &C, CXXConstructorDecl *D) {
+static MethodTraits getConstructorTraits(ASTContext &C, CXXConstructorDecl *D) {
   MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
@@ -1290,7 +1290,7 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXConstructorDecl *D) {
   return T;
 }
 
-static MethodTraits getMethodTraits(ASTContext &C, CXXDestructorDecl *D) {
+static MethodTraits getDestructorTraits(ASTContext &C, CXXDestructorDecl *D) {
   MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
@@ -1308,7 +1308,7 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXDestructorDecl *D) {
   return T;
 }
 
-static MethodTraits getMethodTraits(ASTContext &C, CXXConversionDecl *D) {
+static MethodTraits getConversionTraits(ASTContext &C, CXXConversionDecl *D) {
   MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
@@ -1432,11 +1432,11 @@ ExprResult Reflector::ReflectTraits(Decl *D) {
   else if (FieldDecl *Field = dyn_cast<FieldDecl>(D))
     Traits = LaunderTraits(getFieldTraits(Field));
   else if (CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D))
-    Traits = LaunderTraits(getMethodTraits(C, Ctor));
+    Traits = LaunderTraits(getConstructorTraits(C, Ctor));
   else if (CXXDestructorDecl *Dtor = dyn_cast<CXXDestructorDecl>(D))
-    Traits = LaunderTraits(getMethodTraits(C, Dtor));
+    Traits = LaunderTraits(getDestructorTraits(C, Dtor));
   else if (CXXConversionDecl *Conv = dyn_cast<CXXConversionDecl>(D))
-    Traits = LaunderTraits(getMethodTraits(C, Conv));
+    Traits = LaunderTraits(getConversionTraits(C, Conv));
   else if (CXXMethodDecl *Meth = dyn_cast<CXXMethodDecl>(D))
     Traits = LaunderTraits(getMethodTraits(C, Meth));
   else if (FunctionDecl *Fn = dyn_cast<FunctionDecl>(D))
@@ -1766,7 +1766,7 @@ bool Sema::ModifyDeclarationConstexpr(ReflectionTraitExpr *E) {
     Var->setConstexpr(true);
     CheckVariableDeclarationType(Var);
   } else if (FunctionDecl *Fn = dyn_cast<FunctionDecl>(D)) {
-    Var->setConstexpr(true);
+    Fn->setConstexpr(true);
     CheckConstexprFunctionDecl(Fn);
   } else {
     Diag(D->getLocation(), diag::err_declration_cannot_be_made_constexpr);

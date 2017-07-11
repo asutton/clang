@@ -3055,10 +3055,9 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
     return S;
 
   // Return an empty compound statement.
-  if (S->getSize() == 0) {
-    return new (Context)
-        CompoundStmt(Context, None, SourceLocation(), SourceLocation());
-  }
+  if (S->getSize() == 0)
+    return new (Context) CompoundStmt(Context, None, SourceLocation(), 
+                                                     SourceLocation());
 
   // Create a new compound statement that binds the loop variable with the
   // parsed body. This is what we're going to instantiate.

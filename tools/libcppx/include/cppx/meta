@@ -125,6 +125,10 @@ struct entity {
 // The base class of all declarations.
 template<reflection_t X, reflection_kind K>
 struct decl : entity<X, K> {
+  static constexpr reflection_t node = X;
+
+  static constexpr unsigned packed_traits = __reflect_traits(X);
+
   static constexpr decl_traits traits() {
     return decl_traits(__reflect_traits(X));
   }
@@ -531,10 +535,10 @@ struct method : typed<X, member_function_decl_kind> {
     return traits().kind == method_ctor;
   }
   static constexpr bool is_destructor() {
-    return traits().kind == method_ctor;
+    return traits().kind == method_dtor;
   }
   static constexpr bool is_conversion() {
-    return traits().kind == method_ctor;
+    return traits().kind == method_conv;
   }
 
   // Specifiers

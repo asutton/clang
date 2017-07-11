@@ -229,6 +229,7 @@ static unsigned ReflectionTraitArity(tok::TokenKind kind) {
 ///     '__reflect_member'
 ///     '__modify_access'
 ///     '__modify_virtual'
+///     '__modify_constexpr'
 /// \endverbatim
 ExprResult Parser::ParseReflectionTrait() {
   tok::TokenKind Kind = Tok.getKind();

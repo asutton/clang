@@ -307,6 +307,11 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
   if (!D)
     return nullptr;
 
+  // Search for a previous transformation.
+  auto Known = TransformedLocalDecls.find(D);
+  if (Known != TransformedLocalDecls.end())
+    return Known->second;
+
   // Don't transform declarations that are not local to the source context.
   //
   // FIXME: Is there a better way to determine nesting?
@@ -315,11 +320,6 @@ Decl *SourceCodeInjector::TransformDecl(SourceLocation Loc, Decl *D) {
     DC = DC->getParent();
   if (!DC)
     return D;
-
-  // Search for a previous transformation.
-  auto Known = TransformedLocalDecls.find(D);
-  if (Known != TransformedLocalDecls.end())
-    return Known->second;
 
   Decl *R = TransformDeclImpl(Loc, D);
   TransformAttributes(D, R);
@@ -544,6 +544,7 @@ Decl *SourceCodeInjector::TransformCXXMethodDecl(CXXMethodDecl *D) {
 
   // FIXME: What other properties do I need to set?
   R->setAccess(D->getAccess());
+  R->setConstexpr(D->isConstexpr());
   if (D->isExplicitlyDefaulted())
     SemaRef.SetDeclDefaulted(R, R->getLocation());
   if (D->isDeletedAsWritten())

@@ -6012,11 +6012,6 @@ static bool defaultedSpecialMemberIsConstexpr(
   if (!S.getLangOpts().CPlusPlus11)
     return false;
 
-  // If the class is a fragment, then we can't know at this point whether
-  // declarations should be constexpr or not. Defer until injection.
-  if (ClassDecl->isFragment())
-    return false;
-
   // C++11 [dcl.constexpr]p4:
   // In the definition of a constexpr constructor [...]
   bool Ctor = true;
@@ -6278,6 +6273,13 @@ void Sema::CheckExplicitlyDefaultedSpecialMember(CXXMethodDecl *MD) {
   // destructors in C++1y), this is checked elsewhere.
   bool Constexpr = defaultedSpecialMemberIsConstexpr(*this, RD, CSM,
                                                      HasConstParam);
+
+  // If the class is a fragment, then the declaration is constexpr if it
+  // is so specified; we won't know the final result until we apply the
+  // metaclass.
+  if (RD->isFragment())
+    Constexpr = MD->isConstexpr();
+
   if ((getLangOpts().CPlusPlus14 ? !isa<CXXDestructorDecl>(MD)
                                  : isa<CXXConstructorDecl>(MD)) &&
       MD->isConstexpr() && !Constexpr &&
