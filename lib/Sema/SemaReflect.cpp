@@ -23,11 +23,11 @@ using namespace clang;
 using namespace sema;
 
 
-using ReflectionValue =
-    llvm::PointerSumType<ReflectionKind,
-                         llvm::PointerSumTypeMember<RK_Decl, Decl *>,
-                         llvm::PointerSumTypeMember<RK_Type, Type *>,
-                         llvm::PointerSumTypeMember<RK_Expr, Expr *>>;
+using ReflectionValue = llvm::PointerSumType<
+  ReflectionKind,
+  llvm::PointerSumTypeMember<RK_Decl, Decl *>, 
+  llvm::PointerSumTypeMember<RK_Type, Type *>, 
+  llvm::PointerSumTypeMember<RK_Base, CXXBaseSpecifier *>>;
 
 using ReflectionPair = std::pair<ReflectionKind, void *>;
 
@@ -35,9 +35,10 @@ using ReflectionPair = std::pair<ReflectionKind, void *>;
 static ReflectionPair ExplodeOpaqueValue(std::uintptr_t N) {
   // Look away. I'm totally breaking abstraction.
   using Helper = llvm::detail::PointerSumTypeHelper<
-      ReflectionKind, llvm::PointerSumTypeMember<RK_Decl, Decl *>,
+      ReflectionKind, 
+      llvm::PointerSumTypeMember<RK_Decl, Decl *>,
       llvm::PointerSumTypeMember<RK_Type, Type *>,
-      llvm::PointerSumTypeMember<RK_Expr, Expr *>>;
+      llvm::PointerSumTypeMember<RK_Base, CXXBaseSpecifier *>>;
   ReflectionKind K = (ReflectionKind)(N & Helper::TagMask);
   void *P = (void *)(N & Helper::PointerMask);
   return {K, P};
@@ -324,7 +325,7 @@ static bool AppendStringValue(Sema& S, llvm::raw_ostream& OS,
   APValue::LValueBase Base = Val.getLValueBase();
   if (Base.is<const Expr *>()) {
     const Expr *BaseExpr = Base.get<const Expr *>();
-    assert(isa<StringLiteral>(BaseExpr) && "Not a stirng literal");
+    assert(isa<StringLiteral>(BaseExpr) && "Not a string literal");
     const StringLiteral *Str = cast<StringLiteral>(BaseExpr);
     OS << Str->getString();
   } else {
@@ -628,12 +629,11 @@ ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
 
   // Build a template specialization, instantiate it, and then complete it.
   QualType IntPtrTy = Context.getIntPtrType();
-  llvm::APSInt IntPtrVal = Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
-  TemplateArgument Arg(Context, IntPtrVal, IntPtrTy);
-  // FIXME: WE Probably want to create a TemplateArgumentLocInfo with an
-  // expression just in case this somehow fails to be a valid template
-  // argument.
-  TemplateArgumentLoc ArgLoc(Arg, TemplateArgumentLocInfo());
+  llvm::APSInt Val = Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
+  Expr *Literal = new (Context) IntegerLiteral(Context, Val, IntPtrTy, Loc);
+  TemplateArgument Arg(Literal);
+  TemplateArgumentLocInfo ArgLocInfo(Literal);
+  TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
   TemplateArgumentListInfo TempArgs(Loc, Loc);
   TempArgs.addArgument(ArgLoc);
   QualType TempType = CheckTemplateIdType(TempName, Loc, TempArgs);
@@ -719,9 +719,11 @@ ExprResult Sema::BuildTypeReflection(SourceLocation Loc, QualType QT) {
 
   // Build a template specialization, instantiate it, and then complete it.
   QualType IntPtrTy = Context.getIntPtrType();
-  llvm::APSInt IntPtrVal = Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
-  TemplateArgument Arg(Context, IntPtrVal, IntPtrTy);
-  TemplateArgumentLoc ArgLoc(Arg, TemplateArgumentLocInfo());
+  llvm::APSInt Val = Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
+  Expr *Literal = new (Context) IntegerLiteral(Context, Val, IntPtrTy, Loc);
+  TemplateArgument Arg(Literal);
+  TemplateArgumentLocInfo ArgLocInfo(Literal);
+  TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
   TemplateArgumentListInfo TempArgs(Loc, Loc);
   TempArgs.addArgument(ArgLoc);
   QualType TempType = CheckTemplateIdType(TempName, Loc, TempArgs);
@@ -814,6 +816,7 @@ struct Reflector {
 
   ExprResult Reflect(ReflectionTrait RT, Decl *D);
   ExprResult Reflect(ReflectionTrait RT, Type *T);
+  ExprResult Reflect(ReflectionTrait RT, CXXBaseSpecifier *B);
 
   // General entity properties.
   ExprResult ReflectName(Decl *D);
@@ -845,6 +848,9 @@ struct Reflector {
   ExprResult ReflectMember(Decl *, const llvm::APSInt &N);
   ExprResult ReflectNumMembers(Type *);
   ExprResult ReflectMember(Type *, const llvm::APSInt &N);
+
+  ExprResult ReflectNumBases(Decl *D);
+  ExprResult ReflectBase(Decl *D, const llvm::APSInt &N);
 };
 
 /// Returns \c true if \p RTK is a reflection trait that would modify a property
@@ -894,7 +900,6 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
     }
   }
 
-
   // Modifications are preserved until constexpr evaluation. These expressions
   // have type void.
   if (IsModificationTrait(Kind))
@@ -911,10 +916,14 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
       ExplodeOpaqueValue(Vals[0].getExtValue());
 
   Reflector R = {*this, KWLoc, RParenLoc, Args, Vals};
-  if (Info.first == RK_Decl)
-    return R.Reflect(Kind, (Decl *)Info.second);
-  if (Info.first == RK_Type)
-    return R.Reflect(Kind, (Type *)Info.second);
+  switch (Info.first) {
+    case RK_Decl:
+      return R.Reflect(Kind, (Decl *)Info.second);
+    case RK_Type:
+      return R.Reflect(Kind, (Type *)Info.second);
+    case RK_Base:
+      return R.Reflect(Kind, (CXXBaseSpecifier *)Info.second);
+  }
 
   llvm_unreachable("Unhandled reflection kind");
 }
@@ -963,131 +972,13 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
     return ReflectNumMembers(D);
   case BRT_ReflectMember:
     return ReflectMember(D, Vals[1]);
+  case URT_ReflectNumBases:
+    return ReflectNumBases(D);
+  case BRT_ReflectBase:
+    return ReflectBase(D, Vals[1]);
   }
 
   // FIXME: Improve this error message.
-  S.Diag(KWLoc, diag::err_reflection_not_supported);
-  return ExprError();
-}
-
-ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
-  switch (RT) {
-  default:
-    break;
-  case URT_ReflectPrint: {
-    PrintingPolicy PP = S.getASTContext().getPrintingPolicy();
-    PP.TerseOutput = false;
-    if (CXXRecordDecl *Class = T->getAsCXXRecordDecl()) {
-      Class->print(llvm::errs(), PP);
-    } else {
-      QualType Q(T, 0);
-      Q.print(llvm::errs(), PP);
-    }
-    llvm::errs() << '\n';
-    return ExprResult();
-  }
-
-  case URT_ReflectName:
-    return ReflectName(T);
-  case URT_ReflectQualifiedName:
-    return ReflectQualifiedName(T);
-  case URT_ReflectDeclarationContext:
-    return ReflectDeclarationContext(T);
-  case URT_ReflectLexicalContext:
-    return ReflectLexicalContext(T);
-  case URT_ReflectTraits:
-    return ReflectTraits(T);
-  case URT_ReflectNumMembers:
-    return ReflectNumMembers(T->getAsTagDecl());
-  case BRT_ReflectMember:
-    return ReflectMember(T->getAsTagDecl(), Vals[1]);
-  }
-
-  // FIXME: Improve this error message.
-  S.Diag(KWLoc, diag::err_reflection_not_supported);
-  return ExprError();
-}
-
-/// Returns a named declaration or emits an error and returns \c nullptr.
-static NamedDecl *RequireNamedDecl(Reflector &R, Decl *D) {
-  Sema &S = R.S;
-  if (!isa<NamedDecl>(D)) {
-    S.Diag(R.Args[0]->getLocStart(), diag::err_reflection_not_named);
-    return nullptr;
-  }
-  return cast<NamedDecl>(D);
-}
-
-ExprResult Reflector::ReflectName(Decl *D) {
-  if (NamedDecl *ND = RequireNamedDecl(*this, D))
-    return MakeString(S.Context, ND->getNameAsString());
-  return ExprError();
-}
-
-ExprResult Reflector::ReflectName(Type *T) {
-  // Use the underlying declaration of tag types for the name. This way,
-  // we won't generate "struct or enum" as part of the type.
-  if (TagDecl *TD = T->getAsTagDecl())
-    return MakeString(S.Context, TD->getNameAsString());
-  QualType QT(T, 0);
-  return MakeString(S.Context, QT.getAsString());
-}
-
-ExprResult Reflector::ReflectQualifiedName(Decl *D) {
-  if (NamedDecl *ND = RequireNamedDecl(*this, D))
-    return MakeString(S.Context, ND->getQualifiedNameAsString());
-  return ExprError();
-}
-
-ExprResult Reflector::ReflectQualifiedName(Type *T) {
-  if (TagDecl *TD = T->getAsTagDecl())
-    return MakeString(S.Context, TD->getQualifiedNameAsString());
-  QualType QT(T, 0);
-  return MakeString(S.Context, QT.getAsString());
-}
-
-// TODO: Currently, this fails to return a declaration context for the
-// translation unit and for builtin types (because they aren't declared).
-// Perhaps we should return an empty context?
-
-/// Reflects the declaration context of \p D.
-ExprResult Reflector::ReflectDeclarationContext(Decl *D) {
-  if (isa<TranslationUnitDecl>(D)) {
-    S.Diag(KWLoc, diag::err_reflection_not_supported);
-    return ExprError();
-  }
-  return S.BuildDeclReflection(KWLoc, cast<Decl>(D->getDeclContext()));
-}
-
-/// Reflects the declaration context of a user-defined type \p T.
-///
-// TODO: Emit a better error for non-declared types.
-ExprResult Reflector::ReflectDeclarationContext(Type *T) {
-  if (TagDecl *TD = T->getAsTagDecl()) {
-    Decl *D = cast<Decl>(TD->getDeclContext());
-    return S.BuildDeclReflection(KWLoc, D);
-  }
-  S.Diag(KWLoc, diag::err_reflection_not_supported);
-  return ExprError();
-}
-
-/// Reflects the lexical declaration context of \p D.
-ExprResult Reflector::ReflectLexicalContext(Decl *D) {
-  if (isa<TranslationUnitDecl>(D)) {
-    S.Diag(KWLoc, diag::err_reflection_not_supported);
-    return ExprError();
-  }
-  return S.BuildDeclReflection(KWLoc, cast<Decl>(D->getLexicalDeclContext()));
-}
-
-/// Reflects the lexical declaration context of a user-defined type \p T.
-///
-// TODO: Emit a better error for non-declared types.
-ExprResult Reflector::ReflectLexicalContext(Type *T) {
-  if (TagDecl *TD = T->getAsTagDecl()) {
-    Decl *D = cast<Decl>(TD->getLexicalDeclContext());
-    return S.BuildDeclReflection(KWLoc, D);
-  }
   S.Diag(KWLoc, diag::err_reflection_not_supported);
   return ExprError();
 }
@@ -1119,6 +1010,21 @@ enum AccessTrait : unsigned {
 /// Returns the access specifiers for \p D.
 static AccessTrait getAccess(Decl *D) {
   switch (D->getAccess()) {
+  case AS_public:
+    return AccessPublic;
+  case AS_private:
+    return AccessPrivate;
+  case AS_protected:
+    return AccessProtected;
+  case AS_none:
+    return AccessNone;
+  }
+  llvm_unreachable("Invalid access specifier");
+}
+
+/// Returns the access specifier as written for the base class B.
+static AccessTrait getAccess(CXXBaseSpecifier *B) {
+  switch (B->getAccessSpecifier()) {
   case AS_public:
     return AccessPublic;
   case AS_private:
@@ -1412,6 +1318,19 @@ static EnumTraits getEnumTraits(EnumDecl *D) {
   return T;
 }
 
+struct BaseTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  bool Virtual;
+};
+
+static BaseTraits getBaseTraits(CXXBaseSpecifier *B) {
+  BaseTraits T = BaseTraits();
+  T.Access = getAccess(B);
+  T.Virtual = B->isVirtual();
+  return T;
+}
+
 /// Convert a bit-field structure into a uint32.
 template <typename Traits>
 static inline std::uint32_t LaunderTraits(Traits S) {
@@ -1419,6 +1338,148 @@ static inline std::uint32_t LaunderTraits(Traits S) {
   unsigned ret = 0;
   std::memcpy(&ret, &S, sizeof(S));
   return ret;
+}
+
+
+ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
+  switch (RT) {
+  default:
+    break;
+  case URT_ReflectPrint: {
+    PrintingPolicy PP = S.getASTContext().getPrintingPolicy();
+    PP.TerseOutput = false;
+    if (CXXRecordDecl *Class = T->getAsCXXRecordDecl()) {
+      Class->print(llvm::errs(), PP);
+    } else {
+      QualType Q(T, 0);
+      Q.print(llvm::errs(), PP);
+    }
+    llvm::errs() << '\n';
+    return ExprResult();
+  }
+
+  case URT_ReflectName:
+    return ReflectName(T);
+  case URT_ReflectQualifiedName:
+    return ReflectQualifiedName(T);
+  case URT_ReflectDeclarationContext:
+    return ReflectDeclarationContext(T);
+  case URT_ReflectLexicalContext:
+    return ReflectLexicalContext(T);
+  case URT_ReflectTraits:
+    return ReflectTraits(T);
+  case URT_ReflectNumMembers:
+    return ReflectNumMembers(T->getAsTagDecl());
+  case BRT_ReflectMember:
+    return ReflectMember(T->getAsTagDecl(), Vals[1]);
+  case URT_ReflectNumBases:
+    return ReflectNumBases(T->getAsTagDecl());
+  case BRT_ReflectBase:
+    return ReflectBase(T->getAsTagDecl(), Vals[1]);
+  }
+
+  // FIXME: Improve this error message.
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+ExprResult Reflector::Reflect(ReflectionTrait RT, CXXBaseSpecifier *B) {
+  switch (RT) {
+  default:
+    break;
+  case URT_ReflectTraits: {
+    std::uint32_t Traits = LaunderTraits(getBaseTraits(B));
+    llvm::APSInt N = S.Context.MakeIntValue(Traits, S.Context.UnsignedIntTy);
+    return IntegerLiteral::Create(S.Context, N, S.Context.UnsignedIntTy, KWLoc);
+  }
+  case URT_ReflectType:
+    return S.BuildTypeReflection(KWLoc, B->getType());
+  }
+  return ExprError();
+}
+
+/// Returns a named declaration or emits an error and returns \c nullptr.
+static NamedDecl *RequireNamedDecl(Reflector &R, Decl *D) {
+  Sema &S = R.S;
+  if (!isa<NamedDecl>(D)) {
+    S.Diag(R.Args[0]->getLocStart(), diag::err_reflection_not_named);
+    return nullptr;
+  }
+  return cast<NamedDecl>(D);
+}
+
+ExprResult Reflector::ReflectName(Decl *D) {
+  if (NamedDecl *ND = RequireNamedDecl(*this, D))
+    return MakeString(S.Context, ND->getNameAsString());
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectName(Type *T) {
+  // Use the underlying declaration of tag types for the name. This way,
+  // we won't generate "struct or enum" as part of the type.
+  if (TagDecl *TD = T->getAsTagDecl())
+    return MakeString(S.Context, TD->getNameAsString());
+  QualType QT(T, 0);
+  return MakeString(S.Context, QT.getAsString());
+}
+
+ExprResult Reflector::ReflectQualifiedName(Decl *D) {
+  if (NamedDecl *ND = RequireNamedDecl(*this, D))
+    return MakeString(S.Context, ND->getQualifiedNameAsString());
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectQualifiedName(Type *T) {
+  if (TagDecl *TD = T->getAsTagDecl())
+    return MakeString(S.Context, TD->getQualifiedNameAsString());
+  QualType QT(T, 0);
+  return MakeString(S.Context, QT.getAsString());
+}
+
+// TODO: Currently, this fails to return a declaration context for the
+// translation unit and for builtin types (because they aren't declared).
+// Perhaps we should return an empty context?
+
+/// Reflects the declaration context of \p D.
+ExprResult Reflector::ReflectDeclarationContext(Decl *D) {
+  if (isa<TranslationUnitDecl>(D)) {
+    S.Diag(KWLoc, diag::err_reflection_not_supported);
+    return ExprError();
+  }
+  return S.BuildDeclReflection(KWLoc, cast<Decl>(D->getDeclContext()));
+}
+
+/// Reflects the declaration context of a user-defined type \p T.
+///
+// TODO: Emit a better error for non-declared types.
+ExprResult Reflector::ReflectDeclarationContext(Type *T) {
+  if (TagDecl *TD = T->getAsTagDecl()) {
+    Decl *D = cast<Decl>(TD->getDeclContext());
+    return S.BuildDeclReflection(KWLoc, D);
+  }
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
+}
+
+/// Reflects the lexical declaration context of \p D.
+ExprResult Reflector::ReflectLexicalContext(Decl *D) {
+  if (isa<TranslationUnitDecl>(D)) {
+    S.Diag(KWLoc, diag::err_reflection_not_supported);
+    return ExprError();
+  }
+  return S.BuildDeclReflection(KWLoc, cast<Decl>(D->getLexicalDeclContext()));
+}
+
+/// Reflects the lexical declaration context of a user-defined type \p T.
+///
+// TODO: Emit a better error for non-declared types.
+ExprResult Reflector::ReflectLexicalContext(Type *T) {
+  if (TagDecl *TD = T->getAsTagDecl()) {
+    Decl *D = cast<Decl>(TD->getLexicalDeclContext());
+    return S.BuildDeclReflection(KWLoc, D);
+  }
+  S.Diag(KWLoc, diag::err_reflection_not_supported);
+  return ExprError();
 }
 
 /// Reflects the specifiers of the declaration \p D.
@@ -1651,6 +1712,51 @@ ExprResult Reflector::ReflectMember(Decl *D, const llvm::APSInt &N) {
   }
   S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_supported);
   return ExprError();
+}
+
+ExprResult Reflector::ReflectNumBases(Decl *D) {
+  if (!isa<CXXRecordDecl>(D)) {
+    S.Diag(Args[0]->getLocStart(), diag::err_reflection_not_supported);
+    return ExprError();
+  }
+  CXXRecordDecl *Class = cast<CXXRecordDecl>(D);  
+  QualType T = S.Context.UnsignedIntTy;
+  llvm::APSInt N = S.Context.MakeIntValue(Class->getNumBases(), T);
+  return IntegerLiteral::Create(S.Context, N, T, KWLoc);
+}
+
+ExprResult Reflector::ReflectBase(Decl *D, const llvm::APSInt &N) {
+  CXXRecordDecl *Class = cast<CXXRecordDecl>(D);  
+
+  auto Iter = std::next(Class->bases_begin(), N.getExtValue());
+
+  // Get the template name for the instantiation.
+  ClassTemplateDecl *Temp = S.RequireReflectionType(KWLoc, "base_spec");
+  if (!Temp)
+    return ExprError();
+  TemplateName TempName(Temp);
+
+  // Build a template specialization, instantiate it, and then complete it.
+  ReflectionValue RV = ReflectionValue::create<RK_Base>(&*Iter);
+  QualType IntPtrTy = S.Context.getIntPtrType();
+  llvm::APSInt Val = S.Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
+  Expr *Literal = new (S.Context) IntegerLiteral(S.Context, Val, IntPtrTy, KWLoc);
+  TemplateArgument Arg(Literal);
+  TemplateArgumentLocInfo ArgLocInfo(Literal);
+  TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
+  TemplateArgumentListInfo TempArgs(KWLoc, KWLoc);
+  TempArgs.addArgument(ArgLoc);
+  QualType TempType = S.CheckTemplateIdType(TempName, KWLoc, TempArgs);
+
+  if (S.RequireCompleteType(KWLoc, TempType, diag::err_incomplete_type))
+    return ExprError();
+
+  // Produce a value-initialized temporary of the required type.
+  SmallVector<Expr *, 1> Args;
+  InitializedEntity Entity = InitializedEntity::InitializeTemporary(TempType);
+  InitializationKind Kind = InitializationKind::CreateValue(KWLoc, KWLoc, KWLoc);
+  InitializationSequence InitSeq(S, Entity, Kind, Args);
+  return InitSeq.Perform(S, Entity, Kind, Args);
 }
 
 /// Modify the access specifier of a given declaration.

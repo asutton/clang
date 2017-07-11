@@ -29,7 +29,7 @@ namespace clang {
 enum ReflectionKind { 
   RK_Decl = 1, 
   RK_Type = 2, 
-  RK_Expr = 3 
+  RK_Base = 3 
 };
 
 

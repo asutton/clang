@@ -272,7 +272,7 @@ public:
 enum ReflectionKind { 
   RK_Decl = 1, 
   RK_Type = 2, 
-  RK_Expr = 3 
+  RK_Base = 3 
 };
 
 /// Sema - This implements semantic analysis and AST building for C.

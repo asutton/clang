@@ -378,7 +378,72 @@ struct member_type : user_defined_type<X, K> {
 };
 
 template<reflection_t X>
+struct base_spec {
+  static constexpr auto type() {
+    return __reflect_type(X);
+  }
+
+  static constexpr base_traits traits() {
+    return base_traits(__reflect_traits(X));
+  }
+
+  static constexpr bool is_virtual() {
+    return traits().is_virtual;
+  }
+
+  static constexpr access_kind access() {
+    return traits().access;
+  }
+  static constexpr bool has_access() {
+    return access() != no_access;
+  }
+  static constexpr bool is_public() {
+    return access() == public_access;
+  }
+  static constexpr bool is_private() {
+    return access() == private_access;
+  }
+  static constexpr bool is_protected() {
+    return access() == protected_access;
+  }
+
+  // FIXME: These don't actually work.
+  static constexpr void set_access(access_kind k) {
+    __modify_access(X, k);
+  }
+  static constexpr void make_public() {
+    __modify_access(X, public_access);
+  }
+  static constexpr void make_private() {
+    __modify_access(X, private_access);
+  }
+  static constexpr void make_protected() {
+    __modify_access(X, protected_access);
+  }
+
+  static constexpr void print() {
+    // FIXME: This ignores specifiers.
+    return type().print();
+  }
+};
+
+template<reflection_t X>
 struct class_type : member_type<X, class_type_kind> {
+  struct base_info {
+    static constexpr std::size_t size() {
+      return __reflect_num_bases(X);
+    }
+    template<std::size_t I>
+    static constexpr auto get() {
+      return __reflect_base(X, I);
+    }
+  };
+
+  static constexpr reflected_tuple<base_info> bases() {
+    // static_assert(member_type<X, class_type_kind>::is_complete());
+    return {};
+  }
+
   static constexpr bool is_polymorphic() {
     return member_type<X, class_type_kind>::traits().is_polymorphic;
   }
@@ -392,7 +457,7 @@ struct class_type : member_type<X, class_type_kind> {
     return member_type<X, class_type_kind>::traits().is_empty;
   }
 
-  using entity<X, class_type_kind>::is_member_variable;
+  // using entity<X, class_type_kind>::is_member_variable;
 };
 
 template<reflection_t X>

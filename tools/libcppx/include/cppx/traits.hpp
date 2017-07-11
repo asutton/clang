@@ -236,8 +236,20 @@ struct enum_traits {
 
   linkage_kind linkage : 2;
   access_kind access : 2;
-  bool is_scoped;
-  bool is_complete;
+  bool is_scoped : 1;
+  bool is_complete : 1;
+};
+
+// All named declarations have linkage and access.
+struct base_traits {
+  constexpr explicit base_traits(unsigned n)
+    : access(get_access(n)),   // 0x04 | 0x08
+      is_virtual(n & 0x10)
+  { }
+
+  unsigned : 2;
+  access_kind access : 2;
+  bool is_virtual : 1;
 };
 
 } // inline namespace v1
