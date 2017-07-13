@@ -52,9 +52,9 @@ base_class shape : drawable {
   void draw(canvas& c) override { /*...*/ }
 };
 
-base_class rectangle : private shape {
-  void draw(canvas& c) override { /*...*/ }
-};
+// base_class rectangle : private shape { // error: non-public base
+//   void draw(canvas& c) override { /*...*/ }
+// };
 
 int main() {
   compiler.debug($shape);

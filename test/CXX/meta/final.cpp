@@ -1,5 +1,7 @@
 
 $class final {
-  final.make_final();
+  constexpr {
+    $final.make_final();
+  }
 }
 
