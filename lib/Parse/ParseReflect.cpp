@@ -96,10 +96,10 @@ ExprResult Parser::ParseReflexprExpression() {
   return Result;
 }
 
-/// \brief Parse a declname-id
+/// \brief Parse a idexpr-id
 ///
 ///   unqualified-id:
-///      'declname' '(' id-concatenation-seq ')'
+///      'idexpr' '(' id-concatenation-seq ')'
 ///
 ///   id-concatenation-seq:
 ///       constant-expression
@@ -107,11 +107,11 @@ ExprResult Parser::ParseReflexprExpression() {
 ///
 /// Returns true if parsing or semantic analysis fail.
 bool Parser::ParseDeclnameId(UnqualifiedId& Result) {
-  assert(Tok.is(tok::kw_declname));
+  assert(Tok.is(tok::kw_idexpr));
   SourceLocation KeyLoc = ConsumeToken();
 
   BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "declname"))
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "idexpr"))
     return true;
   SmallVector<Expr *, 4> Parts;
   while (Tok.isNot(tok::r_paren)) {
@@ -138,7 +138,7 @@ ExprResult Parser::ParseHasNameExpression() {
   SourceLocation KeyLoc = ConsumeToken();
 
   BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "declname"))
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "idexpr"))
     return ExprError();
   
   ExprResult E = ParseConstantExpression();

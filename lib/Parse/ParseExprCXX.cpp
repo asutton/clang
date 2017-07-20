@@ -2420,7 +2420,7 @@ bool Parser::ParseUnqualifiedIdOperator(CXXScopeSpec &SS, bool EnteringContext,
 /// [C++0x] literal-operator-id [TODO]
 ///         ~ class-name
 ///         template-id
-/// [Meta]  declname-id
+/// [Meta]  idexpr-id
 /// 
 /// \endcode
 ///
@@ -2568,12 +2568,12 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
     return false;
   }
 
-  // declname-id:
-  //    'declname' '(' id-concatenation-seq ')'
+  // idexpr-id:
+  //    'idexpr' '(' id-concatenation-seq ')'
   //
   // FIXME: What should we do if there's a scope specifier. Also, what does
-  // it mean to to have 'template declname(...)'?
-  if (Tok.is(tok::kw_declname))
+  // it mean to to have 'template idexpr(...)'?
+  if (Tok.is(tok::kw_idexpr))
     return ParseDeclnameId(Result);
   
   if (getLangOpts().CPlusPlus && 

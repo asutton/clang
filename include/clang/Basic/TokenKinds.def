@@ -392,7 +392,7 @@ MODULES_KEYWORD(import)
 
 // [Meta] Keywords
 KEYWORD(reflexpr                    , KEYCXX)
-KEYWORD(declname                    , KEYCXX)
+KEYWORD(idexpr                      , KEYCXX)
 KEYWORD(hasname                     , KEYCXX)
 
 // GNU Extensions (in impl-reserved namespace)
