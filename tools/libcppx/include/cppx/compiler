@@ -34,4 +34,8 @@ constexpr compiler_type compiler;
 } // namespace meta
 } // namespace cppx
 
+
+// Put a compiler in the global namespace for ease of access.
+constexpr cppx::meta::compiler_type compiler;
+
 #endif // CPPX_COMPILER
