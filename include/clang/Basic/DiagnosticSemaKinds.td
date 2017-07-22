@@ -2184,6 +2184,8 @@ def note_use_reference_type : Note<"use reference type %0 to prevent copying">;
 // [Meta] tuple and pack loops
 def note_loop_body_instantiation_here : Note<
   "in instantiation of loop body expansion">;
+def note_source_code_injection_here : Note<
+  "in injection of source code">;
 
 // C++11 constexpr
 def warn_cxx98_compat_constexpr : Warning<

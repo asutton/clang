@@ -1,4 +1,4 @@
-//===--- SemaInject.cpp - Semantic Analysis for Reflection ----------------===//
+//===--- SemaInject.cpp - Semantic Analysis for Injection -----------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -98,7 +98,7 @@ static bool ProcessCaptures(Sema &SemaRef, DeclContext *DC,
 
 /// Returns a partially constructed injection statement.
 StmtResult Sema::ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc,
-                                    unsigned IK, CapturedDeclsList &Captures) {
+                                    bool IsBlock, CapturedDeclsList &Captures) {
   // We're not actually capture declarations, we're capturing an expression
   // that computes the value of the capture declaration. Build an expression
   // that reads each value and converts to an rvalue.
@@ -122,7 +122,7 @@ StmtResult Sema::ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc,
       new (Context) CXXInjectionStmt(Context, ArrowLoc, Refs);
 
   // Pre-build the declaration for lambda stuff.
-  if (IK == IK_Block) {
+  if (IsBlock) {
     LambdaScopeInfo *LSI = PushLambdaScope();
 
     // Build the expression
@@ -163,7 +163,7 @@ StmtResult Sema::ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc,
                      /*Mutable=*/false);
 
     // Set the method on the declaration.
-    Injection->setBlockInjection(Method);
+    Injection->setBlockFragment(Method);
   }
 
   return Injection;
@@ -186,7 +186,7 @@ void Sema::ActOnStartClassFragment(Stmt *S, Decl *D) {
   CXXInjectionStmt *Injection = cast<CXXInjectionStmt>(S);
   CXXRecordDecl *Class = cast<CXXRecordDecl>(D);
   Class->setFragment(true);
-  Injection->setClassInjection(Class);
+  Injection->setClassFragment(Class);
   ProcessCaptures(*this, Class, Injection->captures());
 }
 
@@ -201,7 +201,7 @@ void Sema::ActOnStartNamespaceFragment(Stmt *S, Decl *D) {
   CXXInjectionStmt *Injection = cast<CXXInjectionStmt>(S);
   NamespaceDecl *Ns = cast<NamespaceDecl>(D);
   Ns->setFragment(true);
-  Injection->setNamespaceInjection(Ns);
+  Injection->setNamespaceFragment(Ns);
   ProcessCaptures(*this, Ns, Injection->captures());
 }
 
@@ -209,6 +209,19 @@ void Sema::ActOnStartNamespaceFragment(Stmt *S, Decl *D) {
 ///
 /// FIXME: Is there any final processing to do?
 void Sema::ActOnFinishNamespaceFragment(Stmt *S) { }
+
+/// Generates an injection for a copy of the reflected declaration.
+StmtResult Sema::ActOnReflectionInjection(SourceLocation ArrowLoc, Expr *Ref) {
+  
+  if (Ref->isTypeDependent() || Ref->isValueDependent())
+    return new (Context) CXXInjectionStmt(ArrowLoc, Ref);
+
+  Decl *D = GetReflectedDeclaration(Ref);
+  if (!D)
+    return StmtError();
+  else
+    return  new (Context) CXXInjectionStmt(ArrowLoc, Ref, D);
+}
 
 // Returns an integer value describing the target context of the injection.
 // This correlates to the second %select in err_invalid_injection.
@@ -305,12 +318,15 @@ bool Sema::InjectBlockStatements(SourceLocation POI, InjectionInfo &II) {
   if (!CurContext->isFunctionOrMethod())
     return InvalidInjection(*this, POI, 0, CurContext);
 
+  // Note that we are instantiating a template.
+  InstantiatingTemplate Inst(*this, POI);
+
   /*
   SourceCodeInjector Injector(*this, S->getInjectionContext());
 
   // Transform each statement in turn. Note that we build build a compound
   // statement from all injected statements at the point of injection.
-  CompoundStmt *Block = S->getInjectedBlock();
+  CompoundStmt *Block = S->getBlockFragment();
   for (Stmt *B : Block->body()) {
     StmtResult R = Injector.TransformStmt(B);
     if (R.isInvalid())
@@ -326,10 +342,13 @@ bool Sema::InjectClassMembers(SourceLocation POI, InjectionInfo &II) {
   if (!CurContext->isRecord())
     return InvalidInjection(*this, POI, 1, CurContext);
 
+  // Note that we are instantiating a template.
+  InstantiatingTemplate Inst(*this, POI);
+
   const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(II.Injection);
 
   CXXRecordDecl *Target = cast<CXXRecordDecl>(CurContext);
-  CXXRecordDecl *Source = IS->getInjectedClass();
+  CXXRecordDecl *Source = IS->getClassFragment();
   SourceCodeInjector Injector(*this, Source);
   Injector.AddSubstitution(Source, Target);
 
@@ -384,8 +403,11 @@ bool Sema::InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II) {
   if (!CurContext->isFileContext())
     return InvalidInjection(*this, POI, 2, CurContext);
 
+  // Note that we are instantiating a template.
+  InstantiatingTemplate Inst(*this, POI);
+
   /*
-  NamespaceDecl *Source = D->getInjectedNamespace();
+  NamespaceDecl *Source = D->getNamespaceFragment();
   SourceCodeInjector Injector(*this, Source);
   if (CurContext->isNamespace())
     Injector.AddSubstitution(Source, cast<NamespaceDecl>(CurContext));
@@ -402,6 +424,53 @@ bool Sema::InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II) {
   return true;
 }
 
+bool Sema::InjectReflectedDeclaration(SourceLocation POI, InjectionInfo &II) {
+  // Note that we are instantiating a template.
+  InstantiatingTemplate Inst(*this, POI);
+  
+  const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(II.Injection);
+  Decl *D = IS->getReflectedDeclaration();
+
+  // Determine if we can actually apply the injection. In general, the contexts
+  // of the injected declaration and the current context must be the same.
+  //
+  // FIXME: This is probably overly protective; it isn't entirely unreasonable
+  // to think about injecting namespace members as static members of a class.
+  DeclContext *SourceDC = D->getDeclContext();
+  if (CurContext->isRecord() && !SourceDC->isRecord())
+    return InvalidInjection(*this, POI, 1, CurContext);
+  if (CurContext->isFileContext() && !SourceDC->isFileContext())
+    return InvalidInjection(*this, POI, 2, CurContext);
+
+  Decl *Source = Decl::castFromDeclContext(SourceDC);
+  Decl *Target = Decl::castFromDeclContext(CurContext);
+  SourceCodeInjector Injector(*this, SourceDC);
+  Injector.AddSubstitution(Source, Target);
+
+  Decl* R = Injector.TransformLocalDecl(D);
+  if (!R) {
+    Target->setInvalidDecl(true);
+    return false;
+  }
+
+  return true;
+}
+
+static bool
+ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II, 
+               const CXXInjectionStmt *IS) {
+   switch (IS->getInjectionKind()) {
+    case CXXInjectionStmt::BlockFragment:
+      return SemaRef.InjectBlockStatements(POI, II);
+    case CXXInjectionStmt::ClassFragment:
+      return SemaRef.InjectClassMembers(POI, II);
+    case CXXInjectionStmt::NamespaceFragment:
+      return SemaRef.InjectNamespaceMembers(POI, II);
+    case CXXInjectionStmt::ReflectedDecl:
+      return SemaRef.InjectReflectedDeclaration(POI, II);
+  }
+}
+
 /// Inject a sequence of source code fragments or modification requests
 /// into the current AST. The point of injection (POI) is the point at
 /// which the injection is applied.
@@ -409,32 +478,12 @@ bool Sema::InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II) {
 /// \returns  true if no errors are encountered, false otherwise.
 bool Sema::ApplySourceCodeModifications(SourceLocation POI, 
                                    SmallVectorImpl<InjectionInfo> &Injections) {
+  bool Ok = true;
   for (InjectionInfo &II : Injections) {
-    // Unpack the injection to see how it should be applied.
-    const Stmt *S = II.Injection;
-    if (const auto *IS = dyn_cast<CXXInjectionStmt>(S)) {
-      if (IS->isBlockInjection())
-        InjectBlockStatements(POI, II);
-      else if (IS->isClassInjection())
-        InjectClassMembers(POI, II);
-      else if (IS->isNamespaceInjection())
-        InjectNamespaceMembers(POI, II);
-      else
-        llvm_unreachable("Unknown injection context");
-    } else if (const auto *RTE = dyn_cast<ReflectionTraitExpr>(S)) {
-      auto *E = const_cast<ReflectionTraitExpr *>(RTE);
-      if (RTE->getTrait() == BRT_ModifyAccess)
-        ModifyDeclarationAccess(E);
-      else if (RTE->getTrait() == BRT_ModifyVirtual)
-        ModifyDeclarationVirtual(E);
-      else if (RTE->getTrait() == URT_ModifyConstexpr)
-        ModifyDeclarationConstexpr(E);
-      else
-        llvm_unreachable("Unknown reflection trait");
-    } else
-      llvm_unreachable("Invalid injection");
+    const CXXInjectionStmt *IS = dyn_cast<CXXInjectionStmt>(II.Injection);
+    Ok &= ApplyInjection(*this, POI, II, IS);
   }
-  return true;
+  return Ok;
 }
 
 
@@ -450,6 +499,12 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
                           CXXRecordDecl *Proto,
                           CXXRecordDecl *Final,
                           SmallVectorImpl<Decl *> &Fields) {
+  
+  // Note that we are instantiating.
+  //
+  // FIXME: The point of instantiation/injection is incorrect.
+  InstantiatingTemplate Inst(*this, Final->getLocation());
+
   CXXRecordDecl *Def = Meta->getDefinition();
 
   // Build a new class to use as an intermediary for containing transformed

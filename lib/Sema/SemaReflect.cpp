@@ -186,6 +186,21 @@ static ReflectedConstruct EvaluateReflection(Sema& S, Expr *E) {
   return EvaluateReflection(S, E, T);
 }
 
+/// Returns a reflected declaration or nullptr if E does not reflect a
+/// declaration. If E reflects a user-defined type, then this returns the
+/// declaration of that type.
+Decl *Sema::GetReflectedDeclaration(Expr *E)
+{
+  ReflectedConstruct R = EvaluateReflection(*this, E);
+  Decl *D = R.getAsDeclaration();
+  if (!D)
+    if (Type *T = R.getAsType())
+      D = T->getAsCXXRecordDecl();
+  if (!D)
+    Diag(E->getLocStart(), diag::err_invalid_reflection);
+  return D;
+}
+
 /// The expression \c $x returns an object describing the reflected entity \c x.
 /// The type of that object depends on the type of the thing reflected.
 ///

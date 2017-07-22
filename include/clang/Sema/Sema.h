@@ -7010,6 +7010,14 @@ public:
 
       /// We are declaring an implicit special member function.
       DeclaringSpecialMember,
+
+      /// We are injecting source code.
+      ///
+      /// FIXME: This is a little unusual because, unlike ever other context,
+      /// this can apply to multiple members of a fragment as well as a single
+      /// reflected injection. Perhaps we should be creating a new context for
+      /// each injected (top level) declaration.
+      SourceCodeInjection,
     } Kind;
 
     /// \brief Was the enclosing context a non-instantiation SFINAE context?
@@ -7266,6 +7274,11 @@ public:
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           Stmt *S, ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange);
+
+    /// \brief Note that we injecting source code.
+    ///
+    /// FIXME: This is *not* template instantiation.
+    InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation);
 
     /// \brief Note that we have finished instantiating this template.
     void Clear();
@@ -8402,6 +8415,8 @@ public:
   ExprResult BuildDeclReflection(SourceLocation Loc, Decl *D);
   ExprResult BuildTypeReflection(SourceLocation Loc, QualType T);
 
+  Decl *GetReflectedDeclaration(Expr *E);
+
   QualType BuildReflectedType(SourceLocation TypenameLoc, Expr *E);
   TypeResult ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc, Expr *E);
 
@@ -8455,21 +8470,15 @@ public:
 
   DeclResult ActOnInjectionCapture(IdentifierLocPair P);
 
-  // Keep these aligned CXXInjectionStmt::InjectionKind
-  enum InjectionStmtKind {
-    IK_Block,
-    IK_Class,
-    IK_Namespace,
-  };
-
-  StmtResult ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc, unsigned IK,
-                                CapturedDeclsList &Captures);
+  StmtResult ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc, 
+                                bool IsBlock, CapturedDeclsList &Captures);
   void ActOnStartBlockFragment(Scope *S);
   void ActOnFinishBlockFragment(Scope *S, Stmt *Body);
   void ActOnStartClassFragment(Stmt *S, Decl *D);
   void ActOnFinishClassFragment(Stmt *S);
   void ActOnStartNamespaceFragment(Stmt *S, Decl *D);
   void ActOnFinishNamespaceFragment(Stmt *S);
+  StmtResult ActOnReflectionInjection(SourceLocation ArrowLoc, Expr *Ref);
 
   using InjectionInfo = Expr::InjectionInfo;
 
@@ -8479,6 +8488,7 @@ public:
   bool InjectBlockStatements(SourceLocation POI, InjectionInfo &II);
   bool InjectClassMembers(SourceLocation POI, InjectionInfo &II);
   bool InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II);
+  bool InjectReflectedDeclaration(SourceLocation POI, InjectionInfo &II);
 
   void ApplyMetaclass(MetaclassDecl *Meta, 
                       CXXRecordDecl *Proto, 

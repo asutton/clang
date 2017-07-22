@@ -7625,38 +7625,44 @@ TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
     Captures.push_back(R);
   }
 
+  if (S->isReflectedDeclaration()) {
+    ExprResult E = TransformExpr(S->getReflection());
+    if (E.isInvalid())
+      return StmtError();
+    return getSema().ActOnReflectionInjection(S->getArrowLoc(), E.get());
+  }
+
   // Rebuild the injection statement.
-  //
-  // FIXME: We're passing a null scope A LOT. That can't be good.
-  StmtResult Result = getSema().ActOnInjectionStmt(nullptr, 
-                                                   S->getArrowLoc(),
-                                                   S->getInjectionKind(), 
-                                                   Captures);
+  bool IsBlock = S->getInjectionKind() == CXXInjectionStmt::BlockFragment;
+  StmtResult Result = getSema().ActOnInjectionStmt(nullptr, S->getArrowLoc(),
+                                                   IsBlock, Captures);
   if (Result.isInvalid())
     return StmtError();
   CXXInjectionStmt *Injection = cast<CXXInjectionStmt>(Result.get());
 
   // Replay the construction of statement.
   switch (S->getInjectionKind()) {
-  case CXXInjectionStmt::Block: {
+  case CXXInjectionStmt::BlockFragment: {
     getSema().ActOnStartBlockFragment(nullptr);
-    StmtResult Body = getDerived().TransformStmt(S->getInjectedBlock());
+    StmtResult Body = getDerived().TransformStmt(S->getBlockFragment());
     getSema().ActOnFinishBlockFragment(nullptr, Body.get());
     break;
   }
-  case CXXInjectionStmt::Class: {
+  case CXXInjectionStmt::ClassFragment: {
     // Locally transform the fragment, to produce a new one.
-    CXXRecordDecl *Src = S->getInjectedClass();
+    CXXRecordDecl *Src = S->getClassFragment();
     Decl *Dst = getDerived().TransformLocalDecl(Src);
-    Injection->setClassInjection(cast<CXXRecordDecl>(Dst));
+    Injection->setClassFragment(cast<CXXRecordDecl>(Dst));
     break;
   }
-  case CXXInjectionStmt::Namespace: {
+  case CXXInjectionStmt::NamespaceFragment: {
     // FIXME: This is wrong. Do the same thing above: create a new namespace
     // and then transform members in turn.
-    llvm_unreachable("namespace fragment transformation not implemented");
+    llvm_unreachable("Namespace fragment transformation not implemented");
     break;
   }
+  default:
+    llvm_unreachable("Invalid injection kind");
   }
 
   return Injection;

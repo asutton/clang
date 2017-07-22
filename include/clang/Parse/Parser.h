@@ -2632,6 +2632,7 @@ private:
                                     CapturedDeclsList &Catpures);
   StmtResult ParseCXXNamespaceInjection(SourceLocation ArrowLoc,
                                     CapturedDeclsList &Catpures);
+  StmtResult ParseCXXReflectionInjection(SourceLocation ArrowLoc);
 
 #if 0
   void InjectTokens(Stmt *Injection, CachedTokens &Toks);

@@ -352,7 +352,7 @@ void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
 }
 
 void StmtPrinter::VisitCXXInjectionStmt(CXXInjectionStmt *Node) {
-  // FIXME: Print tokens.
+  // FIXME: Actually print something meaningful.
   Indent() << "-> { ... }";
   if (Policy.IncludeNewlines) OS << "\n";
 }
