@@ -13791,6 +13791,7 @@ CreateNewDecl:
 
       CurContext->addDecl(Class);
 
+      // We'll be working with the prototype from here on out.
       New = Prototype;
     }
   }
@@ -14019,15 +14020,6 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
   AdjustDeclIfTemplate(TagD);
   TagDecl *Tag = cast<TagDecl>(TagD);
 
-  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Tag)) {
-    // We get here when we finish a metaclass. Adjust the tag so that we finish
-    // the right class.
-    if (Class->getMetaclass()) {
-      assert(Class->isFragment() && "expected class fragment");
-      Tag = cast<CXXRecordDecl>(Class->getDeclContext());
-    }
-  }
-
   Tag->setBraceRange(BraceRange);
 
   // Make sure we "complete" the definition even it is invalid.
@@ -14047,6 +14039,40 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
   if (getCurLexicalContext()->isObjCContainer() &&
       Tag->getDeclContext()->isFileContext())
     Tag->setTopLevelDeclInObjCContainer();
+
+  // If we just finished a prototype, apply it's metaclass to create the
+  // final class.
+  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Tag)) {
+    // We get here when we finish a metaclass. Adjust the tag so that we finish
+    // the right class.
+    if (MetaclassDecl *Meta = Class->getMetaclass()) {
+      assert(Class->isFragment() && "Expected class fragment");
+
+      CXXRecordDecl *Final = cast<CXXRecordDecl>(Class->getDeclContext());
+
+      // Remove the prototype so it doesn't appear in the final AST, nor
+      // will it be reflected by a metafunction.
+      Class->setLexicalDeclContext(Final);
+      Final->removeDecl(Class);
+
+      // Make the final class available in its declaring scope.
+      PushOnScopeChains(Final, getCurScope()->getParent(), false);
+
+      // Apply the metaclass.
+      SmallVector<Decl *, 32> InjectedFields;
+      ApplyMetaclass(Meta, Class, Final, InjectedFields);
+
+      // Perform a final analysis on the members of the resulting class.
+      S->setEntity(Final);
+      ActOnFields(S, Final->getLocation(), Final, InjectedFields, 
+                  BraceRange.getBegin(), BraceRange.getEnd(),
+                  /*Attr=*/nullptr);
+      S->setEntity(Class);
+
+      // Replace the tag so the consumer doesn't see the prototype.
+      Tag = cast<CXXRecordDecl>(Class->getDeclContext());
+    }
+  }
 
   // Notify the consumer that we've defined a tag.
   if (!Tag->isInvalidDecl())
@@ -14732,43 +14758,15 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
 
   RecordDecl *Record = dyn_cast<RecordDecl>(EnclosingDecl);
 
-  // If this record is part of a metaclass, we'll mark it complete but
-  // actually skip all of the member processing below. 
+  // If this this a prototype, we don't want to apply defaults.
   //
-  // FIXME: This seems fragile.
-  if (isa<MetaclassDecl>(Record->getParent())) {
-    Record->completeDefinition();
-    return;
-  }
-
-  // If the record subscribes to a metaclass, then we need to inject and
-  // apply those declarations prior to analysis.
+  // FIXME: Is this true for classes resulting from the metaclass?
+  // Currently, we still apply defaults since we still want our classes
+  // to be sane.
   bool ApplyDefaults = true;
   if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
     if (MetaclassDecl *Metaclass = Class->getMetaclass()) {
-      assert(Class->isFragment() && "expected a class fragment");
-      assert(CurContext == Class && "current context is not the prototype");
-      CXXRecordDecl *Final = cast<CXXRecordDecl>(Class->getDeclContext());
-
-      // Update the prototype so we can manipulate it later.
-      Class->setLexicalDeclContext(Final);
-      Class->completeDefinition();
-  
-      // Make the final class available in its declaring scope.
-      PushOnScopeChains(Final, getCurScope()->getParent(), false);
-
-      SmallVector<Decl *, 32> InjectedFields;
-      ApplyMetaclass(Metaclass, Class, Final, InjectedFields);
-
-      // Remove the prototype so it doesn't appear in the final AST.
-      Final->removeDecl(Class);
-
-      // Replace the prototype with final class and update context, fields, etc.
-      CurContext = Final;
-      EnclosingDecl = Final;
-      Record = Final;
-      Fields = InjectedFields;
-      ApplyDefaults = false;
+      ApplyDefaults = Class->isFragment();
     }
   }
 

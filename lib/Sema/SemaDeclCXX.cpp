@@ -10697,6 +10697,16 @@ void Sema::ActOnFinishCXXMemberDecls() {
 }
 
 void Sema::ActOnFinishCXXNonNestedClass(Decl *D) {
+  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D)) {
+    // Don't export declarations of a prototype. We'll do that for the
+    // final class later.
+    //
+    // FIXME: How should we handle members of nested classes in a prototype?
+    // Are those also prototypes?
+    if (Class->isFragment() && Class->getMetaclass())
+      return;
+  }
+
   referenceDLLExportedClassMethods();
 }
 

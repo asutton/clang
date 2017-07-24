@@ -508,8 +508,8 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
   CXXRecordDecl *Def = Meta->getDefinition();
 
   // Build a new class to use as an intermediary for containing transformed
-  // declarations. We'll perform a second set of substitutions to move the
-  // content into the final class.
+  // declarations. This first transformation pass applies the metaclass as
+  // a program, causing the results to be added to this intermediary.
   CXXRecordDecl *Scratch = CXXRecordDecl::Create(Context, Proto->getTagKind(),
                                                  CurContext, 
                                                  Proto->getLocStart(), 
