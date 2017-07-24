@@ -425,6 +425,9 @@ public:
     if (Known != TransformedLocalDecls.end())
       return Known->second;
 
+    if (!D)
+      return nullptr;
+
     if (D->isInjectable() || D->getDeclContext()->isFragment())
       return getDerived().TransformLocalDecl(Loc, D);
 
