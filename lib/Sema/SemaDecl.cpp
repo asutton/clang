@@ -14758,16 +14758,19 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
 
   RecordDecl *Record = dyn_cast<RecordDecl>(EnclosingDecl);
 
-  // If this this a prototype, we don't want to apply defaults.
-  //
-  // FIXME: Is this true for classes resulting from the metaclass?
-  // Currently, we still apply defaults since we still want our classes
-  // to be sane.
   bool ApplyDefaults = true;
   if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
-    if (MetaclassDecl *Metaclass = Class->getMetaclass()) {
+    // If this this a prototype, we don't want to apply defaults.
+    //
+    // FIXME: Is this true for classes resulting from the metaclass?
+    // Currently, we still apply defaults since we still want our classes
+    // to be sane.
+    if (MetaclassDecl *Metaclass = Class->getMetaclass())
       ApplyDefaults = Class->isFragment();
-    }
+
+    // Same for metaclasses.
+    if (isa<MetaclassDecl>(Class->getDeclContext()))
+      ApplyDefaults = false;
   }
 
   // Start counting up the number of named members; make sure to include
