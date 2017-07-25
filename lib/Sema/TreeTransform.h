@@ -13110,24 +13110,32 @@ template<typename Derived>
 Decl *
 TreeTransform<Derived>::TransformLocalCXXRecordDecl(CXXRecordDecl *D) {
   DeclContext *Owner = getSema().CurContext;
-  DeclarationNameInfo DN(D->getDeclName(), D->getLocation());
-  DeclarationNameInfo DNI = getDerived().TransformDeclarationNameInfo(DN);
 
   // FIXME: If D has a previous declaration, then we need to find the
   // previous declaration of R.
 
-  CXXRecordDecl *R 
-    = CXXRecordDecl::Create(getSema().Context, D->getTagKind(),
-                            Owner, D->getLocStart(), 
-                            D->getLocation(), 
-                            DNI.getName().getAsIdentifierInfo(), 
-                            /*PrevDecl=*/nullptr);
+  CXXRecordDecl *R;
+  if (D->isInjectedClassName()) {
+    DeclarationName DN = cast<CXXRecordDecl>(Owner)->getDeclName();
+    R = CXXRecordDecl::Create(getSema().Context, D->getTagKind(),
+                              Owner, D->getLocStart(), D->getLocation(),
+                              DN.getAsIdentifierInfo(), /*PrevDecl=*/nullptr);
+  } else {
+    DeclarationNameInfo DN(D->getDeclName(), D->getLocation());
+    DeclarationNameInfo DNI = getDerived().TransformDeclarationNameInfo(DN);
+    R = CXXRecordDecl::Create(getSema().Context, D->getTagKind(),
+                              Owner, D->getLocStart(), D->getLocation(),
+                              DNI.getName().getAsIdentifierInfo(), 
+                              /*PrevDecl=*/nullptr);
+  }
   transformedLocalDecl(D, R);
 
   TransformAttributes(D, R);
 
+  R->setImplicit(D->isImplicit());
   R->setFragment(D->isFragment());
   R->setInjectable(D->isInjectable());
+  R->setReferenced(D->isReferenced());
   Owner->addDecl(R);
 
   if (D->hasDefinition()) {

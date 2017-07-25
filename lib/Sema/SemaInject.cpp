@@ -396,11 +396,11 @@ bool Sema::InjectClassMembers(SourceLocation POI, InjectionInfo &II) {
 
   while (DeclIter != DeclEnd) {
     Decl *Member = *DeclIter;
-    if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Member)) {
-      // The top-level injected class name is not injected.
-      if (RD->isInjectedClassName())
-        continue;
-    }
+    // if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Member)) {
+    //   // The top-level injected class name is not injected.
+    //   if (RD->isInjectedClassName())
+    //     continue;
+    // }
 
     if (!Injector.TransformLocalDecl(Member))
       Target->setInvalidDecl(true);
@@ -639,16 +639,12 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
   {
     ContextRAII SavedContext(*this, Scratch);
     SourceCodeInjector Injector(*this, Def);
-    Injector.AddSubstitution(Def, Proto);
+    Injector.AddSubstitution(Def, Scratch);
+    Injector.AddSubstitution(Proto, Scratch);
 
     for (Decl *D : Def->decls()) {
-      if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {
-        if (RD->isInjectedClassName())
-          // Skip the injected class name.
-          continue;
-      }
-
-      if (!Injector.TransformDecl(D))
+      Decl *R = Injector.TransformLocalDecl(D);
+      if (!R)
         Final->setInvalidDecl(true);
     }
   }
