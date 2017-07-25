@@ -578,6 +578,7 @@ struct method : typed<X, member_function_decl_kind> {
     this->mods.make_virtual = true;
   }
   constexpr void make_pure_virtual() {
+    this->mods.make_virtual = true;
     this->mods.make_pure = true;
   }
 
@@ -947,5 +948,10 @@ struct tuple_element<I, cppx::meta::tu<X>>
 };
 
 } // namespace std
+
+/// Make it easier for people to use the online compiler.
+///
+/// TODO: Remove this.
+using namespace cppx::meta;
 
 #endif // CPPX_META

@@ -34,4 +34,10 @@ constexpr compiler_type compiler;
 } // namespace meta
 } // namespace cppx
 
+
+/// Make it easier for people to use the online compiler.
+///
+/// TODO: Remove this.
+using namespace cppx::meta;
+
 #endif // CPPX_COMPILER

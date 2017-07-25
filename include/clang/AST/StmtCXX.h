@@ -661,6 +661,9 @@ class CXXInjectionStmt : public Stmt {
   /// Stores an expression that computes the reflection being injected.
   Expr *Reflection;
 
+  /// Stores local modifications to a reflection.
+  Expr *Modifications;
+
   /// Stores the actual thing being injected. The specific kind of declaration
   /// depends on the injection kind (stored in InjectionStmtBits). The value
   /// is an expression only if it is a dependent reflection injection.
@@ -685,19 +688,19 @@ public:
 
   CXXInjectionStmt(SourceLocation AL, Expr *E)
       : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), NumCaptures(), Captures(),
-        Reflection(E), Injection() {
+        Reflection(E), Modifications(), Injection() {
     InjectionStmtBits.InjectionKind = ReflectedDecl;
   }
 
   CXXInjectionStmt(SourceLocation AL, Expr *E, Decl *D)
       : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), NumCaptures(), Captures(),
-        Reflection(E), Injection(D) {
+        Reflection(E), Modifications(), Injection(D) {
     InjectionStmtBits.InjectionKind = ReflectedDecl;
   }
 
   explicit CXXInjectionStmt(EmptyShell Empty)
       : Stmt(CXXInjectionStmtClass, Empty), ArrowLoc(), NumCaptures(), 
-        Captures(), Reflection(), Injection() {}
+        Captures(), Reflection(), Modifications(), Injection() {}
 
   /// \brief Returns the location of the injected arrow.
   SourceLocation getArrowLoc() const { return ArrowLoc; }
@@ -753,6 +756,13 @@ public:
     assert(isReflectedDeclaration() && "Not a reflected declaration");
     return Reflection;
   }
+
+  /// \brief The local modifications applied to the injection, if any.
+  /// This is an expression that accesses the modifications value.
+  const Expr *getModifications() const { return Modifications; }
+
+  /// \brief Set the modification access expression.
+  void setModifications(Expr *E) { Modifications = E; }
 
   /// \brief Whether the injection holds a fragment or not.
   bool isFragment() const { 

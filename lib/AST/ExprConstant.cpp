@@ -4062,6 +4062,38 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
 
       Info.EvalStatus.Injections->emplace_back(IS);
       Expr::InjectionInfo &II = Info.EvalStatus.Injections->back();
+
+      if (IS->isReflectedDeclaration()) {
+        // There is no capture for a reflected declaration, but the value
+        // of the expression might have local modifications.        
+        if (const Expr *E = IS->getModifications()) {
+          APValue Val;
+          if (!Evaluate(Val, Info, E))
+           return ESR_Failed;
+
+          if (Val.isLValue()) {
+            // Load the complete value from expression.
+            LValue LV;
+            LV.setFrom(Info.Ctx, Val);
+            CompleteObject Object 
+                = findCompleteObject(Info, E, AK_Read, LV, E->getType());
+            if (!Object)
+              return ESR_Failed;
+            
+            APValue Result;
+            SubobjectDesignator Sub(Info.Ctx, Val);
+            ExtractSubobjectHandler Handler = { Info, Result };
+            if (!findSubobject(Info, E, Object, Sub, Handler))
+              return ESR_Failed;
+
+            Val = Result;
+          }
+
+          II.Modifications = Val;
+        }
+      }
+
+      // Evaluate capture values.
       II.CaptureValues.resize(IS->getNumCaptures());
       for (std::size_t I = 0; I < IS->getNumCaptures(); ++I) {
         const Expr *E = IS->getCapture(I);

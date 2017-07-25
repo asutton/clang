@@ -219,8 +219,20 @@ StmtResult Sema::ActOnReflectionInjection(SourceLocation ArrowLoc, Expr *Ref) {
   Decl *D = GetReflectedDeclaration(Ref);
   if (!D)
     return StmtError();
-  else
-    return  new (Context) CXXInjectionStmt(ArrowLoc, Ref, D);
+
+  // Build the expression `ref.mods` to extract the list of local modifications
+  // during evaluation.
+  SourceLocation Loc = Ref->getLocStart();
+  UnqualifiedId Id;
+  Id.setIdentifier(PP.getIdentifierInfo("mods"), Loc);
+  CXXScopeSpec SS;
+  ExprResult Mods = ActOnMemberAccessExpr(getCurScope(), Ref, Loc, tok::period, 
+                                          SS, SourceLocation(), Id, nullptr);
+  
+  CXXInjectionStmt *IS = new (Context) CXXInjectionStmt(ArrowLoc, Ref, D);
+  if (Mods.isUsable())
+    IS->setModifications(Mods.get());
+  return IS;
 }
 
 // Returns an integer value describing the target context of the injection.
@@ -447,11 +459,114 @@ bool Sema::InjectReflectedDeclaration(SourceLocation POI, InjectionInfo &II) {
   SourceCodeInjector Injector(*this, SourceDC);
   Injector.AddSubstitution(Source, Target);
 
-  Decl* R = Injector.TransformLocalDecl(D);
-  if (!R) {
-    Target->setInvalidDecl(true);
-    return false;
+  // FIXME: Unify this with other reflection facilities.
+
+  enum StorageKind { None, Static, Automatic, ThreadLocal };
+  enum AccessKind { Public, Private, Protected, Default };
+
+  StorageKind Storage = {};
+  AccessKind Access = {};
+  bool Constexpr = false;
+  bool Virtual = false;
+  bool Pure = false;
+
+  APValue Mods = II.Modifications;
+  if (!Mods.isUninit()) {
+    // linkage_kind new_linkage : 2;
+    // access_kind new_access : 2;
+    // storage_kind new_storage : 2;
+    // bool make_constexpr : 1;
+    // bool make_virtual : 1;
+    // bool make_pure : 1;
+
+    Access = (AccessKind)Mods.getStructField(1).getInt().getExtValue();
+    Storage = (StorageKind)Mods.getStructField(2).getInt().getExtValue();
+    Constexpr = Mods.getStructField(3).getInt().getExtValue();
+    Virtual = Mods.getStructField(4).getInt().getExtValue();
+    Pure = Mods.getStructField(5).getInt().getExtValue();
   }
+
+  assert(Storage != Automatic && "Can't make declarations automatic");
+  assert(Storage != ThreadLocal && "Thread local storage not implemented");
+
+  // Build the declaration.
+  Decl* Result;
+  if (isa<FieldDecl>(D) && (Storage == Static)) {
+    llvm_unreachable("Rebuild field as var");
+  } else {
+    // An unmodified declaration.
+    Result = Injector.TransformLocalDecl(D);
+    if (!Result) {
+      Target->setInvalidDecl(true);
+      return false;
+    }
+  }
+
+  // Update access specifiers.
+  if (Access) {
+    if (!Result->getDeclContext()->isRecord()) {
+      Diag(POI, diag::err_modifies_mem_spec_of_non_member) << 0;
+      return false;
+    }
+    switch (Access) {
+    case Public:
+      Result->setAccess(AS_public);
+      break;
+    case Private:
+      Result->setAccess(AS_private);
+      break;
+    case Protected:
+      Result->setAccess(AS_protected);
+      break;
+    default:
+      llvm_unreachable("Invalid access specifier");
+    }
+  }
+
+  if (Constexpr) {
+    if (VarDecl *Var = dyn_cast<VarDecl>(Result)) {
+      Var->setConstexpr(true);
+      CheckVariableDeclarationType(Var);
+    }
+    else if (isa<CXXDestructorDecl>(Result)) {
+      Diag(POI, diag::err_declration_cannot_be_made_constexpr);
+      return false;
+    }
+    else if (FunctionDecl *Fn = dyn_cast<FunctionDecl>(Result)) {
+      Var->setConstexpr(true);
+      CheckConstexprFunctionDecl(Fn);
+    } else {
+      // Non-members cannot be virtual.
+      Diag(POI, diag::err_virtual_non_function);
+      return false;
+    }
+  }
+
+  if (Virtual) {
+    if (!isa<CXXMethodDecl>(Result)) {
+      Diag(POI, diag::err_virtual_non_function);
+      return false;
+    }
+    
+    CXXMethodDecl *Method = cast<CXXMethodDecl>(Result);
+    Method->setVirtualAsWritten(true);
+  
+    if (Pure) {
+      // FIXME: Move pure checks up?
+      int Err = 0;
+      if (Method->isDefaulted()) Err = 2;
+      else if (Method->isDeleted()) Err = 3;
+      else if (Method->isDefined()) Err = 1;
+      if (Err) {
+        Diag(POI, diag::err_cannot_make_pure_virtual) << (Err - 1);
+        return false;
+      }
+      CheckPureMethod(Method, Method->getSourceRange());
+    }
+  }
+
+  // Finally, update the owning context.
+  Result->getDeclContext()->updateDecl(Result);
 
   return true;
 }

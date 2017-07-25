@@ -170,7 +170,8 @@ CoroutineBodyStmt::CoroutineBodyStmt(CoroutineBodyStmt::CtorArgs const &Args)
 CXXInjectionStmt::CXXInjectionStmt(ASTContext &Cxt, SourceLocation AL, 
                                    SmallVectorImpl<Expr *> &Caps)
     : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), NumCaptures(Caps.size()),
-      Captures(new (Cxt) Expr*[NumCaptures]), Reflection(), Injection() {
+      Captures(new (Cxt) Expr*[NumCaptures]), Reflection(), Modifications(), 
+      Injection() {
   std::copy(Caps.begin(), Caps.end(), Captures);
 }
 

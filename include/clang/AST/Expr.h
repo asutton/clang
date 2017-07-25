@@ -540,6 +540,10 @@ public:
   struct InjectionInfo {
     InjectionInfo(const Stmt *S) : Injection(S) { }
 
+    /// A structure of bitfields indicating which modifications are to
+    /// be enabled.
+    APValue Modifications;
+
     /// \brief the values computed for captured expressions.
     SmallVector<APValue, 4> CaptureValues;
 

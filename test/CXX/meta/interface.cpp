@@ -3,13 +3,10 @@
 #include <cppx/meta>
 #include <cppx/compiler>
 
-#include <cppx/meta>
-#include <cppx/compiler>
-
 using namespace cppx::meta;
 
 $class interface {
-  ~interface() noexcept = default;
+  virtual ~interface() noexcept = default;
   
   // Check for invalid members.
   constexpr {
@@ -28,17 +25,19 @@ $class interface {
   // Transform members.
   constexpr {
     for... (auto f : $interface.member_functions()) {
-      if (!f.has_access()) f.make_public();
-      if (!f.is_virtual()) f.make_pure_virtual();
+      f.make_pure_virtual();
+      -> f;
     }
-  }
-} // end constexpr;
+  } // end constexpr;
+} 
 
 
 interface Shape {
   int area() const;
   void scale_by(double factor);
+  
   // ...
+  // int x;
 };
 
 int main() {
