@@ -271,18 +271,27 @@ class SourceCodeInjector : public TreeTransform<SourceCodeInjector> {
   // namespace (for namespace injection).
   DeclContext *SrcContext;
 
+  /// When set, the prototype class. This is used as the replacement for
+  /// the source context within a metaprogram.
+  ///
+  /// FIXME: This is a bit of hack. We should have a new class called a
+  /// metaclass injector, but the template magic gets a bit weird when
+  /// subclassing a CRTP class.
+  CXXRecordDecl *Proto;
+
 public:
   SourceCodeInjector(Sema &SemaRef, DeclContext *DC)
-      : TreeTransform<SourceCodeInjector>(SemaRef), SrcContext(DC) {}
+      : TreeTransform<SourceCodeInjector>(SemaRef), SrcContext(DC), Proto() {}
 
   // Always rebuild nodes; we're effectively copying from one AST to another.
   bool AlwaysRebuild() const { return true; }
 
   // Replace the declaration From (in the injected statement or members) with
   // the declaration To (derived from the target context).
-  void AddSubstitution(Decl *From, Decl *To) {
-    transformedLocalDecl(From, To);
-  }
+  void AddSubstitution(Decl *From, Decl *To) { transformedLocalDecl(From, To); }
+
+  /// Set the prototype declaration.
+  void SetPrototype(CXXRecordDecl *D) { Proto = D; }
 
   /// Transform the given type. Strip reflected types from the result so that
   /// the resulting AST no longer contains references to a reflected name.
@@ -321,6 +330,17 @@ public:
       return D;
 
     return TransformLocalDecl(Loc, D);
+  }
+
+  Decl *TransformLocalConstexprDecl(ConstexprDecl *D) {
+    Decl *Old = Decl::castFromDeclContext(SrcContext);
+    Decl *Dest = TransformedLocalDecls[Old];
+    if (Proto)
+      TransformedLocalDecls[Old] = Proto;
+    Decl * R = BaseType::TransformLocalDecl(D);
+    if (Proto)
+      TransformedLocalDecls[Old] = Dest;
+    return R;
   }
 };
 
@@ -620,7 +640,24 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
   // FIXME: The point of instantiation/injection is incorrect.
   InstantiatingTemplate Inst(*this, Final->getLocation());
 
-  CXXRecordDecl *Def = Meta->getDefinition();
+  {
+    CXXRecordDecl *Def = Meta->getDefinition();
+    ContextRAII SavedContext(*this, Final);
+    SourceCodeInjector Injector(*this, Def);
+    Injector.AddSubstitution(Def, Final);
+    Injector.SetPrototype(Proto);
+
+    for (Decl *D : Def->decls()) {
+      Decl *R = Injector.TransformLocalDecl(D);
+      if (!R)
+        Final->setInvalidDecl(true);
+    }
+    if (Final->isInvalidDecl())
+      return;
+  }
+
+
+  #if 0
 
   // Build a new class to use as an intermediary for containing transformed
   // declarations. This first transformation pass applies the metaclass as
@@ -680,4 +717,6 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
   // llvm::outs() << "*** FINAL CLASS ***\n";
   // Final->dump();
   // Final->print(llvm::outs());
+
+  #endif
 }

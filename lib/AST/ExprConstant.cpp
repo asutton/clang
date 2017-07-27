@@ -2332,6 +2332,17 @@ static bool evaluateVarDeclInit(EvalInfo &Info, const Expr *E,
       // not declared within the call operator are captures and during checking
       // of a potential constant expression, assume they are unknown constant
       // expressions.
+      if (!(isLambdaCallOperator(Frame->Callee) &&
+             (VD->getDeclContext() != Frame->Callee || VD->isInitCapture()))) {
+        llvm::outs() << "FUCK: " << isLambdaCallOperator(Frame->Callee) 
+                     << ' ' << (VD->getDeclContext() != Frame->Callee)
+                     << ' '<< VD->isInitCapture()
+                     << "\n";
+        VD->dump();
+        Decl* Cxt = Decl::castFromDeclContext(VD->getDeclContext());
+        Cxt->dump();
+        Frame->Callee->dump();
+      }
       assert(isLambdaCallOperator(Frame->Callee) &&
              (VD->getDeclContext() != Frame->Callee || VD->isInitCapture()) &&
              "missing value for local variable");
