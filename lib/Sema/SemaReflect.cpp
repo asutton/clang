@@ -1880,6 +1880,7 @@ TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc,
   return CreateParsedType(T, TSI);
 }
 
+/// Buid a new metaclass definition.
 Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
                            IdentifierInfo *II) {
   assert(II);
@@ -1888,20 +1889,8 @@ Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
 
   // Make sure that this definition doesn't conflict with existing tag
   // definitions.
-  //
-  // TODO: Should this be valid?
-  //
-  //    int x;
-  //    $class x { }
-  //
-  // I think that pinning $class x to a tag name means that the variable
-  // declaration will effectively hide $class x. We'd have to add $class to
-  // the elaborated-type-specifier grammar.
-  //
-  // This is probably fine for now.
   LookupResult Previous(*this, II, IdLoc, LookupOrdinaryName, ForRedeclaration);
   LookupName(Previous, S);
-
   if (!Previous.empty()) {
     NamedDecl *PrevDecl = Previous.getRepresentativeDecl();
     MetaclassDecl *PrevMD = dyn_cast<MetaclassDecl>(PrevDecl);
@@ -1927,7 +1916,8 @@ Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
 
 void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD, 
                                          ParsedAttributes &Attrs,
-                                         CXXRecordDecl *&Definition) {
+                                         CXXRecordDecl *&Definition,
+                                         unsigned Depth) {
   MetaclassDecl *Metaclass = cast<MetaclassDecl>(MD);
 
   PushDeclContext(S, Metaclass);
@@ -1944,6 +1934,18 @@ void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD,
   CurContext->addHiddenDecl(Definition);
   Definition->startDefinition();
   assert(Definition->isMetaclassDefinition() && "Broken metaclass definition");
+
+  // Build an implicit template parameter 'prototype'. This is essentially
+  // a reserved identifier within the scope of the metaclass.
+  auto *Proto = TemplateTypeParmDecl::Create(Context, Definition,
+                                             SourceLocation(), SourceLocation(), 
+                                             Depth, 0,
+                                             &Context.Idents.get("prototype"),
+                                             /*Typename=*/true,
+                                             /*ParameterPack=*/false);
+  Proto->setImplicit(true);
+  Definition->addDecl(Proto);
+  PushOnScopeChains(Proto, S, false);
 
   // Apply attributes to the definition.
   if (AttributeList *List = Attrs.getList())

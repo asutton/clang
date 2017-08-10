@@ -2334,10 +2334,6 @@ static bool evaluateVarDeclInit(EvalInfo &Info, const Expr *E,
       // expressions.
       if (!(isLambdaCallOperator(Frame->Callee) &&
              (VD->getDeclContext() != Frame->Callee || VD->isInitCapture()))) {
-        llvm::outs() << "FUCK: " << isLambdaCallOperator(Frame->Callee) 
-                     << ' ' << (VD->getDeclContext() != Frame->Callee)
-                     << ' '<< VD->isInitCapture()
-                     << "\n";
         VD->dump();
         Decl* Cxt = Decl::castFromDeclContext(VD->getDeclContext());
         Cxt->dump();

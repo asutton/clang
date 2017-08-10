@@ -8444,7 +8444,8 @@ public:
                        IdentifierInfo *II);
   void ActOnMetaclassStartDefinition(Scope *S, Decl *MD, 
                                      ParsedAttributes &Attrs,
-                                     CXXRecordDecl *&Definition);
+                                     CXXRecordDecl *&Definition, 
+                                     unsigned Depth);
   void ActOnMetaclassFinishDefinition(Scope *S, Decl *MD,
                                       SourceRange BraceRange);
   void ActOnMetaclassDefinitionError(Scope *S, Decl *MD);

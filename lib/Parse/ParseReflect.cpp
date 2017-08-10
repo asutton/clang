@@ -324,15 +324,20 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
     Diag(Tok, diag::err_expected_either) << tok::colon << tok::l_brace;
     return nullptr;
   }
-
+  
   Decl *Metaclass = Actions.ActOnMetaclass(getCurScope(), DLoc, IdLoc, II);
   CXXRecordDecl *MetaclassDef = nullptr;
 
   // Enter a scope for the metaclass.
   ParseScope MetaclassScope(this, Scope::DeclScope);
 
+  // Increase the tempalte 
+  TemplateParameterDepthRAII TemplateDepthTracker(TemplateParameterDepth);
+  ++TemplateDepthTracker;
+
   Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass, Attrs, 
-                                        MetaclassDef);
+                                        MetaclassDef, 
+                                        TemplateDepthTracker.getDepth());
 
   PrettyDeclStackTraceEntry CrashInfo(Actions, Metaclass, DLoc,
                                       "parsing metaclass body");

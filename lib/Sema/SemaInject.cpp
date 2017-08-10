@@ -310,6 +310,8 @@ public:
     return TransformDecl(D->getLocation(), D);
   }
 
+  // If D appears within the fragment being injected, then it needs to be
+  // locally transformed.
   Decl *TransformDecl(SourceLocation Loc, Decl *D) {
     if (!D)
       return nullptr;
@@ -332,15 +334,21 @@ public:
     return TransformLocalDecl(Loc, D);
   }
 
-  Decl *TransformLocalConstexprDecl(ConstexprDecl *D) {
-    Decl *Old = Decl::castFromDeclContext(SrcContext);
-    Decl *Dest = TransformedLocalDecls[Old];
-    if (Proto)
-      TransformedLocalDecls[Old] = Proto;
-    Decl * R = BaseType::TransformLocalDecl(D);
-    if (Proto)
-      TransformedLocalDecls[Old] = Dest;
-    return R;
+  // If we have a substitution for the template parameter type apply
+  // that here.
+  QualType TransformTemplateTypeParmType(TypeLocBuilder &TLB, 
+                                         TemplateTypeParmTypeLoc TL) {
+    if (Decl *D = TL.getDecl()) {
+      auto Known = TransformedLocalDecls.find(D);
+      if (Known != TransformedLocalDecls.end()) {
+        Decl *R = Known->second;
+        assert(isa<TagDecl>(R) && "Invalid template parameter substitution");
+        QualType T = SemaRef.Context.getTagDeclType(cast<TagDecl>(R));
+        TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(T);
+        return TransformType(TLB, TSI->getTypeLoc());
+      }
+    }
+    return BaseType::TransformTemplateTypeParmType(TLB, TL);
   }
 };
 
@@ -631,92 +639,40 @@ bool Sema::ApplySourceCodeModifications(SourceLocation POI,
 /// Note that this is always called within the scope of the receiving class,
 /// as if the declarations were being written in-place.
 void Sema::ApplyMetaclass(MetaclassDecl *Meta, 
-                          CXXRecordDecl *Proto,
+                          CXXRecordDecl *ProtoArg,
                           CXXRecordDecl *Final,
                           SmallVectorImpl<Decl *> &Fields) {
   
-  // Note that we are instantiating.
+  // Note that we are synthesizing code.
   //
   // FIXME: The point of instantiation/injection is incorrect.
   InstantiatingTemplate Inst(*this, Final->getLocation());
 
-  {
-    CXXRecordDecl *Def = Meta->getDefinition();
-    ContextRAII SavedContext(*this, Final);
-    SourceCodeInjector Injector(*this, Def);
-    Injector.AddSubstitution(Def, Final);
-    Injector.SetPrototype(Proto);
+  CXXRecordDecl *Def = Meta->getDefinition();
+  Decl *ProtoParm = *Def->decls_begin();
+  assert(isa<TemplateTypeParmDecl>(ProtoParm) && "Expected prototype");
 
-    for (Decl *D : Def->decls()) {
-      Decl *R = Injector.TransformLocalDecl(D);
-      if (!R)
-        Final->setInvalidDecl(true);
-    }
-    if (Final->isInvalidDecl())
-      return;
+  // Inject, into 'final', the metaclass (definition) 'def' while 
+  // transforming references to 'def' into 'final' and references to the 
+  // 'prototype' parameter into the 'proto' class.
+  ContextRAII SavedContext(*this, Final);
+  SourceCodeInjector Injector(*this, Def);
+  Injector.AddSubstitution(Def, Final);
+  Injector.AddSubstitution(ProtoParm, ProtoArg);
+
+  for (Decl *D : Def->decls()) {
+    // Don't transform the prototype parameter. 
+    //
+    // FIXME: Handle this separately by creating a type alias in the
+    // final class.
+    if (D == ProtoParm)
+      continue;
+
+    Decl *R = Injector.TransformLocalDecl(D);
+    if (!R) 
+      Final->setInvalidDecl(true);
   }
-
-
-  #if 0
-
-  // Build a new class to use as an intermediary for containing transformed
-  // declarations. This first transformation pass applies the metaclass as
-  // a program, causing the results to be added to this intermediary.
-  CXXRecordDecl *Scratch = CXXRecordDecl::Create(Context, Proto->getTagKind(),
-                                                 CurContext, 
-                                                 Proto->getLocStart(), 
-                                                 Proto->getLocation(),
-                                                 Proto->getIdentifier(),
-                                                 /*PrevDecl=*/nullptr);
-  Scratch->setFragment(true);
-  Scratch->startDefinition();
-  // llvm::outs() << "--- FIRST PASS ---\n";
-  // Def->dump();
-  // Proto->dump();
-  {
-    ContextRAII SavedContext(*this, Scratch);
-    SourceCodeInjector Injector(*this, Def);
-    Injector.AddSubstitution(Def, Scratch);
-    Injector.AddSubstitution(Proto, Scratch);
-
-    for (Decl *D : Def->decls()) {
-      Decl *R = Injector.TransformLocalDecl(D);
-      if (!R)
-        Final->setInvalidDecl(true);
-    }
-  }
-  Scratch->completeDefinition();
-
+  
   if (Final->isInvalidDecl())
     return;
-
-  // llvm::outs() << "*** SECOND PASS ***\n";
-  // Scratch->dump();
-  // Scratch->print(llvm::outs());
-  // llvm::outs() << '\n';
-
-  // Perform a second transformation that injects the scratch injections into
-  // the final class.
-  {
-    ContextRAII SavedContext(*this, Final);
-    SourceCodeInjector Injector(*this, Scratch);
-    Injector.AddSubstitution(Scratch, Final);
-    Injector.AddSubstitution(Proto, Final);
-
-    for (Decl *D : Scratch->decls()) {
-      Decl *R = Injector.TransformDecl(D);
-      if (!R) {
-        Final->setInvalidDecl(true);
-        return;
-      }
-      if (isa<FieldDecl>(R))
-        Fields.push_back(R);
-    }
-  }
-
-  // llvm::outs() << "*** FINAL CLASS ***\n";
-  // Final->dump();
-  // Final->print(llvm::outs());
-
-  #endif
 }

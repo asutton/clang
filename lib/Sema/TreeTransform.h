@@ -468,6 +468,10 @@ public:
   Decl *TransformLocalTypeAliasDecl(TypeAliasDecl *D);
   Decl *TransformLocalTypedefDecl(TypedefDecl *D);
 
+  Decl* TransformLocalTemplateTypeParmDecl(TemplateTypeParmDecl *D);
+  Decl* TransformLocalNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D);
+  Decl* TransformLocalTemplateTemplateParmDecl(TemplateTemplateParmDecl *D);
+
   // \brief Transforms function parameter in D, adding them to R.
   void TransformFunctionParameters(FunctionDecl *D, FunctionDecl *R);
 
@@ -13309,6 +13313,27 @@ template<typename Derived>
 Decl *
 TreeTransform<Derived>::TransformLocalTypedefDecl(TypedefDecl *D) {
   return TransformLocalTypedefNameDecl(D);
+}
+
+template<typename Derived>
+Decl* 
+TreeTransform<Derived>::TransformLocalTemplateTypeParmDecl(
+                                                      TemplateTypeParmDecl *D) {
+  llvm_unreachable("not implemented");
+}
+
+template<typename Derived>
+Decl* 
+TreeTransform<Derived>::TransformLocalNonTypeTemplateParmDecl(
+                                                   NonTypeTemplateParmDecl *D) {
+  llvm_unreachable("not implemented");
+}
+
+template<typename Derived>
+Decl* 
+TreeTransform<Derived>::TransformLocalTemplateTemplateParmDecl(
+                                                  TemplateTemplateParmDecl *D) {
+  llvm_unreachable("not implemented");
 }
 
 
