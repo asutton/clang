@@ -2333,11 +2333,13 @@ static bool evaluateVarDeclInit(EvalInfo &Info, const Expr *E,
       // of a potential constant expression, assume they are unknown constant
       // expressions.
       if (!(isLambdaCallOperator(Frame->Callee) &&
-             (VD->getDeclContext() != Frame->Callee || VD->isInitCapture()))) {
+             (VD->getDeclContext() != Frame->Callee || VD->isInitCapture())))
+      {
+        llvm::outs() << "*********************\n";
+        llvm::outs() << "*** ABOUT TO FAIL ***\n";
         VD->dump();
-        Decl* Cxt = Decl::castFromDeclContext(VD->getDeclContext());
-        Cxt->dump();
-        Frame->Callee->dump();
+        VD->getDeclContext()->dumpDeclContext();
+        Decl::castFromDeclContext(VD->getDeclContext())->dump();
       }
       assert(isLambdaCallOperator(Frame->Callee) &&
              (VD->getDeclContext() != Frame->Callee || VD->isInitCapture()) &&
@@ -4106,19 +4108,6 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
         const Expr *E = IS->getCapture(I);
         if (!Evaluate(II.CaptureValues[I], Info, E))
           return ESR_Failed;
-
-        const ValueDecl *VD = cast<DeclRefExpr>(E)->getDecl();
-        QualType T = VD->getType();
-
-        LValue LV;
-        LV.setFrom(Info.Ctx, II.CaptureValues[I]);
-        CompleteObject CO = findCompleteObject(Info, E, AK_Read, LV, T);
-        if (!CO)
-          return ESR_Failed;
-
-        // Overwrite the lvalue with the complete object. That is, manifest
-        // the value as a constant, so we can substitute later.
-        II.CaptureValues[I] = *CO.Value;
       }
 
       return ESR_Succeeded;

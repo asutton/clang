@@ -8471,8 +8471,8 @@ public:
 
   DeclResult ActOnInjectionCapture(IdentifierLocPair P);
 
-  StmtResult ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc, 
-                                bool IsBlock, CapturedDeclsList &Captures);
+  StmtResult ActOnInjectionStmt(Scope *S, SourceLocation AL, bool IsBlock,
+                                SmallVectorImpl<Expr *> *Captures = nullptr);
   void ActOnStartBlockFragment(Scope *S);
   void ActOnFinishBlockFragment(Scope *S, Stmt *Body);
   void ActOnStartClassFragment(Stmt *S, Decl *D);

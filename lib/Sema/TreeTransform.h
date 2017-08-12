@@ -425,11 +425,12 @@ public:
     if (Known != TransformedLocalDecls.end())
       return Known->second;
 
-    if (!D)
-      return nullptr;
+    // if (!D)
+    //   return nullptr;
 
-    if (D->isInjectable() || D->getDeclContext()->isFragment())
-      return getDerived().TransformLocalDecl(Loc, D);
+    // if (D->isInjectable() || D->getDeclContext()->isFragment())
+    //   // Always locally transform injectable declarations and fragments.
+    //   return getDerived().TransformLocalDecl(Loc, D);
 
     return D;
   }
@@ -6558,6 +6559,12 @@ TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S,
                                           Statements,
                                           S->getRBracLoc(),
                                           IsStmtExpr);
+
+  auto X = getDerived().RebuildCompoundStmt(S->getLBracLoc(),
+                                          Statements,
+                                          S->getRBracLoc(),
+                                          IsStmtExpr);
+  return X;
 }
 
 template<typename Derived>
@@ -7621,17 +7628,6 @@ TreeTransform<Derived>::TransformCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
 template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
-  // Transform each capture.
-  SmallVector<Decl *, 4> Captures;
-  for (Expr *E : S->captures()) {
-    DeclRefExpr *Ref = cast<DeclRefExpr>(E);
-    ValueDecl *VD = Ref->getDecl();
-    Decl *R = getDerived().TransformDecl(VD->getLocation(), VD);
-    if (!R)
-      return StmtError();
-    Captures.push_back(R);
-  }
-
   if (S->isReflectedDeclaration()) {
     ExprResult E = TransformExpr(S->getReflection());
     if (E.isInvalid())
@@ -7639,32 +7635,85 @@ TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
     return getSema().ActOnReflectionInjection(S->getArrowLoc(), E.get());
   }
 
+  // Transform each capture.
+  SmallVector<Expr *, 4> Refs;
+  for (Expr *E : S->captures()) {
+    ExprResult R = getDerived().TransformExpr(E);
+    if (R.isInvalid())
+      return false;
+
+    // Force an implicit lvalue-to-rvalue conversion since that's discarded
+    // by the original xform.
+    R = ImplicitCastExpr::Create(getSema().Context, R.get()->getType(), 
+                                 CK_LValueToRValue, R.get(), 
+                                 /*BasePath=*/nullptr, VK_RValue);
+    Refs.push_back(R.get());
+  }
+
   // Rebuild the injection statement.
   bool IsBlock = S->getInjectionKind() == CXXInjectionStmt::BlockFragment;
-  StmtResult Result = getSema().ActOnInjectionStmt(nullptr, S->getArrowLoc(),
-                                                   IsBlock, Captures);
+  StmtResult Result 
+      = getSema().ActOnInjectionStmt(nullptr, S->getArrowLoc(), IsBlock, &Refs);
   if (Result.isInvalid())
     return StmtError();
-  CXXInjectionStmt *Injection = cast<CXXInjectionStmt>(Result.get());
+  CXXInjectionStmt *IS = cast<CXXInjectionStmt>(Result.get());
 
   // Replay the construction of statement.
   switch (S->getInjectionKind()) {
   case CXXInjectionStmt::BlockFragment: {
-    getSema().ActOnStartBlockFragment(nullptr);
-    StmtResult Body = getDerived().TransformStmt(S->getBlockFragment());
-    getSema().ActOnFinishBlockFragment(nullptr, Body.get());
+    // getSema().ActOnStartBlockFragment(nullptr);
+    // StmtResult Body = getDerived().TransformStmt(S->getBlockFragment());
+    // getSema().ActOnFinishBlockFragment(nullptr, Body.get());
+    llvm_unreachable("Block fragment transformation not implemented");
     break;
   }
   case CXXInjectionStmt::ClassFragment: {
-    // Locally transform the fragment, to produce a new one.
-    CXXRecordDecl *Src = S->getClassFragment();
-    Decl *Dst = getDerived().TransformLocalDecl(Src);
-    Injection->setClassFragment(cast<CXXRecordDecl>(Dst));
+    CXXRecordDecl *Fragment = S->getClassFragment();
+
+    // Build a new class fragment.
+    DeclarationNameInfo DN(Fragment->getDeclName(), Fragment->getLocation());
+    DeclarationNameInfo DNI = getDerived().TransformDeclarationNameInfo(DN);
+    CXXRecordDecl *New = CXXRecordDecl::Create(getSema().Context, 
+                                               Fragment->getTagKind(), 
+                                               getSema().CurContext, 
+                                               Fragment->getLocStart(), 
+                                               Fragment->getLocation(), 
+                                               DNI.getName().getAsIdentifierInfo(), 
+                                               /*PrevDecl=*/nullptr);
+    New->startDefinition();
+
+    // Generate placeholders.
+    getSema().ActOnStartClassFragment(IS, New);
+
+    // Map the old fragment's placeholders to the those in the new fragment.
+    // Save the previous known mappings so that we can restore them (i.e.,
+    // without affect) after applying local transformations.
+    llvm::DenseMap<Decl *, Decl *> SavedDecls = TransformedLocalDecls;
+    auto Iter = Fragment->decls_begin();
+    auto End = Fragment->decls_end();
+    auto NewIter = New->decls_begin();
+    for (std::size_t I = 0; I < S->getNumCaptures(); ++I)
+      transformedLocalDecl(*Iter++, *NewIter++);
+
+    // Manually inject all of the non-placeholder declarations.
+    // auto Iter = std::next(Fragment->decls_begin(), Refs.size());
+    // auto End = Fragment->decls_end();
+    Sema::ContextRAII SavedContext(getSema(), New);
+    while (Iter != End) {
+      Decl *Member = TransformLocalDecl(*Iter);
+      if (!Member)
+        New->setInvalidDecl(true);
+      ++Iter;
+    }
+
+    New->completeDefinition();
+
+    // Restore the previous mappings.
+    TransformedLocalDecls.swap(SavedDecls);
+
     break;
   }
   case CXXInjectionStmt::NamespaceFragment: {
-    // FIXME: This is wrong. Do the same thing above: create a new namespace
-    // and then transform members in turn.
     llvm_unreachable("Namespace fragment transformation not implemented");
     break;
   }
@@ -7672,7 +7721,7 @@ TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
     llvm_unreachable("Invalid injection kind");
   }
 
-  return Injection;
+  return IS;
 }
 
 template<typename Derived>
@@ -12965,7 +13014,7 @@ template<typename Derived>
 Decl *
 TreeTransform<Derived>::TransformLocalVarDecl(VarDecl *D) {
   DeclContext *Owner = getSema().CurContext;
-  
+
   TypeSourceInfo *TSI = TransformTypeCanonical(getDerived(), D);
   
   VarDecl *R 
@@ -12974,9 +13023,12 @@ TreeTransform<Derived>::TransformLocalVarDecl(VarDecl *D) {
                       TSI, D->getStorageClass());
   transformedLocalDecl(D, R);
 
-  TransformAttributes(D, R);
-
+  // FIXME: Propagate all variable properties.
+  R->setStorageClass(D->getStorageClass());
+  R->setConstexpr(D->isConstexpr());
   R->setInjectable(D->isInjectable());
+
+  TransformAttributes(D, R);
 
   Owner->addDecl(R);
 
@@ -13090,11 +13142,18 @@ TreeTransform<Derived>::TransformLocalFieldDecl(FieldDecl *D) {
   TransformAttributes(D, R);
 
   R->setAccess(D->getAccess());
+  R->setImplicit(D->isImplicit());
   R->setInjectable(D->isInjectable());
 
   Owner->addDecl(R);
 
-  // FIXME: Transform the initializer, if present.
+  if (Expr *OldInit = D->getInClassInitializer()) {
+    ExprResult NewInit = getDerived().TransformInitializer(OldInit, false);
+    if (NewInit.isInvalid())
+      R->setInvalidDecl(true);
+    else
+      R->setInClassInitializer(NewInit.get());
+  }
   return R;
 }
 
@@ -13158,7 +13217,7 @@ TreeTransform<Derived>::TransformLocalCXXRecordDecl(CXXRecordDecl *D) {
       if (Member->getDeclContext() != D)
         continue;
       
-      getDerived().TransformDecl(Member->getLocation(), Member);
+      getDerived().TransformLocalDecl(Member->getLocation(), Member);
     }
 
     R->completeDefinition();

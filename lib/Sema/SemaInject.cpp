@@ -65,63 +65,113 @@ Sema::ActOnInjectionCapture(IdentifierLocPair P) {
   return D;
 }
 
-static bool ProcessCapture(Sema &SemaRef, DeclContext *DC, Expr *E)
+/// Returns the variable from a captured declaration.
+static VarDecl *GetVariableFromCapture(Expr *E)
 {
-  ValueDecl *D = cast<DeclRefExpr>(E)->getDecl();
+  Expr *Ref = cast<ImplicitCastExpr>(E)->getSubExpr();
+  return cast<VarDecl>(cast<DeclRefExpr>(Ref)->getDecl());
+}
 
-  // Create a placeholder the name 'x' and dependent type. This is used to
-  // dependently parse the body of the fragment. Also make a fake initializer.
-  SourceLocation IdLoc = D->getLocation();
-  IdentifierInfo *Id = D->getIdentifier();
+// Create a placeholder for each captured expression in the scope of the
+// fragment. For some captured variable 'v', these have the form:
+//
+//    constexpr auto v = <opaque>;
+//
+// These are replaced by their values during code injection.
+//
+// NOTE: Note that injecting placeholders directly into the fragment means
+// that you can't use those names within the fragment.
+static void CreatePlaceholder(Sema &SemaRef, DeclContext *DC, Expr *E)
+{
+  ValueDecl *Var = GetVariableFromCapture(E);
+  SourceLocation IdLoc = Var->getLocation();
+  IdentifierInfo *Id = Var->getIdentifier();
   QualType T = SemaRef.Context.DependentTy;
   TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(T);
   VarDecl *Placeholder = VarDecl::Create(SemaRef.Context, DC, IdLoc, IdLoc, 
                                          Id, T, TSI, SC_Static);
   Placeholder->setAccess(DC->isRecord() ? AS_private : AS_none);
+  Placeholder->setStorageClass(SC_Static);
   Placeholder->setConstexpr(true);
+  Placeholder->setImplicit(true);
   Placeholder->setInitStyle(VarDecl::CInit);
   Placeholder->setInit(
       new (SemaRef.Context) OpaqueValueExpr(IdLoc, T, VK_RValue));
   Placeholder->setReferenced(true);
   Placeholder->markUsed(SemaRef.Context);
-
   DC->addDecl(Placeholder);
-  return true;
 }
 
-static bool ProcessCaptures(Sema &SemaRef, DeclContext *DC, 
-                            CXXInjectionStmt::capture_range Captures) {
-  return std::all_of(Captures.begin(), Captures.end(), [&](Expr *E) {
-    return ProcessCapture(SemaRef, DC, E);
+static void CreatePlaceholders(Sema &SemaRef, DeclContext *DC, 
+                               CXXInjectionStmt::capture_range Captures) {
+  std::for_each(Captures.begin(), Captures.end(), [&](Expr *E) {
+    CreatePlaceholder(SemaRef, DC, E);
   });
+}
+
+// Find variables to capture in the given scope. 
+static void FindCapturesInScope(Sema &SemaRef, Scope *S, 
+                                SmallVectorImpl<VarDecl *> &Vars) {
+  for (Decl *D : S->decls()) {
+    if (VarDecl *Var = dyn_cast<VarDecl>(D))
+      Vars.push_back(Var);
+  }
+}
+
+// Search the scope list for captured variables. When S is null, we're
+// applying applying a transformation.
+static void FindCaptures(Sema &SemaRef, Scope *S, FunctionDecl *Fn, 
+                         SmallVectorImpl<VarDecl *> &Vars) {
+  assert(S && "Expected non-null scope");
+  while (S && S->getEntity() != Fn) {
+    FindCapturesInScope(SemaRef, S, Vars);
+    S = S->getParent();
+  }
+  assert(S && "Walked off of scope stack");
+  FindCapturesInScope(SemaRef, S, Vars);
 }
 
 /// Returns a partially constructed injection statement.
+///
+/// If Captures is non-null then it supplies the expressions to be used
+/// as captured values. Note that when Captures is non-null, Scope is null.
+///
+/// FIXME: We should always pass captures into this function. From the parser,
+/// we could simply expose the FindCaptures facilities as a hook to generate
+/// the capture list.
 StmtResult Sema::ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc,
-                                    bool IsBlock, CapturedDeclsList &Captures) {
-  // We're not actually capture declarations, we're capturing an expression
-  // that computes the value of the capture declaration. Build an expression
-  // that reads each value and converts to an rvalue.
-  //
-  // FIXME: The source location for references is way off. We need to forward 
-  // a vector of decl/location pairs.
-  SmallVector<Expr *, 4> Refs(Captures.size());
-  std::transform(Captures.begin(), Captures.end(), Refs.begin(), 
-    [&](Decl *D) -> Expr * {
-    ValueDecl *VD = cast<ValueDecl>(D);
-    QualType T = VD->getType();
+                                    bool IsBlock, 
+                                    SmallVectorImpl<Expr *> *Captures) {
 
-    // FIXME: Ultimately, we want an rvalue containing whatever aggregate
-    // has been referenced. However, there are no standard conversions for
-    // class types; we would actually be initializing a new temporary, which
-    // is not at all what we want.
-    return new (Context) DeclRefExpr(VD, false, T, VK_LValue, ArrowLoc);
-  });
+  // Compute the implicitly captured set of local variables for an injection.
+  SmallVector<Expr *, 4> Refs;
+  if (!Captures) {
+    SmallVector<VarDecl *, 4> Vars;
+    FindCaptures(*this, S, getCurFunctionDecl(), Vars);
+
+    // For each captured value, construct a reference that reads the value,
+    // and applies an rvalue conversion.
+    Refs.resize(Vars.size());
+    std::transform(Vars.begin(), Vars.end(), Refs.begin(), 
+      [&](Decl *D) -> Expr * {
+      ValueDecl *VD = cast<ValueDecl>(D);
+      QualType T = VD->getType();
+      SourceLocation Loc = VD->getLocation();
+      Expr *Ref = new (Context) DeclRefExpr(VD, false, T, VK_LValue, Loc);
+      return ImplicitCastExpr::Create(Context, T, CK_LValueToRValue, Ref,
+                                      /*BasePath=*/nullptr, VK_RValue);
+    });
+  } else {
+    Refs.resize(Captures->size());
+    std::copy(Captures->begin(), Captures->end(), Refs.begin());
+  }
 
   CXXInjectionStmt *Injection =
       new (Context) CXXInjectionStmt(Context, ArrowLoc, Refs);
 
-  // Pre-build the declaration for lambda stuff.
+  // Pre-build the declaration for lambdas. This is needed because we're going
+  // to be implicitly pushing the lambda information onto the scope stack
+  // for later use.
   if (IsBlock) {
     LambdaScopeInfo *LSI = PushLambdaScope();
 
@@ -150,7 +200,7 @@ StmtResult Sema::ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc,
         Intro.Range, MethodTyInfo, KnownDependent, Intro.Default);
 
     // Inject captured variables here.
-    ProcessCaptures(*this, Closure, Injection->captures());
+    CreatePlaceholders(*this, Closure, Injection->captures());
 
     CXXMethodDecl *Method =
         startLambdaDefinition(Closure, Intro.Range, MethodTyInfo, ArrowLoc,
@@ -187,7 +237,7 @@ void Sema::ActOnStartClassFragment(Stmt *S, Decl *D) {
   CXXRecordDecl *Class = cast<CXXRecordDecl>(D);
   Class->setFragment(true);
   Injection->setClassFragment(Class);
-  ProcessCaptures(*this, Class, Injection->captures());
+  CreatePlaceholders(*this, Class, Injection->captures());
 }
 
 /// Returns the completed injection statement.
@@ -202,7 +252,7 @@ void Sema::ActOnStartNamespaceFragment(Stmt *S, Decl *D) {
   NamespaceDecl *Ns = cast<NamespaceDecl>(D);
   Ns->setFragment(true);
   Injection->setNamespaceFragment(Ns);
-  ProcessCaptures(*this, Ns, Injection->captures());
+  CreatePlaceholders(*this, Ns, Injection->captures());
 }
 
 /// Returns the completed injection statement.
@@ -250,6 +300,12 @@ static int DescribeInjectionTarget(DeclContext *DC) {
     llvm_unreachable("Invalid injection context");
 }
 
+struct TypedValue
+{
+  QualType Type;
+  APValue Value;
+};
+
 // Generate an error injecting a declaration of kind SK into the given 
 // declaration context. Returns false. Note that SK correlates to the first
 // %select in err_invalid_injection.
@@ -266,22 +322,24 @@ static bool InvalidInjection(Sema& S, SourceLocation POI, int SK,
 class SourceCodeInjector : public TreeTransform<SourceCodeInjector> {
   using BaseType = TreeTransform<SourceCodeInjector>;
 
-  // The declaration context containing the code to be injected. This is either
+  // The fragment containing the code to be injected. This is either
   // a function (for block injection), a class (for class injection), or a
   // namespace (for namespace injection).
-  DeclContext *SrcContext;
-
-  /// When set, the prototype class. This is used as the replacement for
-  /// the source context within a metaprogram.
-  ///
-  /// FIXME: This is a bit of hack. We should have a new class called a
-  /// metaclass injector, but the template magic gets a bit weird when
-  /// subclassing a CRTP class.
-  CXXRecordDecl *Proto;
+  DeclContext *Fragment;
 
 public:
   SourceCodeInjector(Sema &SemaRef, DeclContext *DC)
-      : TreeTransform<SourceCodeInjector>(SemaRef), SrcContext(DC), Proto() {}
+      : TreeTransform<SourceCodeInjector>(SemaRef), Fragment(DC), 
+        ReplacePlaceholders(false) {}
+
+  // When true, declaration references to placeholders are substituted with
+  // a constant expression denoting the captured value of the placeholder
+  // at the time of evaluation.
+  bool ReplacePlaceholders;
+
+  // A mapping of placeholder declarations to their corresponding constant
+  // expressions.
+  llvm::DenseMap<Decl *, TypedValue> PlaceholderValues;
 
   // Always rebuild nodes; we're effectively copying from one AST to another.
   bool AlwaysRebuild() const { return true; }
@@ -289,9 +347,6 @@ public:
   // Replace the declaration From (in the injected statement or members) with
   // the declaration To (derived from the target context).
   void AddSubstitution(Decl *From, Decl *To) { transformedLocalDecl(From, To); }
-
-  /// Set the prototype declaration.
-  void SetPrototype(CXXRecordDecl *D) { Proto = D; }
 
   /// Transform the given type. Strip reflected types from the result so that
   /// the resulting AST no longer contains references to a reflected name.
@@ -319,19 +374,23 @@ public:
     // Search for a previous transformation. We need to do this before the
     // context search below.
     auto Known = TransformedLocalDecls.find(D);
-    if (Known != TransformedLocalDecls.end())
+    if (Known != TransformedLocalDecls.end()) {
       return Known->second;
+    }
 
     // Don't transform declarations that are not local to the source context.
     //
-    // FIXME: Is there a better way to determine nesting?
+    // FIXME: Is there a better way to determine whether a declaration belongs
+    // to a fragment?
     DeclContext *DC = D->getDeclContext();
-    while (DC && DC != SrcContext)
+    while (DC && DC != Fragment)
       DC = DC->getParent();
-    if (!DC)
+    if (DC) {
+      return TransformLocalDecl(Loc, D);
+    }
+    else {
       return D;
-
-    return TransformLocalDecl(Loc, D);
+    }
   }
 
   // If we have a substitution for the template parameter type apply
@@ -349,6 +408,27 @@ public:
       }
     }
     return BaseType::TransformTemplateTypeParmType(TLB, TL);
+  }
+
+  // If this is a reference to a placeholder variable.
+  ExprResult TransformDeclRefExpr(DeclRefExpr *E) {
+    if (!ReplacePlaceholders)
+      return BaseType::TransformDeclRefExpr(E);
+
+    auto Known = PlaceholderValues.find(E->getDecl());
+    if (Known != PlaceholderValues.end()) {
+      // Build a new constant expression as the replacement. The source
+      // expression is opaque since the actual declaration isn't part of
+      // the output AST (but we might want it as context later -- makes
+      // pretty printing more elegant).
+      const TypedValue &TV = Known->second;
+      Expr *O = new (SemaRef.Context) OpaqueValueExpr(E->getLocation(), 
+                                                      TV.Type, VK_RValue, 
+                                                      OK_Ordinary, E);
+      return new (SemaRef.Context) CXXConstantExpr(O, TV.Value);
+    }
+
+    return BaseType::TransformDeclRefExpr(E);
   }
 };
 
@@ -378,6 +458,38 @@ bool Sema::InjectBlockStatements(SourceLocation POI, InjectionInfo &II) {
   return true;
 }
 
+
+// The first NumCapture declarations in the [Iter, End) are placeholders.
+// Replace those with new declarations of the form:
+//
+//    constexpr t n = value
+//
+// where t, n and value are: the type of the original capture, the name
+// of the captured variable, and the computed value of that expression at
+// the time the capture was evaluated.
+//
+// Note that the replacement variables are not added to the output class.
+// They are replaced during transformation.
+static void ReplacePlaceholders(Sema &SemaRef, SourceCodeInjector &Injector,
+                                const CXXInjectionStmt *S, 
+                                const SmallVectorImpl<APValue> &Values, 
+                                DeclContext::decl_iterator &Iter, 
+                                DeclContext::decl_iterator End) {
+  // Build a mapping from each placeholder to its corresponding value.
+  for (std::size_t I = 0; I < S->getNumCaptures(); ++I) {
+    assert(Iter != End && "ran out of declarations");
+    const Expr *Capture = S->getCapture(I);
+    TypedValue TV { Capture->getType(), Values[I] };
+    Injector.PlaceholderValues[*Iter] = TV;
+    ++Iter;
+  }
+
+  // Stop seeing placeholders in subsequent transformations.
+  Injector.ReplacePlaceholders = true;
+}
+
+// Called after a metaprogram has been evaluated to apply the resulting
+// injections as source code.
 bool Sema::InjectClassMembers(SourceLocation POI, InjectionInfo &II) {
   if (!CurContext->isRecord())
     return InvalidInjection(*this, POI, 1, CurContext);
@@ -386,49 +498,24 @@ bool Sema::InjectClassMembers(SourceLocation POI, InjectionInfo &II) {
   InstantiatingTemplate Inst(*this, POI);
 
   const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(II.Injection);
-
   CXXRecordDecl *Target = cast<CXXRecordDecl>(CurContext);
   CXXRecordDecl *Source = IS->getClassFragment();
+
+  // Inject the source fragment into the the target, replacing references to
+  // the source with those of the target.
+  ContextRAII SavedContext(*this, Target);
   SourceCodeInjector Injector(*this, Source);
   Injector.AddSubstitution(Source, Target);
 
+  // Generate replacements for placeholders.
   auto DeclIter = Source->decls_begin();
   auto DeclEnd = Source->decls_end();
   const SmallVectorImpl<APValue> &Values = II.CaptureValues;
-  for (std::size_t I = 0; I < IS->getNumCaptures(); ++I) {
-    assert(DeclIter != DeclEnd && "ran out of declarations");
+  ReplacePlaceholders(*this, Injector, IS, Values, DeclIter, DeclEnd);
 
-    // Unpack information about 
-    Expr *E = const_cast<Expr *>(IS->getCapture(I));
-    QualType T = E->getType();
-    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(T);
-
-    // Build a new placeholder for the destination context.
-    VarDecl *Placeholder = cast<VarDecl>(*DeclIter);
-    SourceLocation Loc = Placeholder->getLocation();
-    IdentifierInfo *Id = Placeholder->getIdentifier();
-    VarDecl *Replacement = 
-        VarDecl::Create(Context, Target, Loc, Loc, Id, T, TSI, SC_Static);
-    Replacement->setAccess(AS_private);
-    Replacement->setConstexpr(true);
-    Replacement->setInitStyle(VarDecl::CInit);
-    Replacement->setInit(new (Context) CXXConstantExpr(E, Values[I]));    
-    Replacement->setReferenced(true);
-    Replacement->markUsed(Context);
-
-    // Substitute the placeholder for its replacement.
-    Injector.AddSubstitution(Placeholder, Replacement);
-      
-    ++DeclIter;
-  }
-
+  // Inject the remaining declarations.
   while (DeclIter != DeclEnd) {
     Decl *Member = *DeclIter;
-    // if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Member)) {
-    //   // The top-level injected class name is not injected.
-    //   if (RD->isInjectedClassName())
-    //     continue;
-    // }
 
     if (!Injector.TransformLocalDecl(Member))
       Target->setInvalidDecl(true);
