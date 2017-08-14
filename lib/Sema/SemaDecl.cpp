@@ -6147,7 +6147,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
       II = Decomp.bindings()[0].Name;
       Name = II;
     }
-  } else if (!II) {
+  } else if (!II && Name.getNameKind() != DeclarationName::CXXIdExprName) {
     Diag(D.getIdentifierLoc(), diag::err_bad_variable_name) << Name;
     return nullptr;
   }
@@ -6323,7 +6323,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
 
     if (SC == SC_Static && CurContext->isRecord()) {
       if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(DC)) {
-        if (RD->isLocalClass())
+        if (RD->isLocalClass() && !RD->isFragment())
           Diag(D.getIdentifierLoc(),
                diag::err_static_data_member_not_allowed_in_local_class)
             << Name << RD->getDeclName();
@@ -6336,7 +6336,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
                  ? diag::warn_cxx98_compat_static_data_member_in_union
                  : diag::ext_static_data_member_in_union) << Name;
         // We conservatively disallow static data members in anonymous structs.
-        else if (!RD->getDeclName())
+        else if (!RD->getDeclName() && !RD->isFragment())
           Diag(D.getIdentifierLoc(),
                diag::err_static_data_member_not_allowed_in_anon_struct)
             << Name << RD->isUnion();
@@ -6361,7 +6361,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
         // about it, but allow the declaration of the variable.
         Diag(TemplateParams->getTemplateLoc(),
              diag::err_template_variable_noparams)
-          << II
+          << Name
           << SourceRange(TemplateParams->getTemplateLoc(),
                          TemplateParams->getRAngleLoc());
         TemplateParams = nullptr;
@@ -6408,9 +6408,11 @@ NamedDecl *Sema::ActOnVariableDeclarator(
       NewVD = DecompositionDecl::Create(Context, DC, D.getLocStart(),
                                         D.getIdentifierLoc(), R, TInfo, SC,
                                         Bindings);
-    } else
-      NewVD = VarDecl::Create(Context, DC, D.getLocStart(),
-                              D.getIdentifierLoc(), II, R, TInfo, SC);
+    } else {
+      DeclarationNameInfo NameInfo(Name, D.getLocStart());
+      NewVD = VarDecl::Create(Context, DC, D.getLocStart(), NameInfo, R, 
+                              TInfo, SC);
+    }
 
     // If this is supposed to be a variable template, create it as such.
     if (IsVariableTemplate) {

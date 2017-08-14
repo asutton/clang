@@ -7,13 +7,13 @@ using namespace cppx::meta;
 
 $class interface {
   virtual ~interface() noexcept = default;
-  
+
   // Check for invalid members.
   constexpr {
-    compiler.require($interface.member_variables().empty(),
+    compiler.require($prototype.member_variables().empty(),
       "interfaces may not contain data members");
     
-    for... (auto f : $interface.member_functions()) {
+    for... (auto f : $prototype.member_functions()) {
       compiler.require(f.is_public(), 
         "interface functions must be public");
 
@@ -24,7 +24,7 @@ $class interface {
     
   // Transform members.
   constexpr {
-    for... (auto f : $interface.member_functions()) {
+    for... (auto f : $prototype.member_functions()) {
       f.make_pure_virtual();
       -> f;
     }
@@ -37,7 +37,7 @@ interface Shape {
   void scale_by(double factor);
   
   // ...
-  // int x;
+  // int x; // error: interfaces may not contain data members
 };
 
 int main() {

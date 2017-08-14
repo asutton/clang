@@ -1829,6 +1829,12 @@ VarDecl *VarDecl::Create(ASTContext &C, DeclContext *DC,
   return new (C, DC) VarDecl(Var, C, DC, StartL, IdL, Id, T, TInfo, S);
 }
 
+VarDecl *VarDecl::Create(ASTContext &C, DeclContext *DC,
+                         SourceLocation StartL, DeclarationNameInfo NameInfo, 
+                         QualType T, TypeSourceInfo *TInfo, StorageClass S) {
+  return new (C, DC) VarDecl(Var, C, DC, StartL, NameInfo, T, TInfo, S);
+}
+
 VarDecl *VarDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID)
       VarDecl(Var, C, nullptr, SourceLocation(), SourceLocation(), nullptr,

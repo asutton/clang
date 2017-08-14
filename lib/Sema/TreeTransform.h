@@ -13015,12 +13015,18 @@ Decl *
 TreeTransform<Derived>::TransformLocalVarDecl(VarDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
+  DeclarationNameInfo DNI(D->getDeclName(), D->getLocation());
+  DNI = TransformDeclarationNameInfo(DNI);
+  if (!DNI.getName())
+    return nullptr;
+
   TypeSourceInfo *TSI = TransformTypeCanonical(getDerived(), D);
+  if (!TSI)
+    return nullptr;
   
   VarDecl *R 
-    = VarDecl::Create(getSema().Context, Owner, D->getLocation(), 
-                      D->getLocation(), D->getIdentifier(), TSI->getType(), 
-                      TSI, D->getStorageClass());
+    = VarDecl::Create(getSema().Context, Owner, D->getLocation(), DNI,
+                      TSI->getType(), TSI, D->getStorageClass());
   transformedLocalDecl(D, R);
 
   // FIXME: Propagate all variable properties.
@@ -13128,21 +13134,21 @@ TreeTransform<Derived>::TransformLocalFunctionDecl(FunctionDecl *D) {
 template<typename Derived>
 Decl *
 TreeTransform<Derived>::TransformLocalFieldDecl(FieldDecl *D) {
-  DeclarationNameInfo OldNameInfo(D->getDeclName(), D->getLocation());
-  DeclarationNameInfo NewNameInfo = TransformDeclarationNameInfo(OldNameInfo);
-  if (!NewNameInfo.getName())
+  DeclContext *Owner = getSema().CurContext;
+
+  DeclarationNameInfo DNI(D->getDeclName(), D->getLocation());
+  DNI = TransformDeclarationNameInfo(DNI);
+  if (!DNI.getName())
     return nullptr;
 
-  DeclContext *Owner = getSema().CurContext;
   TypeSourceInfo *TypeInfo = TransformTypeCanonical(getDerived(), D);
   if (!TypeInfo)
     return nullptr;
   
   FieldDecl *R 
-    = FieldDecl::Create(getSema().Context, Owner, D->getLocation(), 
-                        NewNameInfo, TypeInfo->getType(), TypeInfo, 
-                        /*Bitwidth*/nullptr, D->isMutable(), 
-                        D->getInClassInitStyle());
+    = FieldDecl::Create(getSema().Context, Owner, D->getLocation(), DNI,
+                        TypeInfo->getType(), TypeInfo, /*Bitwidth*/nullptr, 
+                         D->isMutable(), D->getInClassInitStyle());
 
   transformedLocalDecl(D, R);
 

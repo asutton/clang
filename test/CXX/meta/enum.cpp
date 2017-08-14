@@ -10,14 +10,14 @@ using namespace cppx::meta;
 
 $class basic_enum {
   constexpr {
-    compiler.require($basic_enum.member_variables().size() > 0, 
+    compiler.require($prototype.member_variables().size() > 0, 
       "an enum cannot be empty");
 
     // Determine the underlying type.
-    auto type = get<0>($basic_enum.member_variables()).type();
-    -> [type] class { 
+    auto type = get<0>($prototype.member_variables()).type();
+    -> class { 
       using underlying_type = typename(type); 
-    }
+    };
 
     // Check other properties.
     //
@@ -26,29 +26,23 @@ $class basic_enum {
       compiler.require(m.is_public(), "enumerators must be public");
       compiler.require(m.type() == type, "enumerators must have the same type");
     }
+
+    int value = 0;
+    for... (auto m : $prototype.member_variables()) {
+      -> class {
+        static constexpr typename(type) idexpr(m) = value;
+      };
+      ++value;
+    }
   }
 
   // Make enumerators constexr.
   constexpr {
-    for... (auto m : $basic_enum.member_variables())
-      m.make_constexpr();
   }
-
-  //   for (auto o : $basic_enum.member_variables()) {
-  //      if (!o.has_access())   o.make_public();
-  //      if (!o.has_storage())  o.make_constexpr();
-  //      if (o.has_auto_type()) o.set_type(U);
-  //      compiler.require(o.is_public(),    "enumerators must be public");
-  //      compiler.require(o.is_constexpr(), "enumerators must be constexpr");
-  //      compiler.require(o.type() == U,    "enumerators must use same type");
-  //   }
-  //   -> { U$ value; }        // the instance value
-  // }
 };
 
 basic_enum my_enum {
-  int a = 0;
-  int b = 1;
+  int a, b, c;
 };
 
 

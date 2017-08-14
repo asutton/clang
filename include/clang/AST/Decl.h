@@ -938,6 +938,10 @@ public:
                          IdentifierInfo *Id, QualType T, TypeSourceInfo *TInfo,
                          StorageClass S);
 
+  static VarDecl *Create(ASTContext &C, DeclContext *DC,
+                         SourceLocation StartLoc, DeclarationNameInfo NameInfo, 
+                         QualType T, TypeSourceInfo *TInfo, StorageClass S);
+
   static VarDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   SourceRange getSourceRange() const override LLVM_READONLY;
