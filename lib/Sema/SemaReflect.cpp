@@ -359,7 +359,7 @@ static bool AppendCharacterArray(Sema& S, llvm::raw_ostream &OS, Expr *E,
   // Check that the type is 'const char[N]' or 'char[N]'.
   QualType ElemTy = ArrayTy->getElementType();
   if (!ElemTy->isCharType()) {
-    S.Diag(E->getLocStart(), diag::err_declname_invalid_operand_type) << T;
+    S.Diag(E->getLocStart(), diag::err_idexpr_invalid_operand_type) << T;
     return false;
   }
 
@@ -382,7 +382,7 @@ static bool AppendCharacterPointer(Sema& S, llvm::raw_ostream &OS, Expr *E,
   // Check for 'const char*'.
   QualType ElemTy = PtrTy->getPointeeType();
   if (!ElemTy->isCharType() || !ElemTy.isConstQualified()) {
-    S.Diag(E->getLocStart(), diag::err_declname_invalid_operand_type) << T;
+    S.Diag(E->getLocStart(), diag::err_idexpr_invalid_operand_type) << T;
     return false;
   }
 
@@ -423,7 +423,7 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
     // What would we append in that case?
     DeclarationName Name = ND->getDeclName();
     if (!Name.isIdentifier()) {
-      S.Diag(E->getLocStart(), diag::err_declname_not_an_identifer) << Name;
+      S.Diag(E->getLocStart(), diag::err_idexpr_not_an_identifer) << Name;
       return false;
     }
     
@@ -433,7 +433,7 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
     if (auto *RC = T->getAsCXXRecordDecl())
       OS << RC->getName();
     else {
-      S.Diag(E->getLocStart(), diag::err_declname_not_an_identifer) 
+      S.Diag(E->getLocStart(), diag::err_idexpr_not_an_identifer) 
         << QualType(T, 0);
       return false;
     }
@@ -498,7 +498,7 @@ DeclarationNameInfo Sema::BuildIdExprName(SourceLocation OpLoc,
     else if (T->isIntegerType()) {
       if (I == 0) {
         // An identifier cannot start with an integer value.
-        Diag(ExprLoc, diag::err_declname_with_integer_prefix);
+        Diag(ExprLoc, diag::err_idexpr_with_integer_prefix);
         return DeclarationNameInfo();
       }
       if (!AppendInteger(*this, OS, E, T))
@@ -509,7 +509,7 @@ DeclarationNameInfo Sema::BuildIdExprName(SourceLocation OpLoc,
         return DeclarationNameInfo();
     }
     else {
-      Diag(ExprLoc, diag::err_declname_invalid_operand_type) << T;
+      Diag(ExprLoc, diag::err_idexpr_invalid_operand_type) << T;
       return DeclarationNameInfo();
     }
   }
@@ -558,7 +558,7 @@ ExprResult Sema::ActOnHasNameExpr(SourceLocation KWLoc, Expr *E,
     //
     // FIXME: Why only classes?
     if (!T->isRecordType()) {
-      Diag(E->getLocStart(), diag::err_declname_not_an_identifer) 
+      Diag(E->getLocStart(), diag::err_idexpr_not_an_identifer) 
         << QualType(T, 0);
       return ExprError();
     }

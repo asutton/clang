@@ -14303,10 +14303,14 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
 
   bool Mutable
     = (D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_mutable);
+
+  // Get the declared name (this could be )
+  DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
+  
   SourceLocation TSSL = D.getLocStart();
   FieldDecl *NewFD
-    = CheckFieldDecl(II, T, TInfo, Record, Loc, Mutable, BitWidth, InitStyle,
-                     TSSL, AS, PrevDecl, &D);
+    = CheckFieldDecl(NameInfo.getName(), T, TInfo, Record, Loc, Mutable, 
+                     BitWidth, InitStyle, TSSL, AS, PrevDecl, &D);
 
   if (NewFD->isInvalidDecl())
     Record->setInvalidDecl();
@@ -14449,8 +14453,9 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
   if (InitStyle != ICIS_NoInit)
     checkDuplicateDefaultInit(*this, cast<CXXRecordDecl>(Record), Loc);
 
-  FieldDecl *NewFD = FieldDecl::Create(Context, Record, TSSL, Loc, II, T, TInfo,
-                                       BitWidth, Mutable, InitStyle);
+  DeclarationNameInfo NameInfo(Name, Loc);
+  FieldDecl *NewFD = FieldDecl::Create(Context, Record, TSSL, NameInfo, T, 
+                                       TInfo, BitWidth, Mutable, InitStyle);
   if (InvalidDecl)
     NewFD->setInvalidDecl();
 

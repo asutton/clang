@@ -908,6 +908,10 @@ protected:
           SourceLocation IdLoc, IdentifierInfo *Id, QualType T,
           TypeSourceInfo *TInfo, StorageClass SC);
 
+  VarDecl(Kind DK, ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
+          DeclarationNameInfo NameInfo, QualType T, TypeSourceInfo *TInfo, 
+          StorageClass SC);
+
   typedef Redeclarable<VarDecl> redeclarable_base;
   VarDecl *getNextRedeclarationImpl() override {
     return getNextRedeclaration();
@@ -2383,10 +2387,26 @@ protected:
     assert((!BW || InitStyle == ICIS_NoInit) && "got initializer for bitfield");
   }
 
+  FieldDecl(Kind DK, DeclContext *DC, SourceLocation StartLoc,
+            DeclarationNameInfo NameInfo, QualType T, TypeSourceInfo *TInfo, 
+            Expr *BW, bool Mutable, InClassInitStyle InitStyle)
+    : DeclaratorDecl(DK, DC, NameInfo.getLoc(), NameInfo.getName(), T, TInfo, 
+                     StartLoc),
+      Mutable(Mutable), CachedFieldIndex(0),
+      InitStorage(BW, (InitStorageKind) InitStyle) {
+    assert((!BW || InitStyle == ICIS_NoInit) && "got initializer for bitfield");
+  }
+
 public:
   static FieldDecl *Create(const ASTContext &C, DeclContext *DC,
                            SourceLocation StartLoc, SourceLocation IdLoc,
                            IdentifierInfo *Id, QualType T,
+                           TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
+                           InClassInitStyle InitStyle);
+
+  static FieldDecl *Create(const ASTContext &C, DeclContext *DC,
+                           SourceLocation StartLoc, 
+                           DeclarationNameInfo NameInfo, QualType T,
                            TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
                            InClassInitStyle InitStyle);
 

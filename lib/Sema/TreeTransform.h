@@ -13128,14 +13128,21 @@ TreeTransform<Derived>::TransformLocalFunctionDecl(FunctionDecl *D) {
 template<typename Derived>
 Decl *
 TreeTransform<Derived>::TransformLocalFieldDecl(FieldDecl *D) {
+  DeclarationNameInfo OldNameInfo(D->getDeclName(), D->getLocation());
+  DeclarationNameInfo NewNameInfo = TransformDeclarationNameInfo(OldNameInfo);
+  if (!NewNameInfo.getName())
+    return nullptr;
+
   DeclContext *Owner = getSema().CurContext;
-  TypeSourceInfo *TypeInfo 
-    = TransformTypeCanonical(getDerived(), D);
+  TypeSourceInfo *TypeInfo = TransformTypeCanonical(getDerived(), D);
+  if (!TypeInfo)
+    return nullptr;
+  
   FieldDecl *R 
     = FieldDecl::Create(getSema().Context, Owner, D->getLocation(), 
-                        D->getLocation(), D->getIdentifier(), 
-                        TypeInfo->getType(), TypeInfo, /*Bitwidth*/nullptr, 
-                        D->isMutable(), D->getInClassInitStyle());
+                        NewNameInfo, TypeInfo->getType(), TypeInfo, 
+                        /*Bitwidth*/nullptr, D->isMutable(), 
+                        D->getInClassInitStyle());
 
   transformedLocalDecl(D, R);
 

@@ -2560,7 +2560,13 @@ void StmtPrinter::VisitCompilerErrorExpr(CompilerErrorExpr *Node) {
 }
 
 void StmtPrinter::VisitCXXConstantExpr(CXXConstantExpr *S) {
-  PrintExpr(S->getExpression());
+  // If we can print a meaningful value, then we should try to do that.
+  // The actual expression may refer to variables that are no longer in scope.
+  const APValue &Val = S->getValue();
+  if (Val.isInt())
+    OS << Val.getInt();
+  else
+    PrintExpr(S->getExpression());
 }
 
 // Obj-C
