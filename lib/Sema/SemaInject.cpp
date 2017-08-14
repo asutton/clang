@@ -730,23 +730,40 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
                           CXXRecordDecl *Final,
                           SmallVectorImpl<Decl *> &Fields) {
   
+
+  CXXRecordDecl *Def = Meta->getDefinition();
+
+  // Recursively inject base classes.
+  for (CXXBaseSpecifier &B : Def->bases()) {
+    QualType T = B.getType();
+    CXXRecordDecl *BaseClass = T->getAsCXXRecordDecl();
+    assert(BaseClass->isMetaclassDefinition() && 
+           "Metaclass inheritance from regular class");
+    MetaclassDecl *BaseMeta = cast<MetaclassDecl>(BaseClass->getDeclContext());
+    ApplyMetaclass(BaseMeta, ProtoArg, Final, Fields);
+  }
+
   // Note that we are synthesizing code.
   //
   // FIXME: The point of instantiation/injection is incorrect.
   InstantiatingTemplate Inst(*this, Final->getLocation());
-
-  CXXRecordDecl *Def = Meta->getDefinition();
-  Decl *ProtoParm = *Def->decls_begin();
-  assert(isa<TemplateTypeParmDecl>(ProtoParm) && "Expected prototype");
-
-  // Inject, into 'final', the metaclass (definition) 'def' while 
-  // transforming references to 'def' into 'final' and references to the 
-  // 'prototype' parameter into the 'proto' class.
   ContextRAII SavedContext(*this, Final);
   SourceCodeInjector Injector(*this, Def);
+
+  // When injecting replace references to the metaclass definition with
+  // references to the final class.
   Injector.AddSubstitution(Def, Final);
+
+  // Also replace references to the prototype parameter with references to
+  // the final class.
+  Decl *ProtoParm = *Def->decls_begin();
+  assert(isa<TemplateTypeParmDecl>(ProtoParm) && "Expected prototype");
   Injector.AddSubstitution(ProtoParm, ProtoArg);
 
+  // Propagate attributes on a metaclass to the final class.
+  Injector.TransformAttributes(Def, Final);
+
+  // Inject each member in turn.
   for (Decl *D : Def->decls()) {
     // Don't transform the prototype parameter. 
     //

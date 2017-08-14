@@ -18,7 +18,7 @@ $class basic_value {
 
   // Check members
   constexpr {
-    for... (auto f : $basic_value.member_functions()) {
+    for... (auto f : $prototype.member_functions()) {
       compiler.require(!f.is_virtual(),   "a value type may not have a virtual function");
       compiler.require(!f.is_protected(), "a value type may not have a protected function");
       compiler.require(!f.is_destructor() || f.is_public(), "a value destructor must be public");
@@ -28,7 +28,7 @@ $class basic_value {
   // Transform members
   constexpr {
     access_kind mode = default_access;
-    for... (auto m : $basic_value.members()) {
+    for... (auto m : $prototype.member_variables()) {
       if (mode == default_access) {
         if constexpr (m.is_member_variable())
           m.make_private();
@@ -37,6 +37,7 @@ $class basic_value {
         if constexpr (m.is_access_specifier())
           mode = m.access();
       }
+      -> m;
     }
   } // end metaprogram
 };
@@ -70,7 +71,6 @@ $class regular : basic_value, comparable { };
 
 $class value : basic_value, ordered { };
 
-
 value foo {
   int a;
 public:
@@ -81,6 +81,7 @@ private:
 
 int main() {
   compiler.debug($foo);
+
   foo f1;
   foo f2 = f1;
   // (void)f1.a; // error: private
