@@ -7246,6 +7246,30 @@ TreeTransform<Derived>::TransformCXXConstantExpr(CXXConstantExpr *E) {
   return getDerived().RebuildCXXConstantExpr(E);
 }
 
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXDependentIdExpr(CXXDependentIdExpr *E) {
+  DeclarationNameInfo DNI = TransformDeclarationNameInfo(E->getNameInfo());
+  if (!DNI.getName())
+    return ExprError();
+
+  // Some components are still dependent.
+  if (DNI.getName().getNameKind() == DeclarationName::CXXIdExprName) {
+    return new (getSema().Context) CXXDependentIdExpr(DNI, E->getType());
+  }
+
+  // FIXME: We should be able to get a scope specifier from the
+  // expression. We would need to transform that here.
+  CXXScopeSpec SS;
+
+  LookupResult R(getSema(), DNI, Sema::LookupOrdinaryName);
+  getSema().LookupName(R, getSema().getCurScope(), false); 
+
+  // FIXME: How do we know if we need ADL or not? Assume for now that we
+  // don't -- although it might be safer to assume that we do.
+  return getDerived().RebuildDeclarationNameExpr(SS, R, false);
+}
+
 // Objective-C Statements.
 
 template<typename Derived>

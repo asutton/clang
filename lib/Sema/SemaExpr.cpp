@@ -2149,11 +2149,14 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
   //     -- a conversion-function-id that specifies a dependent type,
   //     -- a nested-name-specifier that contains a class-name that
   //        names a dependent type.
+  //     -- an idexpr(...) with any dependent arguments.
   // Determine whether this is a member of an unknown specialization;
   // we need to handle these differently.
   bool DependentID = false;
   if (Name.getNameKind() == DeclarationName::CXXConversionFunctionName &&
       Name.getCXXNameType()->isDependentType()) {
+    DependentID = true;
+  } else if (Name.getNameKind() == DeclarationName::CXXIdExprName) {
     DependentID = true;
   } else if (SS.isSet()) {
     if (DeclContext *DC = computeDeclContext(SS, false)) {
@@ -2830,7 +2833,7 @@ ExprResult Sema::BuildDeclarationNameExpr(const CXXScopeSpec &SS,
   // functions and function templates.
   if (R.isSingleResult() &&
       CheckDeclInExpr(*this, R.getNameLoc(), R.getFoundDecl()))
-    return ExprError();
+    return ExprError();    
 
   // Otherwise, just build an unresolved lookup expression.  Suppress
   // any lookup-related diagnostics; we'll hash these out later, when

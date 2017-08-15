@@ -1761,6 +1761,10 @@ void StmtProfiler::VisitCXXConstantExpr(const CXXConstantExpr *S) {
   VisitExpr(S);
 }
 
+void StmtProfiler::VisitCXXDependentIdExpr(const CXXDependentIdExpr *S) {
+  VisitName(S->getNameInfo().getName());
+}
+
 void StmtProfiler::VisitOpaqueValueExpr(const OpaqueValueExpr *E) {
   VisitExpr(E);  
 }

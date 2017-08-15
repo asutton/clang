@@ -959,7 +959,11 @@ void ASTStmtReader::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
 }
 
 void ASTStmtReader::VisitCXXConstantExpr(CXXConstantExpr *S) {
-  llvm_unreachable("constant expression reading not implemented");
+  llvm_unreachable("not implemented");
+}
+
+void ASTStmtReader::VisitCXXDependentIdExpr(CXXDependentIdExpr *S) {
+  llvm_unreachable("not implemented");
 }
 
 //===----------------------------------------------------------------------===//
