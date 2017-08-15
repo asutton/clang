@@ -99,11 +99,9 @@ ExprResult Parser::ParseReflexprExpression() {
 /// \brief Parse a idexpr-id
 ///
 ///   unqualified-id:
-///      'idexpr' '(' id-concatenation-seq ')'
+///      'idexpr' '(' constant-argument-list ')'
 ///
-///   id-concatenation-seq:
-///       constant-expression
-///       id-concatenation-seq constant-expression
+/// Each argument in the constant-argument-list must be a constant expression.
 ///
 /// Returns true if parsing or semantic analysis fail.
 bool Parser::ParseDeclnameId(UnqualifiedId& Result) {
@@ -114,11 +112,15 @@ bool Parser::ParseDeclnameId(UnqualifiedId& Result) {
   if (T.expectAndConsume(diag::err_expected_lparen_after, "idexpr"))
     return true;
   SmallVector<Expr *, 4> Parts;
-  while (Tok.isNot(tok::r_paren)) {
+  while (true) {
     ExprResult Result = ParseConstantExpression();
     if (Result.isInvalid())
       return true;
     Parts.push_back(Result.get());
+    if (Tok.is(tok::r_paren))
+      break;
+    if (ExpectAndConsume(tok::comma))
+      return true;
   }
   if (T.consumeClose())
     return true;
