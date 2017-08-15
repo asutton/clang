@@ -2332,15 +2332,6 @@ static bool evaluateVarDeclInit(EvalInfo &Info, const Expr *E,
       // not declared within the call operator are captures and during checking
       // of a potential constant expression, assume they are unknown constant
       // expressions.
-      if (!(isLambdaCallOperator(Frame->Callee) &&
-             (VD->getDeclContext() != Frame->Callee || VD->isInitCapture())))
-      {
-        llvm::outs() << "*********************\n";
-        llvm::outs() << "*** ABOUT TO FAIL ***\n";
-        VD->dump();
-        VD->getDeclContext()->dumpDeclContext();
-        Decl::castFromDeclContext(VD->getDeclContext())->dump();
-      }
       assert(isLambdaCallOperator(Frame->Callee) &&
              (VD->getDeclContext() != Frame->Callee || VD->isInitCapture()) &&
              "missing value for local variable");
@@ -4076,28 +4067,9 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
         // There is no capture for a reflected declaration, but the value
         // of the expression might have local modifications.        
         if (const Expr *E = IS->getModifications()) {
-          APValue Val;
+         APValue Val;
           if (!Evaluate(Val, Info, E))
            return ESR_Failed;
-
-          if (Val.isLValue()) {
-            // Load the complete value from expression.
-            LValue LV;
-            LV.setFrom(Info.Ctx, Val);
-            CompleteObject Object 
-                = findCompleteObject(Info, E, AK_Read, LV, E->getType());
-            if (!Object)
-              return ESR_Failed;
-            
-            APValue Result;
-            SubobjectDesignator Sub(Info.Ctx, Val);
-            ExtractSubobjectHandler Handler = { Info, Result };
-            if (!findSubobject(Info, E, Object, Sub, Handler))
-              return ESR_Failed;
-
-            Val = Result;
-          }
-
           II.Modifications = Val;
         }
       }

@@ -271,17 +271,27 @@ StmtResult Sema::ActOnReflectionInjection(SourceLocation ArrowLoc, Expr *Ref) {
     return StmtError();
 
   // Build the expression `ref.mods` to extract the list of local modifications
-  // during evaluation.
+  // during evaluation. Apply an lvalue to rvalue conversion so we get the
+  // referenced value during evaluation.
+
   SourceLocation Loc = Ref->getLocStart();
   UnqualifiedId Id;
   Id.setIdentifier(PP.getIdentifierInfo("mods"), Loc);
   CXXScopeSpec SS;
   ExprResult Mods = ActOnMemberAccessExpr(getCurScope(), Ref, Loc, tok::period, 
                                           SS, SourceLocation(), Id, nullptr);
-  
+  Mods = ImplicitCastExpr::Create(Context, Ref->getType(), CK_LValueToRValue,
+                                  Mods.get(), nullptr, VK_RValue);
+
   CXXInjectionStmt *IS = new (Context) CXXInjectionStmt(ArrowLoc, Ref, D);
+
+  // FIXME: This is not sufficient to solve the problem. We need to evaluate
+  // the expression, get the APValue and attach *those* modifications to the
+  // expression -- kind of like captured references (hint: reuse captures).
+
   if (Mods.isUsable())
     IS->setModifications(Mods.get());
+
   return IS;
 }
 
@@ -576,8 +586,8 @@ bool Sema::InjectReflectedDeclaration(SourceLocation POI, InjectionInfo &II) {
 
   // FIXME: Unify this with other reflection facilities.
 
-  enum StorageKind { None, Static, Automatic, ThreadLocal };
-  enum AccessKind { Public, Private, Protected, Default };
+  enum StorageKind { NoStorage, Static, Automatic, ThreadLocal };
+  enum AccessKind { NoAccess, Public, Private, Protected, Default };
 
   StorageKind Storage = {};
   AccessKind Access = {};

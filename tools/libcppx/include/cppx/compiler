@@ -3,6 +3,8 @@
 #ifndef CPPX_COMPILER
 #define CPPX_COMPILER
 
+#include <cstdint>
+
 namespace cppx
 {
 namespace meta

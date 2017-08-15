@@ -223,7 +223,7 @@ struct named : decl<X, K> {
     set_access(private_access);
   }
   constexpr void make_protected() {
-    set_access(public_access);
+    set_access(protected_access);
   }
 };
 

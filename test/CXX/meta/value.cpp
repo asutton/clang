@@ -28,7 +28,7 @@ $class basic_value {
   // Transform members
   constexpr {
     access_kind mode = default_access;
-    for... (auto m : $prototype.member_variables()) {
+    for... (auto m : $prototype.members()) {
       if (mode == default_access) {
         if constexpr (m.is_member_variable())
           m.make_private();
@@ -37,11 +37,17 @@ $class basic_value {
         if constexpr (m.is_access_specifier())
           mode = m.access();
       }
+      
+      // FIXME: This is a bit of a hack. We really want to avoid re-injecting
+      // the nested name specifier (although, this may actually be the
+      // prototype).
+      if constexpr (m.is_class_type())
+        continue;
+      
       -> m;
     }
   } // end metaprogram
 };
-
 
 $class comparable {
   bool operator==(const comparable& that) const {
