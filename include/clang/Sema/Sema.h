@@ -8420,6 +8420,10 @@ public:
   QualType BuildReflectedType(SourceLocation TypenameLoc, Expr *E);
   TypeResult ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc, Expr *E);
 
+  bool ActOnUsingParameter(SourceLocation UsingLoc, SourceLocation EllipsisLoc,
+                           Expr *Reflection,
+                        SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);
+
   NamespaceDecl *RequireCppxNamespace(SourceLocation Loc);
   NamespaceDecl *RequireCppxMetaNamespace(SourceLocation Loc);
   ClassTemplateDecl *RequireReflectionType(SourceLocation Loc,

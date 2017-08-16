@@ -6259,6 +6259,9 @@ void Parser::ParseFunctionDeclaratorIdentifierList(
 /// [GNU]   declaration-specifiers abstract-declarator[opt] attributes
 /// [C++11] attribute-specifier-seq parameter-declaration
 ///
+/// [Meta]  using reflection
+///         using... reflection
+///
 void Parser::ParseParameterDeclarationClause(
        Declarator &D,
        ParsedAttributes &FirstArgAttrs,
@@ -6270,154 +6273,167 @@ void Parser::ParseParameterDeclarationClause(
     if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
       break;
 
-    // Parse the declaration-specifiers.
-    // Just use the ParsingDeclaration "scope" of the declarator.
-    DeclSpec DS(AttrFactory);
-
-    // Parse any C++11 attributes.
-    MaybeParseCXX11Attributes(DS.getAttributes());
-
-    // Skip any Microsoft attributes before a param.
-    MaybeParseMicrosoftAttributes(DS.getAttributes());
-
-    SourceLocation DSStart = Tok.getLocation();
-
-    // If the caller parsed attributes for the first argument, add them now.
-    // Take them so that we only apply the attributes to the first parameter.
-    // FIXME: If we can leave the attributes in the token stream somehow, we can
-    // get rid of a parameter (FirstArgAttrs) and this statement. It might be
-    // too much hassle.
-    DS.takeAttributesFrom(FirstArgAttrs);
-
-    ParseDeclarationSpecifiers(DS);
-
-
-    // Parse the declarator.  This is "PrototypeContext" or 
-    // "LambdaExprParameterContext", because we must accept either 
-    // 'declarator' or 'abstract-declarator' here.
-    Declarator ParmDeclarator(DS, 
-              D.getContext() == Declarator::LambdaExprContext ?
-                                  Declarator::LambdaExprParameterContext : 
-                                                Declarator::PrototypeContext);
-    ParseDeclarator(ParmDeclarator);
-
-    // Parse GNU attributes, if present.
-    MaybeParseGNUAttributes(ParmDeclarator);
-
-    // Remember this parsed parameter in ParamInfo.
-    IdentifierInfo *ParmII = ParmDeclarator.getIdentifier();
-
-    // DefArgToks is used when the parsing of default arguments needs
-    // to be delayed.
-    std::unique_ptr<CachedTokens> DefArgToks;
-
-    // If no parameter was specified, verify that *something* was specified,
-    // otherwise we have a missing type and identifier.
-    if (DS.isEmpty() && ParmDeclarator.getIdentifier() == nullptr &&
-        ParmDeclarator.getNumTypeObjects() == 0) {
-      // Completely missing, emit error.
-      Diag(DSStart, diag::err_missing_param);
+    if (Tok.is(tok::kw_using)) {
+      // [Meta] Match a using declaration.
+      SourceLocation UsingLoc = ConsumeToken();
+      SourceLocation EllipsisLoc;
+      if (Tok.is(tok::ellipsis))
+        EllipsisLoc = ConsumeToken();
+      ExprResult Reflection = ParseConstantExpression();
+      if (Reflection.isInvalid())
+        continue;
+      Actions.ActOnUsingParameter(UsingLoc, EllipsisLoc, Reflection.get(), 
+                                  ParamInfo);
     } else {
-      // Otherwise, we have something.  Add it and let semantic analysis try
-      // to grok it and add the result to the ParamInfo we are building.
+      // Parse the declaration-specifiers.
+      // Just use the ParsingDeclaration "scope" of the declarator.
+      DeclSpec DS(AttrFactory);
 
-      // Last chance to recover from a misplaced ellipsis in an attempted
-      // parameter pack declaration.
-      if (Tok.is(tok::ellipsis) &&
-          (NextToken().isNot(tok::r_paren) ||
-           (!ParmDeclarator.getEllipsisLoc().isValid() &&
-            !Actions.isUnexpandedParameterPackPermitted())) &&
-          Actions.containsUnexpandedParameterPacks(ParmDeclarator))
-        DiagnoseMisplacedEllipsisInDeclarator(ConsumeToken(), ParmDeclarator);
+      // Parse any C++11 attributes.
+      MaybeParseCXX11Attributes(DS.getAttributes());
 
-      // Inform the actions module about the parameter declarator, so it gets
-      // added to the current scope.
-      Decl *Param = Actions.ActOnParamDeclarator(getCurScope(), ParmDeclarator);
-      // Parse the default argument, if any. We parse the default
-      // arguments in all dialects; the semantic analysis in
-      // ActOnParamDefaultArgument will reject the default argument in
-      // C.
-      if (Tok.is(tok::equal)) {
-        SourceLocation EqualLoc = Tok.getLocation();
+      // Skip any Microsoft attributes before a param.
+      MaybeParseMicrosoftAttributes(DS.getAttributes());
 
-        // Parse the default argument
-        if (D.getContext() == Declarator::MemberContext) {
-          // If we're inside a class definition, cache the tokens
-          // corresponding to the default argument. We'll actually parse
-          // them when we see the end of the class definition.
-          DefArgToks.reset(new CachedTokens);
+      SourceLocation DSStart = Tok.getLocation();
 
-          SourceLocation ArgStartLoc = NextToken().getLocation();
-          if (!ConsumeAndStoreInitializer(*DefArgToks, CIK_DefaultArgument)) {
-            DefArgToks.reset();
-            Actions.ActOnParamDefaultArgumentError(Param, EqualLoc);
+      // If the caller parsed attributes for the first argument, add them now.
+      // Take them so that we only apply the attributes to the first parameter.
+      // FIXME: If we can leave the attributes in the token stream somehow, we can
+      // get rid of a parameter (FirstArgAttrs) and this statement. It might be
+      // too much hassle.
+      DS.takeAttributesFrom(FirstArgAttrs);
+
+      ParseDeclarationSpecifiers(DS);
+
+
+      // Parse the declarator.  This is "PrototypeContext" or 
+      // "LambdaExprParameterContext", because we must accept either 
+      // 'declarator' or 'abstract-declarator' here.
+      Declarator ParmDeclarator(DS, 
+                D.getContext() == Declarator::LambdaExprContext ?
+                                    Declarator::LambdaExprParameterContext : 
+                                                  Declarator::PrototypeContext);
+      ParseDeclarator(ParmDeclarator);
+
+      // Parse GNU attributes, if present.
+      MaybeParseGNUAttributes(ParmDeclarator);
+
+      // Remember this parsed parameter in ParamInfo.
+      IdentifierInfo *ParmII = ParmDeclarator.getIdentifier();
+
+      // DefArgToks is used when the parsing of default arguments needs
+      // to be delayed.
+      std::unique_ptr<CachedTokens> DefArgToks;
+
+      // If no parameter was specified, verify that *something* was specified,
+      // otherwise we have a missing type and identifier.
+      if (DS.isEmpty() && ParmDeclarator.getIdentifier() == nullptr &&
+          ParmDeclarator.getNumTypeObjects() == 0) {
+        // Completely missing, emit error.
+        Diag(DSStart, diag::err_missing_param);
+      } else {
+        // Otherwise, we have something.  Add it and let semantic analysis try
+        // to grok it and add the result to the ParamInfo we are building.
+
+        // Last chance to recover from a misplaced ellipsis in an attempted
+        // parameter pack declaration.
+        if (Tok.is(tok::ellipsis) &&
+            (NextToken().isNot(tok::r_paren) ||
+             (!ParmDeclarator.getEllipsisLoc().isValid() &&
+              !Actions.isUnexpandedParameterPackPermitted())) &&
+            Actions.containsUnexpandedParameterPacks(ParmDeclarator))
+          DiagnoseMisplacedEllipsisInDeclarator(ConsumeToken(), ParmDeclarator);
+
+        // Inform the actions module about the parameter declarator, so it gets
+        // added to the current scope.
+        Decl *Param = Actions.ActOnParamDeclarator(getCurScope(), ParmDeclarator);
+        // Parse the default argument, if any. We parse the default
+        // arguments in all dialects; the semantic analysis in
+        // ActOnParamDefaultArgument will reject the default argument in
+        // C.
+        if (Tok.is(tok::equal)) {
+          SourceLocation EqualLoc = Tok.getLocation();
+
+          // Parse the default argument
+          if (D.getContext() == Declarator::MemberContext) {
+            // If we're inside a class definition, cache the tokens
+            // corresponding to the default argument. We'll actually parse
+            // them when we see the end of the class definition.
+            DefArgToks.reset(new CachedTokens);
+
+            SourceLocation ArgStartLoc = NextToken().getLocation();
+            if (!ConsumeAndStoreInitializer(*DefArgToks, CIK_DefaultArgument)) {
+              DefArgToks.reset();
+              Actions.ActOnParamDefaultArgumentError(Param, EqualLoc);
+            } else {
+              Actions.ActOnParamUnparsedDefaultArgument(Param, EqualLoc,
+                                                        ArgStartLoc);
+            }
           } else {
-            Actions.ActOnParamUnparsedDefaultArgument(Param, EqualLoc,
-                                                      ArgStartLoc);
-          }
-        } else {
-          // Consume the '='.
-          ConsumeToken();
+            // Consume the '='.
+            ConsumeToken();
 
-          // The argument isn't actually potentially evaluated unless it is
-          // used.
-          EnterExpressionEvaluationContext Eval(
-              Actions,
-              Sema::ExpressionEvaluationContext::PotentiallyEvaluatedIfUsed,
-              Param);
+            // The argument isn't actually potentially evaluated unless it is
+            // used.
+            EnterExpressionEvaluationContext Eval(
+                Actions,
+                Sema::ExpressionEvaluationContext::PotentiallyEvaluatedIfUsed,
+                Param);
 
-          ExprResult DefArgResult;
-          if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
-            Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
-            DefArgResult = ParseBraceInitializer();
-          } else
-            DefArgResult = ParseAssignmentExpression();
-          DefArgResult = Actions.CorrectDelayedTyposInExpr(DefArgResult);
-          if (DefArgResult.isInvalid()) {
-            Actions.ActOnParamDefaultArgumentError(Param, EqualLoc);
-            SkipUntil(tok::comma, tok::r_paren, StopAtSemi | StopBeforeMatch);
-          } else {
-            // Inform the actions module about the default argument
-            Actions.ActOnParamDefaultArgument(Param, EqualLoc,
-                                              DefArgResult.get());
+            ExprResult DefArgResult;
+            if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
+              Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
+              DefArgResult = ParseBraceInitializer();
+            } else
+              DefArgResult = ParseAssignmentExpression();
+            DefArgResult = Actions.CorrectDelayedTyposInExpr(DefArgResult);
+            if (DefArgResult.isInvalid()) {
+              Actions.ActOnParamDefaultArgumentError(Param, EqualLoc);
+              SkipUntil(tok::comma, tok::r_paren, StopAtSemi | StopBeforeMatch);
+            } else {
+              // Inform the actions module about the default argument
+              Actions.ActOnParamDefaultArgument(Param, EqualLoc,
+                                                DefArgResult.get());
+            }
           }
         }
+
+        ParamInfo.push_back(DeclaratorChunk::ParamInfo(ParmII,
+                                            ParmDeclarator.getIdentifierLoc(), 
+                                            Param, std::move(DefArgToks)));
       }
 
-      ParamInfo.push_back(DeclaratorChunk::ParamInfo(ParmII,
-                                          ParmDeclarator.getIdentifierLoc(), 
-                                          Param, std::move(DefArgToks)));
-    }
-
-    if (TryConsumeToken(tok::ellipsis, EllipsisLoc)) {
-      if (!getLangOpts().CPlusPlus) {
-        // We have ellipsis without a preceding ',', which is ill-formed
-        // in C. Complain and provide the fix.
-        Diag(EllipsisLoc, diag::err_missing_comma_before_ellipsis)
+      if (TryConsumeToken(tok::ellipsis, EllipsisLoc)) {
+        if (!getLangOpts().CPlusPlus) {
+          // We have ellipsis without a preceding ',', which is ill-formed
+          // in C. Complain and provide the fix.
+          Diag(EllipsisLoc, diag::err_missing_comma_before_ellipsis)
+              << FixItHint::CreateInsertion(EllipsisLoc, ", ");
+        } else if (ParmDeclarator.getEllipsisLoc().isValid() ||
+                   Actions.containsUnexpandedParameterPacks(ParmDeclarator)) {
+          // It looks like this was supposed to be a parameter pack. Warn and
+          // point out where the ellipsis should have gone.
+          SourceLocation ParmEllipsis = ParmDeclarator.getEllipsisLoc();
+          Diag(EllipsisLoc, diag::warn_misplaced_ellipsis_vararg)
+            << ParmEllipsis.isValid() << ParmEllipsis;
+          if (ParmEllipsis.isValid()) {
+            Diag(ParmEllipsis,
+                 diag::note_misplaced_ellipsis_vararg_existing_ellipsis);
+          } else {
+            Diag(ParmDeclarator.getIdentifierLoc(),
+                 diag::note_misplaced_ellipsis_vararg_add_ellipsis)
+              << FixItHint::CreateInsertion(ParmDeclarator.getIdentifierLoc(),
+                                            "...")
+              << !ParmDeclarator.hasName();
+          }
+          Diag(EllipsisLoc, diag::note_misplaced_ellipsis_vararg_add_comma)
             << FixItHint::CreateInsertion(EllipsisLoc, ", ");
-      } else if (ParmDeclarator.getEllipsisLoc().isValid() ||
-                 Actions.containsUnexpandedParameterPacks(ParmDeclarator)) {
-        // It looks like this was supposed to be a parameter pack. Warn and
-        // point out where the ellipsis should have gone.
-        SourceLocation ParmEllipsis = ParmDeclarator.getEllipsisLoc();
-        Diag(EllipsisLoc, diag::warn_misplaced_ellipsis_vararg)
-          << ParmEllipsis.isValid() << ParmEllipsis;
-        if (ParmEllipsis.isValid()) {
-          Diag(ParmEllipsis,
-               diag::note_misplaced_ellipsis_vararg_existing_ellipsis);
-        } else {
-          Diag(ParmDeclarator.getIdentifierLoc(),
-               diag::note_misplaced_ellipsis_vararg_add_ellipsis)
-            << FixItHint::CreateInsertion(ParmDeclarator.getIdentifierLoc(),
-                                          "...")
-            << !ParmDeclarator.hasName();
         }
-        Diag(EllipsisLoc, diag::note_misplaced_ellipsis_vararg_add_comma)
-          << FixItHint::CreateInsertion(EllipsisLoc, ", ");
-      }
 
-      // We can't have any more parameters after an ellipsis.
-      break;
+        // We can't have any more parameters after an ellipsis.
+        break;
+      }
     }
 
     // If the next token is a comma, consume it and keep reading arguments.
