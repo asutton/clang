@@ -576,11 +576,9 @@ struct function : typed<X, function_decl_kind> {
     return traits().is_defined;
   }
   static constexpr bool is_inline() {
-    static_assert(is_defined());
-    return traits().is_inline;
+    return is_defined() && traits().is_inline;
   }
   static constexpr bool is_deleted() {
-    static_assert(is_defined());
     return traits().is_deleted;
   }
 
@@ -693,20 +691,16 @@ struct method : typed<X, member_function_decl_kind> {
     return traits().is_defined;
   }
   static constexpr bool is_inline() {
-    static_assert(is_defined());
-    return traits().is_inline;
+    return is_defined() && traits().is_inline;
   }
   static constexpr bool is_deleted() {
-    static_assert(is_defined());
     return traits().is_deleted;
   }
   static constexpr bool is_defaulted() {
-    static_assert(is_defined());
     return traits().is_defaulted;
   }
   static constexpr bool is_trivial() {
-    static_assert(is_defined());
-    return traits().is_deleted;
+    return traits().is_trivial;
   }
 };
 
