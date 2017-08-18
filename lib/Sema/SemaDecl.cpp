@@ -1193,6 +1193,10 @@ DeclContext *Sema::getContainingDC(DeclContext *DC) {
     if (!isa<CXXRecordDecl>(DC))
       return DC;
 
+    // A function defined within its fragment is in its lexical context.
+    if (DC->isFragment())
+      return DC;
+
     // A C++ inline method/friend is parsed *after* the topmost class
     // it was declared in is fully parsed ("complete");  the topmost
     // class is the context we need to return to.
@@ -6143,7 +6147,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
       II = Decomp.bindings()[0].Name;
       Name = II;
     }
-  } else if (!II) {
+  } else if (!II && Name.getNameKind() != DeclarationName::CXXIdExprName) {
     Diag(D.getIdentifierLoc(), diag::err_bad_variable_name) << Name;
     return nullptr;
   }
@@ -6319,7 +6323,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
 
     if (SC == SC_Static && CurContext->isRecord()) {
       if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(DC)) {
-        if (RD->isLocalClass())
+        if (RD->isLocalClass() && !RD->isFragment())
           Diag(D.getIdentifierLoc(),
                diag::err_static_data_member_not_allowed_in_local_class)
             << Name << RD->getDeclName();
@@ -6332,7 +6336,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
                  ? diag::warn_cxx98_compat_static_data_member_in_union
                  : diag::ext_static_data_member_in_union) << Name;
         // We conservatively disallow static data members in anonymous structs.
-        else if (!RD->getDeclName())
+        else if (!RD->getDeclName() && !RD->isFragment())
           Diag(D.getIdentifierLoc(),
                diag::err_static_data_member_not_allowed_in_anon_struct)
             << Name << RD->isUnion();
@@ -6357,7 +6361,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
         // about it, but allow the declaration of the variable.
         Diag(TemplateParams->getTemplateLoc(),
              diag::err_template_variable_noparams)
-          << II
+          << Name
           << SourceRange(TemplateParams->getTemplateLoc(),
                          TemplateParams->getRAngleLoc());
         TemplateParams = nullptr;
@@ -6404,9 +6408,11 @@ NamedDecl *Sema::ActOnVariableDeclarator(
       NewVD = DecompositionDecl::Create(Context, DC, D.getLocStart(),
                                         D.getIdentifierLoc(), R, TInfo, SC,
                                         Bindings);
-    } else
-      NewVD = VarDecl::Create(Context, DC, D.getLocStart(),
-                              D.getIdentifierLoc(), II, R, TInfo, SC);
+    } else {
+      DeclarationNameInfo NameInfo(Name, D.getLocStart());
+      NewVD = VarDecl::Create(Context, DC, D.getLocStart(), NameInfo, R, 
+                              TInfo, SC);
+    }
 
     // If this is supposed to be a variable template, create it as such.
     if (IsVariableTemplate) {
@@ -13758,13 +13764,38 @@ CreateNewDecl:
       if (isStdBadAlloc && (!StdBadAlloc || getStdBadAlloc()->isImplicit()))
         StdBadAlloc = Class;
 
-      if (Metaclass)
-        Class->setMetaclass(cast<MetaclassDecl>(Metaclass));
-
       New = Class;
     } else
       New = RecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, Name,
                                cast_or_null<RecordDecl>(PrevDecl));
+  }
+
+  if (Metaclass) {
+    // Bind the class to its metaclass specifier.
+    MetaclassDecl *Meta = cast<MetaclassDecl>(Metaclass);
+    CXXRecordDecl *Class = cast<CXXRecordDecl>(New);
+    Class->setMetaclass(Meta);
+
+    if (TUK == TUK_Definition) {
+      // When defining a prototype, construct a new, empty class of the same
+      // name. All of the normal parsing and processing is applied to the
+      // prototype, which will eventually be replaced by its context.
+      //
+      // Note that the prototype is considered a class fragment; only the
+      // parent class will be a real class.
+      CXXRecordDecl* Prototype = 
+        CXXRecordDecl::Create(Context, Kind, Class, KWLoc, Loc, Name, nullptr);
+      Prototype->setMetaclass(Meta);
+      Prototype->setFragment(true);
+
+      Class->addHiddenDecl(Prototype);
+      Class->startDefinition();
+
+      CurContext->addDecl(Class);
+
+      // We'll be working with the prototype from here on out.
+      New = Prototype;
+    }
   }
 
   // C++11 [dcl.type]p3:
@@ -13853,6 +13884,7 @@ CreateNewDecl:
 
   // Set the lexical context. If the tag has a C++ scope specifier, the
   // lexical context will be different from the semantic context.
+  // This will also be the case for prototype classes.
   New->setLexicalDeclContext(CurContext);
 
   // Mark this as a friend decl if applicable.
@@ -13989,6 +14021,7 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
                                     SourceRange BraceRange) {
   AdjustDeclIfTemplate(TagD);
   TagDecl *Tag = cast<TagDecl>(TagD);
+
   Tag->setBraceRange(BraceRange);
 
   // Make sure we "complete" the definition even it is invalid.
@@ -14008,6 +14041,40 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
   if (getCurLexicalContext()->isObjCContainer() &&
       Tag->getDeclContext()->isFileContext())
     Tag->setTopLevelDeclInObjCContainer();
+
+  // If we just finished a prototype, apply it's metaclass to create the
+  // final class.
+  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Tag)) {
+    // We get here when we finish a metaclass. Adjust the tag so that we finish
+    // the right class.
+    if (MetaclassDecl *Meta = Class->getMetaclass()) {
+      assert(Class->isFragment() && "Expected class fragment");
+
+      CXXRecordDecl *Final = cast<CXXRecordDecl>(Class->getDeclContext());
+
+      // Remove the prototype so it doesn't appear in the final AST, nor
+      // will it be reflected by a metafunction.
+      Class->setLexicalDeclContext(Final);
+      Final->removeDecl(Class);
+
+      // Make the final class available in its declaring scope.
+      PushOnScopeChains(Final, getCurScope()->getParent(), false);
+
+      // Apply the metaclass.
+      SmallVector<Decl *, 32> InjectedFields;
+      ApplyMetaclass(Meta, Class, Final, InjectedFields);
+
+      // Perform a final analysis on the members of the resulting class.
+      S->setEntity(Final);
+      ActOnFields(S, Final->getLocation(), Final, InjectedFields, 
+                  BraceRange.getBegin(), BraceRange.getEnd(),
+                  /*Attr=*/nullptr);
+      S->setEntity(Class);
+
+      // Replace the tag so the consumer doesn't see the prototype.
+      Tag = cast<CXXRecordDecl>(Class->getDeclContext());
+    }
+  }
 
   // Notify the consumer that we've defined a tag.
   if (!Tag->isInvalidDecl())
@@ -14238,10 +14305,14 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
 
   bool Mutable
     = (D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_mutable);
+
+  // Get the declared name (this could be )
+  DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
+  
   SourceLocation TSSL = D.getLocStart();
   FieldDecl *NewFD
-    = CheckFieldDecl(II, T, TInfo, Record, Loc, Mutable, BitWidth, InitStyle,
-                     TSSL, AS, PrevDecl, &D);
+    = CheckFieldDecl(NameInfo.getName(), T, TInfo, Record, Loc, Mutable, 
+                     BitWidth, InitStyle, TSSL, AS, PrevDecl, &D);
 
   if (NewFD->isInvalidDecl())
     Record->setInvalidDecl();
@@ -14384,8 +14455,9 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
   if (InitStyle != ICIS_NoInit)
     checkDuplicateDefaultInit(*this, cast<CXXRecordDecl>(Record), Loc);
 
-  FieldDecl *NewFD = FieldDecl::Create(Context, Record, TSSL, Loc, II, T, TInfo,
-                                       BitWidth, Mutable, InitStyle);
+  DeclarationNameInfo NameInfo(Name, Loc);
+  FieldDecl *NewFD = FieldDecl::Create(Context, Record, TSSL, NameInfo, T, 
+                                       TInfo, BitWidth, Mutable, InitStyle);
   if (InvalidDecl)
     NewFD->setInvalidDecl();
 
@@ -14693,24 +14765,19 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
 
   RecordDecl *Record = dyn_cast<RecordDecl>(EnclosingDecl);
 
-  // If this record is part of a metaclass, we'll mark it complete but
-  // actually skip all of the member processing below. 
-  //
-  // FIXME: This seems fragile.
-  if (isa<MetaclassDecl>(Record->getParent())) {
-    Record->completeDefinition();
-    return;
-  }
-
-  // If the record subscribes to a metaclass, then we need to inject and
-  // apply those declarations prior to analysis.
-  bool HasMetaclass = false;
+  bool ApplyDefaults = true;
   if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
-    if (MetaclassDecl *Metaclass = Class->getMetaclass()) {
-      HasMetaclass = true;
-      SmallVector<Decl *, 32> InjectedFields;
-      InjectMetaclassMembers(Metaclass, Class, InjectedFields);
-    }
+    // If this this a prototype, we don't want to apply defaults.
+    //
+    // FIXME: Is this true for classes resulting from the metaclass?
+    // Currently, we still apply defaults since we still want our classes
+    // to be sane.
+    if (MetaclassDecl *Metaclass = Class->getMetaclass())
+      ApplyDefaults = Class->isFragment();
+
+    // Same for metaclasses.
+    if (isa<MetaclassDecl>(Class->getDeclContext()))
+      ApplyDefaults = false;
   }
 
   // Start counting up the number of named members; make sure to include
@@ -14928,9 +14995,7 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
         }
 
         if (!CXXRecord->isInvalidDecl()) {
-          // Add any implicitly-declared members to this class, unless the
-          // class was defined using a metaclass.
-          if (!HasMetaclass)
+          if (ApplyDefaults)
             AddImplicitlyDeclaredMembersToClass(CXXRecord);
 
           // If we have virtual base classes, we may end up finding multiple

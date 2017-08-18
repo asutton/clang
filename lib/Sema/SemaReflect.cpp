@@ -187,6 +187,21 @@ static ReflectedConstruct EvaluateReflection(Sema& S, Expr *E) {
   return EvaluateReflection(S, E, T);
 }
 
+/// Returns a reflected declaration or nullptr if E does not reflect a
+/// declaration. If E reflects a user-defined type, then this returns the
+/// declaration of that type.
+Decl *Sema::GetReflectedDeclaration(Expr *E)
+{
+  ReflectedConstruct R = EvaluateReflection(*this, E);
+  Decl *D = R.getAsDeclaration();
+  if (!D)
+    if (Type *T = R.getAsType())
+      D = T->getAsCXXRecordDecl();
+  if (!D)
+    Diag(E->getLocStart(), diag::err_invalid_reflection);
+  return D;
+}
+
 /// The expression \c $x returns an object describing the reflected entity \c x.
 /// The type of that object depends on the type of the thing reflected.
 ///
@@ -345,7 +360,7 @@ static bool AppendCharacterArray(Sema& S, llvm::raw_ostream &OS, Expr *E,
   // Check that the type is 'const char[N]' or 'char[N]'.
   QualType ElemTy = ArrayTy->getElementType();
   if (!ElemTy->isCharType()) {
-    S.Diag(E->getLocStart(), diag::err_declname_invalid_operand_type) << T;
+    S.Diag(E->getLocStart(), diag::err_idexpr_invalid_operand_type) << T;
     return false;
   }
 
@@ -368,7 +383,7 @@ static bool AppendCharacterPointer(Sema& S, llvm::raw_ostream &OS, Expr *E,
   // Check for 'const char*'.
   QualType ElemTy = PtrTy->getPointeeType();
   if (!ElemTy->isCharType() || !ElemTy.isConstQualified()) {
-    S.Diag(E->getLocStart(), diag::err_declname_invalid_operand_type) << T;
+    S.Diag(E->getLocStart(), diag::err_idexpr_invalid_operand_type) << T;
     return false;
   }
 
@@ -409,7 +424,7 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
     // What would we append in that case?
     DeclarationName Name = ND->getDeclName();
     if (!Name.isIdentifier()) {
-      S.Diag(E->getLocStart(), diag::err_declname_not_an_identifer) << Name;
+      S.Diag(E->getLocStart(), diag::err_idexpr_not_an_identifer) << Name;
       return false;
     }
     
@@ -419,7 +434,7 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
     if (auto *RC = T->getAsCXXRecordDecl())
       OS << RC->getName();
     else {
-      S.Diag(E->getLocStart(), diag::err_declname_not_an_identifer) 
+      S.Diag(E->getLocStart(), diag::err_idexpr_not_an_identifer) 
         << QualType(T, 0);
       return false;
     }
@@ -484,7 +499,7 @@ DeclarationNameInfo Sema::BuildIdExprName(SourceLocation OpLoc,
     else if (T->isIntegerType()) {
       if (I == 0) {
         // An identifier cannot start with an integer value.
-        Diag(ExprLoc, diag::err_declname_with_integer_prefix);
+        Diag(ExprLoc, diag::err_idexpr_with_integer_prefix);
         return DeclarationNameInfo();
       }
       if (!AppendInteger(*this, OS, E, T))
@@ -495,7 +510,7 @@ DeclarationNameInfo Sema::BuildIdExprName(SourceLocation OpLoc,
         return DeclarationNameInfo();
     }
     else {
-      Diag(ExprLoc, diag::err_declname_invalid_operand_type) << T;
+      Diag(ExprLoc, diag::err_idexpr_invalid_operand_type) << T;
       return DeclarationNameInfo();
     }
   }
@@ -544,7 +559,7 @@ ExprResult Sema::ActOnHasNameExpr(SourceLocation KWLoc, Expr *E,
     //
     // FIXME: Why only classes?
     if (!T->isRecordType()) {
-      Diag(E->getLocStart(), diag::err_declname_not_an_identifer) 
+      Diag(E->getLocStart(), diag::err_idexpr_not_an_identifer) 
         << QualType(T, 0);
       return ExprError();
     }
@@ -1669,8 +1684,7 @@ template <typename I>
 ExprResult Reflector::GetNumMembers(I First, I Limit) {
   ASTContext &C = S.Context;
   QualType T = C.UnsignedIntTy;
-  unsigned D = std::distance(First, Limit);
-  llvm::APSInt N = C.MakeIntValue(D, T);
+  llvm::APSInt N = C.MakeIntValue(std::distance(First, Limit), T);
   return IntegerLiteral::Create(C, N, T, KWLoc);
 }
 
@@ -1972,6 +1986,7 @@ TypeResult Sema::ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc,
   return CreateParsedType(T, TSI);
 }
 
+/// Buid a new metaclass definition.
 Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
                            IdentifierInfo *II) {
   assert(II);
@@ -1980,20 +1995,8 @@ Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
 
   // Make sure that this definition doesn't conflict with existing tag
   // definitions.
-  //
-  // TODO: Should this be valid?
-  //
-  //    int x;
-  //    $class x { }
-  //
-  // I think that pinning $class x to a tag name means that the variable
-  // declaration will effectively hide $class x. We'd have to add $class to
-  // the elaborated-type-specifier grammar.
-  //
-  // This is probably fine for now.
   LookupResult Previous(*this, II, IdLoc, LookupOrdinaryName, ForRedeclaration);
   LookupName(Previous, S);
-
   if (!Previous.empty()) {
     NamedDecl *PrevDecl = Previous.getRepresentativeDecl();
     MetaclassDecl *PrevMD = dyn_cast<MetaclassDecl>(PrevDecl);
@@ -2019,7 +2022,8 @@ Decl *Sema::ActOnMetaclass(Scope *S, SourceLocation DLoc, SourceLocation IdLoc,
 
 void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD, 
                                          ParsedAttributes &Attrs,
-                                         CXXRecordDecl *&Definition) {
+                                         CXXRecordDecl *&Definition,
+                                         unsigned Depth) {
   MetaclassDecl *Metaclass = cast<MetaclassDecl>(MD);
 
   PushDeclContext(S, Metaclass);
@@ -2036,6 +2040,18 @@ void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD,
   CurContext->addHiddenDecl(Definition);
   Definition->startDefinition();
   assert(Definition->isMetaclassDefinition() && "Broken metaclass definition");
+
+  // Build an implicit template parameter 'prototype'. This is essentially
+  // a reserved identifier within the scope of the metaclass.
+  auto *Proto = TemplateTypeParmDecl::Create(Context, Definition,
+                                             SourceLocation(), SourceLocation(), 
+                                             Depth, 0,
+                                             &Context.Idents.get("prototype"),
+                                             /*Typename=*/true,
+                                             /*ParameterPack=*/false);
+  Proto->setImplicit(true);
+  Definition->addDecl(Proto);
+  PushOnScopeChains(Proto, S, false);
 
   // Apply attributes to the definition.
   if (AttributeList *List = Attrs.getList())
@@ -2520,6 +2536,7 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   // Associate the call expression with the declaration.
   CD->setCallExpr(Call);
 
+
   // Don't evaluate the call if this declaration appears within a metaclass.
   if (CXXRecordDecl *RD = dyn_cast_or_null<CXXRecordDecl>(CurContext)) {
     if (RD->isMetaclassDefinition())
@@ -2566,3 +2583,127 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   
   return Notes.empty();
 }
+
+static ClassTemplateSpecializationDecl *ReferencedReflectionClass(Sema &SemaRef, 
+                                                                  Expr *E) {
+  QualType ExprTy = SemaRef.Context.getCanonicalType(E->getType());
+  if (!ExprTy->isRecordType())
+    return nullptr;
+  CXXRecordDecl* Class = ExprTy->getAsCXXRecordDecl();
+  if (!isa<ClassTemplateSpecializationDecl>(Class))
+    return nullptr;
+  ClassTemplateSpecializationDecl *Spec 
+      = cast<ClassTemplateSpecializationDecl>(Class);
+
+  // Make sure that this is actually defined in meta.
+  DeclContext* Owner = Class->getDeclContext();
+  if (Owner->isInlineNamespace())
+    Owner = Owner->getParent();
+  if (!Owner->Equals(SemaRef.RequireCppxMetaNamespace(E->getExprLoc()))) 
+    return nullptr;
+  return Spec;
+}
+
+// Returns true if ExprTy refers to either a reflected function or the 
+// parameters of a function. If true, Ref is set to the type containing the 
+// function's encoded value.
+static bool ReferencesFunction(Sema &SemaRef, Expr *E, QualType &RefTy)
+{
+  auto *Spec = ReferencedReflectionClass(SemaRef, E);
+  if (!Spec)
+    return false;
+  StringRef Name = Spec->getIdentifier()->getName();
+  if (Name == "function") {
+    RefTy = SemaRef.Context.getTagDeclType(Spec);
+    return true;
+  }
+  if (Name == "reflected_tuple") {
+    // Dig out the class containing the info type. It should be:
+    //    reflected_tupe<function<X>::parm_info>.
+    TemplateArgument First = Spec->getTemplateArgs()[0];
+    if (First.getKind() != TemplateArgument::Type)
+      return false;
+    QualType T = First.getAsType();
+    if (!T->isRecordType())
+      return false;
+    CXXRecordDecl *Class = T->getAsCXXRecordDecl();
+    if (Class->getIdentifier()->getName() != "parm_info")
+        return false;
+    if (!Class->getDeclContext()->isRecord())
+      return false;
+    Class = cast<CXXRecordDecl>(Class->getDeclContext());
+    if (Class->getIdentifier()->getName() != "function")
+      return false;
+    RefTy = SemaRef.Context.getTagDeclType(Class);
+    return true;
+  }
+
+  return false;
+}
+
+// Returns true if E refers to a reflected parameter. If true, then Ref is
+// set to the type containing the parameter's encoded value.
+static bool ReferencesParameter(Sema &SemaRef, Expr *E, QualType &RefTy) {
+  auto *Spec = ReferencedReflectionClass(SemaRef, E);
+  if (!Spec)
+    return false;
+  StringRef Name = Spec->getIdentifier()->getName();
+  if (Name == "parameter") {
+    RefTy = SemaRef.Context.getTagDeclType(Spec);
+    return true;
+  }
+  return false;
+}
+
+bool Sema::ActOnUsingParameter(SourceLocation UsingLoc, 
+                               SourceLocation EllipsisLoc, Expr *Reflection,
+                           SmallVectorImpl<DeclaratorChunk::ParamInfo> &Parms) {
+  if (Reflection->isTypeDependent() || Reflection->isValueDependent())
+    llvm_unreachable("dependent using parameter");
+
+  // If T is meta::function<X> or reflected_tuple<meta::function<X>::parm_info>
+  // Then EllipsisLoc must be valid, and we inject all parameters.
+  QualType RefTy;
+  if (ReferencesFunction(*this, Reflection, RefTy)) {
+    ReflectedConstruct Cons = EvaluateReflection(*this, Reflection, RefTy);
+    FunctionDecl *Fn = cast<FunctionDecl>(Cons.getAsDeclaration());
+
+    // Clone each parameter, inserting a chunk for the declaration.
+    for (ParmVarDecl *Orig : Fn->parameters()) {
+      TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Orig->getType());
+      ParmVarDecl *New = ParmVarDecl::Create(Context, nullptr, 
+                                             Orig->getLocStart(), 
+                                             Orig->getLocation(), 
+                                             Orig->getIdentifier(),
+                                             Orig->getType(), TSI, SC_None,
+                                             nullptr);
+
+      Parms.push_back(DeclaratorChunk::ParamInfo(New->getIdentifier(),
+                                                 New->getLocation(), New));
+    }
+    return true;
+  }
+
+  // If T is meta::parameter<X>, then we inject that one parameter.
+  if (ReferencesParameter(*this, Reflection, RefTy)) {
+    // Clone the referenced parameter.
+    ReflectedConstruct Cons = EvaluateReflection(*this, Reflection, RefTy);
+    ParmVarDecl *Orig = cast<ParmVarDecl>(Cons.getAsDeclaration());
+    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Orig->getType());
+    ParmVarDecl *New = ParmVarDecl::Create(Context, nullptr, 
+                                           Orig->getLocStart(), 
+                                           Orig->getLocation(), 
+                                           Orig->getIdentifier(),
+                                           Orig->getType(), TSI, SC_None,
+                                           nullptr);
+
+    Parms.push_back(DeclaratorChunk::ParamInfo(New->getIdentifier(),
+                                               New->getLocation(), New));
+    return true;
+  }
+
+  // FIXME: Improve diagnostics.
+  Diag(Reflection->getExprLoc(), diag::err_compiler_error) << "invalid parameter";
+  return false;
+}
+

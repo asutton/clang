@@ -2971,13 +2971,12 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
     CXXScopeSpec &SS = D.getCXXScopeSpec();
 
     // Data members must have identifiers for names.
-    if (!Name.isIdentifier()) {
+    if (!Name.isIdentifier() && 
+        Name.getNameKind() != DeclarationName::CXXIdExprName) {
       Diag(Loc, diag::err_bad_variable_name)
         << Name;
       return nullptr;
     }
-
-    IdentifierInfo *II = Name.getAsIdentifierInfo();
 
     // Member field could not be with "template" keyword.
     // So TemplateParameterLists should be empty in this case.
@@ -2986,14 +2985,14 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
       if (TemplateParams->size()) {
         // There is no such thing as a member field template.
         Diag(D.getIdentifierLoc(), diag::err_template_member)
-            << II
+            << Name
             << SourceRange(TemplateParams->getTemplateLoc(),
                 TemplateParams->getRAngleLoc());
       } else {
         // There is an extraneous 'template<>' for this member.
         Diag(TemplateParams->getTemplateLoc(),
             diag::err_template_member_noparams)
-            << II
+            << Name
             << SourceRange(TemplateParams->getTemplateLoc(),
                 TemplateParams->getRAngleLoc());
       }
@@ -10699,6 +10698,16 @@ void Sema::ActOnFinishCXXMemberDecls() {
 }
 
 void Sema::ActOnFinishCXXNonNestedClass(Decl *D) {
+  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D)) {
+    // Don't export declarations of a prototype. We'll do that for the
+    // final class later.
+    //
+    // FIXME: How should we handle members of nested classes in a prototype?
+    // Are those also prototypes?
+    if (Class->isFragment() && Class->getMetaclass())
+      return;
+  }
+
   referenceDLLExportedClassMethods();
 }
 

@@ -4062,24 +4062,24 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
 
       Info.EvalStatus.Injections->emplace_back(IS);
       Expr::InjectionInfo &II = Info.EvalStatus.Injections->back();
+
+      if (IS->isReflectedDeclaration()) {
+        // There is no capture for a reflected declaration, but the value
+        // of the expression might have local modifications.        
+        if (const Expr *E = IS->getModifications()) {
+         APValue Val;
+          if (!Evaluate(Val, Info, E))
+           return ESR_Failed;
+          II.Modifications = Val;
+        }
+      }
+
+      // Evaluate capture values.
       II.CaptureValues.resize(IS->getNumCaptures());
       for (std::size_t I = 0; I < IS->getNumCaptures(); ++I) {
         const Expr *E = IS->getCapture(I);
         if (!Evaluate(II.CaptureValues[I], Info, E))
           return ESR_Failed;
-
-        const ValueDecl *VD = cast<DeclRefExpr>(E)->getDecl();
-        QualType T = VD->getType();
-
-        LValue LV;
-        LV.setFrom(Info.Ctx, II.CaptureValues[I]);
-        CompleteObject CO = findCompleteObject(Info, E, AK_Read, LV, T);
-        if (!CO)
-          return ESR_Failed;
-
-        // Overwrite the lvalue with the complete object. That is, manifest
-        // the value as a constant, so we can substitute later.
-        II.CaptureValues[I] = *CO.Value;
       }
 
       return ESR_Succeeded;
@@ -10416,6 +10416,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::DependentCoawaitExprClass:
   case Expr::CoyieldExprClass:
   case Expr::CompilerErrorExprClass:
+  case Expr::CXXDependentIdExprClass:
     return ICEDiag(IK_NotICE, E->getLocStart());
 
   case Expr::InitListExprClass: {

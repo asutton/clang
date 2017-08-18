@@ -944,7 +944,11 @@ void ASTStmtWriter::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
 }
 
 void ASTStmtWriter::VisitCXXConstantExpr(CXXConstantExpr *S) {
-  llvm_unreachable("constant expression writing not implemented");
+  llvm_unreachable("not implemented");
+}
+
+void ASTStmtWriter::VisitCXXDependentIdExpr(CXXDependentIdExpr *S) {
+  llvm_unreachable("not implemented");
 }
 
 //===----------------------------------------------------------------------===//

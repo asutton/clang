@@ -170,46 +170,49 @@ CoroutineBodyStmt::CoroutineBodyStmt(CoroutineBodyStmt::CtorArgs const &Args)
 CXXInjectionStmt::CXXInjectionStmt(ASTContext &Cxt, SourceLocation AL, 
                                    SmallVectorImpl<Expr *> &Caps)
     : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), NumCaptures(Caps.size()),
-      Captures(new (Cxt) Expr*[NumCaptures]), InjectedDecl() {
+      Captures(new (Cxt) Expr*[NumCaptures]), Reflection(), Modifications(), 
+      Injection() {
   std::copy(Caps.begin(), Caps.end(), Captures);
 }
 
-void CXXInjectionStmt::setBlockInjection(CXXMethodDecl *D) {
-  setInjection(Block, D);
+void CXXInjectionStmt::setBlockFragment(CXXMethodDecl *D) {
+  setFragment(BlockFragment, D);
 }
 
-void CXXInjectionStmt::setClassInjection(CXXRecordDecl *D) {
-  setInjection(Class, D);
+void CXXInjectionStmt::setClassFragment(CXXRecordDecl *D) {
+  setFragment(ClassFragment, D);
 }
 
-void CXXInjectionStmt::setNamespaceInjection(NamespaceDecl *D) {
-  setInjection(Namespace, D);
+void CXXInjectionStmt::setNamespaceFragment(NamespaceDecl *D) {
+  setFragment(NamespaceFragment, D);
 }
 
-CompoundStmt *CXXInjectionStmt::getInjectedBlock() const {
-  assert(isBlockInjection() && "injection is not a block");
-  CXXMethodDecl *Method = cast<CXXMethodDecl>(InjectedDecl);
+CompoundStmt *CXXInjectionStmt::getBlockFragment() const {
+  assert(isBlockFragment() && "Not a block fragment");
+  CXXMethodDecl *Method = cast<CXXMethodDecl>(getFragment());
   return cast<CompoundStmt>(Method->getBody());
 }
 
-CXXRecordDecl *CXXInjectionStmt::getInjectedClass() const {
-  assert(isClassInjection() && "injection is not a class");
-  return cast<CXXRecordDecl>(InjectedDecl);
+CXXRecordDecl *CXXInjectionStmt::getClassFragment() const {
+  assert(isClassFragment() && "Not a class fragment");
+  return cast<CXXRecordDecl>(getFragment());
 }
 
-NamespaceDecl *CXXInjectionStmt::getInjectedNamespace() const {
-  assert(isNamespaceInjection() && "injection is not a namespace");
-  return cast<NamespaceDecl>(InjectedDecl);
+NamespaceDecl *CXXInjectionStmt::getNamespaceFragment() const {
+  assert(isNamespaceFragment() && "not a namespace fragment");
+  return cast<NamespaceDecl>(getFragment());
 }
 
 SourceLocation CXXInjectionStmt::getLocEnd() const {
   switch (getInjectionKind()) {
-  case Block:
-    return getInjectedBlock()->getLocEnd();
-  case Class:
-    return getInjectedClass()->getBraceRange().getEnd();
-  case Namespace:
-    return getInjectedNamespace()->getRBraceLoc();
+  case BlockFragment:
+    return getBlockFragment()->getLocEnd();
+  case ClassFragment:
+    return getClassFragment()->getBraceRange().getEnd();
+  case NamespaceFragment:
+    return getNamespaceFragment()->getRBraceLoc();
+  case ReflectedDecl:
+    return getReflection()->getLocEnd();
   }
   llvm_unreachable("Invalid injection kind");
 }

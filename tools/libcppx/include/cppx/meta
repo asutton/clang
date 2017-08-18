@@ -132,6 +132,8 @@ struct decl : entity<X, K> {
   static constexpr decl_traits traits() {
     return decl_traits(__reflect_traits(X));
   }
+
+  modification_traits mods = {};
 };
 
 template<reflection_t X1, reflection_kind K1, reflection_t X2, reflection_kind K2>
@@ -215,17 +217,17 @@ struct named : decl<X, K> {
     return access() == protected_access;
   }
 
-  static constexpr void set_access(access_kind k) {
-    __modify_access(X, k);
+  constexpr void set_access(access_kind k) {
+    this->mods.new_access = k;
   }
-  static constexpr void make_public() {
-    __modify_access(X, public_access);
+  constexpr void make_public() {
+    set_access(public_access);
   }
-  static constexpr void make_private() {
-    __modify_access(X, private_access);
+  constexpr void make_private() {
+    set_access(private_access);
   }
-  static constexpr void make_protected() {
-    __modify_access(X, protected_access);
+  constexpr void make_protected() {
+    set_access(protected_access);
   }
 };
 
@@ -513,6 +515,13 @@ struct valued : typed<X, K> {
     return storage() == thread_storage;
   }
 
+  constexpr void make_static() {
+    this->mods.new_storage = static_storage;
+  }
+  constexpr void make_thread_local() {
+    this->mods.new_storage = thread_storage;
+  }
+
   static constexpr bool is_inline() {
     return traits().is_inline;
   }
@@ -520,11 +529,11 @@ struct valued : typed<X, K> {
     return traits().is_constexpr;
   }
 
-  static constexpr void make_constexpr() {
-    __modify_constexpr(X);
+  constexpr void make_constexpr() {
+    this->mods.make_constexpr = true;
   }
 
-  static constexpr auto pointer() {
+  constexpr auto pointer() {
     return __reflect_pointer(X);
   }
 };
@@ -559,8 +568,8 @@ struct function : typed<X, function_decl_kind> {
     return traits().is_noexcept;
   }
 
-  static void make_constexpr() {
-    __modify_constexpr(X);
+  void make_constexpr() {
+    this->mods.make_constexpr(true);
   }
 
   static constexpr bool is_defined() {
@@ -615,8 +624,8 @@ struct method : typed<X, member_function_decl_kind> {
     return traits().is_explicit;
   }
 
-  static constexpr void make_constexpr() {
-    __modify_constexpr(X);
+  constexpr void make_constexpr() {
+    this->mods.make_constexpr(true);
   }
 
   // Virtual functions
@@ -634,11 +643,12 @@ struct method : typed<X, member_function_decl_kind> {
     return traits().is_override;
   }
 
-  static constexpr void make_virtual() {
-    __modify_virtual(X, false);
+  constexpr void make_virtual() {
+    this->mods.make_virtual = true;
   }
-  static constexpr void make_pure_virtual() {
-    __modify_virtual(X, true);
+  constexpr void make_pure_virtual() {
+    this->mods.make_virtual = true;
+    this->mods.make_pure = true;
   }
 
   // Traits
@@ -1008,7 +1018,10 @@ struct tuple_element<I, cppx::meta::tu<X>>
 
 } // namespace std
 
-// TODO: Remove this. It's just here to support online demos for now.
+
+/// Make it easier for people to use the online compiler.
+///
+/// TODO: Remove this.
 using namespace cppx::meta;
 
 #endif // CPPX_META

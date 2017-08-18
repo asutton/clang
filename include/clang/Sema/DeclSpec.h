@@ -932,7 +932,7 @@ public:
     IK_ImplicitSelfParam,
     /// \brief A deduction-guide name (a template-name)
     IK_DeductionGuideName,
-    /// \brief An idexpr operator (currently spelled declname).
+    /// \brief An idexpr operator.
     IK_IdExprOperator,
   } Kind;
 

@@ -1863,18 +1863,28 @@ static void dumpCaptures(ASTDumper &Dumper, const CXXInjectionStmt *Node) {
 
 void ASTDumper::VisitCXXInjectionStmt(const CXXInjectionStmt *Node) {
   VisitStmt(Node);
-  if (Node->isBlockInjection()) {
+  switch (Node->getInjectionKind()) {
+  case CXXInjectionStmt::BlockFragment:
     OS << " block";
     dumpCaptures(*this, Node);
-    dumpStmt(Node->getInjectedBlock());
-  } else if (Node->isClassInjection()) {
+    dumpStmt(Node->getBlockFragment());
+    break;
+  case CXXInjectionStmt::ClassFragment:
     OS << " class";
     dumpCaptures(*this, Node);
-    dumpDecl(Node->getInjectedClass());
-  } else {
+    dumpDecl(Node->getClassFragment());
+    break;
+  case CXXInjectionStmt::NamespaceFragment:
     OS << " namespace";
     dumpCaptures(*this, Node);
-    dumpDecl(Node->getInjectedNamespace());
+    dumpDecl(Node->getNamespaceFragment());
+    break;
+  case CXXInjectionStmt::ReflectedDecl:
+    OS << " reflection";
+    dumpStmt(Node->getReflection());
+    if (!Node->isDependentReflection())
+      dumpDecl(Node->getReflectedDeclaration());
+    break;
   }
 }
 

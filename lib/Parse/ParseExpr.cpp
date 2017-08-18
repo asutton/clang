@@ -1342,7 +1342,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   }
 
   case tok::kw_operator: // [C++] id-expression: operator/conversion-function-id
-  case tok::kw_declname: // [Meta] id-expression: declname-id
+  case tok::kw_idexpr: // [Meta] id-expression: idexpr-id
     Res = ParseCXXIdExpression(isAddressOfOperand);
     break;
 

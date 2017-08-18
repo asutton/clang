@@ -2184,6 +2184,8 @@ def note_use_reference_type : Note<"use reference type %0 to prevent copying">;
 // [Meta] tuple and pack loops
 def note_loop_body_instantiation_here : Note<
   "in instantiation of loop body expansion">;
+def note_source_code_injection_here : Note<
+  "in injection of source code">;
 
 // C++11 constexpr
 def warn_cxx98_compat_constexpr : Warning<
@@ -9030,11 +9032,11 @@ def err_reflection_not_a_value : Error<
   "expression does not reflect a variable or function">;
 
 // declaration names
-def err_declname_with_integer_prefix : Error<
+def err_idexpr_with_integer_prefix : Error<
   "declaration name begins with an integer">;
-def err_declname_invalid_operand_type : Error<
+def err_idexpr_invalid_operand_type : Error<
   "cannot include expression of type %0 in a declaration name">;
-def err_declname_not_an_identifer : Error<
+def err_idexpr_not_an_identifer : Error<
   "declaration name %0 not is not an identifier">;
 
 // source code injection

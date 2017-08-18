@@ -104,6 +104,7 @@ protected:
   class InjectionStmtBitfields {
     friend class CXXInjectionStmt;
     unsigned : NumStmtBits;
+
     unsigned InjectionKind : 4;
   };
 

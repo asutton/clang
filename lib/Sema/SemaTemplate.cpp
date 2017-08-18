@@ -545,6 +545,14 @@ Sema::ActOnDependentIdExpression(const CXXScopeSpec &SS,
                            const TemplateArgumentListInfo *TemplateArgs) {
   DeclContext *DC = getFunctionLevelDeclContext();
 
+  // If the name is of the form 'idexpr(...)', then one or more of the
+  // operands is dependent, and we cannot form an identifier. Simply preserve
+  // the name as it is.
+  if (NameInfo.getName().getNameKind() == DeclarationName::CXXIdExprName) {
+    assert(SS.isEmpty() && "Scoped idexpr names not implemented");
+    return new (Context) CXXDependentIdExpr(NameInfo, Context.DependentTy);
+  }
+
   // C++11 [expr.prim.general]p12:
   //   An id-expression that denotes a non-static data member or non-static
   //   member function of a class can only be used:

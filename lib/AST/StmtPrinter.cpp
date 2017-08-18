@@ -352,7 +352,7 @@ void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
 }
 
 void StmtPrinter::VisitCXXInjectionStmt(CXXInjectionStmt *Node) {
-  // FIXME: Print tokens.
+  // FIXME: Actually print something meaningful.
   Indent() << "-> { ... }";
   if (Policy.IncludeNewlines) OS << "\n";
 }
@@ -2559,8 +2559,21 @@ void StmtPrinter::VisitCompilerErrorExpr(CompilerErrorExpr *Node) {
   OS << ")";
 }
 
-void StmtPrinter::VisitCXXConstantExpr(CXXConstantExpr *S) {
-  PrintExpr(S->getExpression());
+void StmtPrinter::VisitCXXConstantExpr(CXXConstantExpr *Node) {
+  // If we can print a meaningful value, then we should try to do that.
+  // The actual expression may refer to variables that are no longer in scope.
+  //
+  // FIXME: Emit the value based on the type, not its shape (i.e., handle
+  // true/false more elegantly).
+  const APValue &Val = Node->getValue();
+  if (Val.isInt())
+    OS << Val.getInt();
+  else
+    PrintExpr(Node->getExpression());
+}
+
+void StmtPrinter::VisitCXXDependentIdExpr(CXXDependentIdExpr *Node) {
+  OS << Node->getNameInfo() << ") ";
 }
 
 // Obj-C

@@ -96,29 +96,31 @@ ExprResult Parser::ParseReflexprExpression() {
   return Result;
 }
 
-/// \brief Parse a declname-id
+/// \brief Parse a idexpr-id
 ///
 ///   unqualified-id:
-///      'declname' '(' id-concatenation-seq ')'
+///      'idexpr' '(' constant-argument-list ')'
 ///
-///   id-concatenation-seq:
-///       constant-expression
-///       id-concatenation-seq constant-expression
+/// Each argument in the constant-argument-list must be a constant expression.
 ///
 /// Returns true if parsing or semantic analysis fail.
 bool Parser::ParseDeclnameId(UnqualifiedId& Result) {
-  assert(Tok.is(tok::kw_declname));
+  assert(Tok.is(tok::kw_idexpr));
   SourceLocation KeyLoc = ConsumeToken();
 
   BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "declname"))
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "idexpr"))
     return true;
   SmallVector<Expr *, 4> Parts;
-  while (Tok.isNot(tok::r_paren)) {
+  while (true) {
     ExprResult Result = ParseConstantExpression();
     if (Result.isInvalid())
       return true;
     Parts.push_back(Result.get());
+    if (Tok.is(tok::r_paren))
+      break;
+    if (ExpectAndConsume(tok::comma))
+      return true;
   }
   if (T.consumeClose())
     return true;
@@ -138,7 +140,7 @@ ExprResult Parser::ParseHasNameExpression() {
   SourceLocation KeyLoc = ConsumeToken();
 
   BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "declname"))
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "idexpr"))
     return ExprError();
   
   ExprResult E = ParseConstantExpression();
@@ -325,15 +327,20 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
     Diag(Tok, diag::err_expected_either) << tok::colon << tok::l_brace;
     return nullptr;
   }
-
+  
   Decl *Metaclass = Actions.ActOnMetaclass(getCurScope(), DLoc, IdLoc, II);
   CXXRecordDecl *MetaclassDef = nullptr;
 
   // Enter a scope for the metaclass.
   ParseScope MetaclassScope(this, Scope::DeclScope);
 
+  // Increase the tempalte 
+  TemplateParameterDepthRAII TemplateDepthTracker(TemplateParameterDepth);
+  ++TemplateDepthTracker;
+
   Actions.ActOnMetaclassStartDefinition(getCurScope(), Metaclass, Attrs, 
-                                        MetaclassDef);
+                                        MetaclassDef, 
+                                        TemplateDepthTracker.getDepth());
 
   PrettyDeclStackTraceEntry CrashInfo(Actions, Metaclass, DLoc,
                                       "parsing metaclass body");

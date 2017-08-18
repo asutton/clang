@@ -253,10 +253,18 @@ void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
     OS << "operator\"\"" << N.getCXXLiteralIdentifier()->getName();
     return;
 
-  case DeclarationName::CXXIdExprName:
-    // FIXME: Do this right.
-    OS << "declname(...)";
+  case DeclarationName::CXXIdExprName: {
+    CXXIdExprNameExtra *Extra = N.getAsCXXIdExprName();
+    OS << "idexpr(";
+    for (std::size_t I = 0; I < Extra->NumArgs; ++I) {
+      Expr *E = Extra->Args[I];
+      E->printPretty(OS, nullptr, Policy);
+      if (I + 1 != Extra->NumArgs)
+        OS << ", ";
+    }
+    OS << ')';
     return;
+  }
 
   case DeclarationName::CXXConversionFunctionName: {
     OS << "operator ";

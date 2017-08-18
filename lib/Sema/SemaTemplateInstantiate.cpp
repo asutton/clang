@@ -198,6 +198,7 @@ bool Sema::CodeSynthesisContext::isInstantiationRecord() const {
 
   case DefaultTemplateArgumentChecking:
   case DeclaringSpecialMember:
+  case SourceCodeInjection:
     return false;
   }
 
@@ -360,7 +361,19 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
   // Set the loop on the active instantiation.
   CodeSynthesisContext& Inst = 
     SemaRef.CodeSynthesisContexts.back();
-  Inst.Loop = S;      
+  Inst.Loop = S;
+}
+
+Sema::InstantiatingTemplate::InstantiatingTemplate(
+    Sema &SemaRef, SourceLocation PointOfInstantiation)
+    : InstantiatingTemplate(
+          SemaRef, 
+          CodeSynthesisContext::SourceCodeInjection,
+          PointOfInstantiation, SourceRange(), nullptr, nullptr,
+          ArrayRef<TemplateArgument>()) {
+  // FIXME: What information do we need to associate with the transformation?
+  // CodeSynthesisContext& Inst = 
+  //   SemaRef.CodeSynthesisContexts.back();
 }
 
 void Sema::pushCodeSynthesisContext(CodeSynthesisContext Ctx) {
@@ -647,6 +660,12 @@ void Sema::PrintInstantiationStack() {
                    diag::note_in_declaration_of_implicit_special_member)
         << cast<CXXRecordDecl>(Active->Entity) << Active->SpecialMember;
       break;
+
+    case CodeSynthesisContext::SourceCodeInjection:
+      // FIXME: Provide more context.
+      Diags.Report(Active->PointOfInstantiation, 
+                   diag::note_source_code_injection_here);
+      break;
     }
   }
 }
@@ -671,6 +690,7 @@ Optional<TemplateDeductionInfo *> Sema::isSFINAEContext() const {
     case CodeSynthesisContext::ForLoopInstantiation:
     case CodeSynthesisContext::DefaultFunctionArgumentInstantiation:
     case CodeSynthesisContext::ExceptionSpecInstantiation:
+    case CodeSynthesisContext::SourceCodeInjection:
       // This is a template instantiation, so there is no SFINAE.
       return None;
 

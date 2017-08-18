@@ -658,29 +658,49 @@ class CXXInjectionStmt : public Stmt {
   /// declarations into placeholders.
   Expr** Captures;
 
-  /// The kind of injected declaration. This is:
-  /// - a CXXMethodDecl of a lambda expression for a block injection,
-  /// - a CXXRecordDecl for a class injection, or
-  /// - a NamespaceDecl for a namespace injection.
-  Decl *InjectedDecl;
+  /// Stores an expression that computes the reflection being injected.
+  Expr *Reflection;
+
+  /// Stores local modifications to a reflection.
+  Expr *Modifications;
+
+  /// Stores the actual thing being injected. The specific kind of declaration
+  /// depends on the injection kind (stored in InjectionStmtBits). The value
+  /// is an expression only if it is a dependent reflection injection.
+  ///
+  /// FIXME: We currently lose the expression in the ReflectedDecl case. We
+  /// should probably make a 3rd option containing an expr/decl pair so we
+  /// have full information.
+  llvm::PointerUnion<Decl *, Expr *> Injection;
 public:
 
   /// \brief The kind of injection.
-  ///
-  /// \todo If the values of this field exceed 16 bits, then change the bit width
-  /// in Stmt::InjectionStmtBitfields.
   enum InjectionKind
   {
-    Block,
-    Class,
-    Namespace,
+    BlockFragment,     // Injecting a sequence of statements
+    ClassFragment,     // Injecting class members
+    NamespaceFragment, // Injecting namespace members
+    ReflectedDecl,     // Injecting a (copy of a) reflected declaration
   };
 
   CXXInjectionStmt(ASTContext &Cxt, SourceLocation AL, 
                    SmallVectorImpl<Expr *> &Caps);
 
+  CXXInjectionStmt(SourceLocation AL, Expr *E)
+      : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), NumCaptures(), Captures(),
+        Reflection(E), Modifications(), Injection() {
+    InjectionStmtBits.InjectionKind = ReflectedDecl;
+  }
+
+  CXXInjectionStmt(SourceLocation AL, Expr *E, Decl *D)
+      : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), NumCaptures(), Captures(),
+        Reflection(E), Modifications(), Injection(D) {
+    InjectionStmtBits.InjectionKind = ReflectedDecl;
+  }
+
   explicit CXXInjectionStmt(EmptyShell Empty)
-      : Stmt(CXXInjectionStmtClass, Empty), ArrowLoc(), InjectedDecl() {}
+      : Stmt(CXXInjectionStmtClass, Empty), ArrowLoc(), NumCaptures(), 
+        Captures(), Reflection(), Modifications(), Injection() {}
 
   /// \brief Returns the location of the injected arrow.
   SourceLocation getArrowLoc() const { return ArrowLoc; }
@@ -703,52 +723,94 @@ public:
   }
 
 private:
-  void setInjection(InjectionKind K, Decl *D) {
-    assert(!InjectedDecl && "Injected declaration already set");
+  void setFragment(InjectionKind K, Decl *D) {
+    assert(!Injection && "Injected fragment already set");
     InjectionStmtBits.InjectionKind = K;
-    InjectedDecl = D;
+    Injection = D;
   }
 public:
 
-  /// \brief Make this statement a block injection.
-  void setBlockInjection(CXXMethodDecl *D);
-
-  /// \brief Make this statement a class injection.
-  void setClassInjection(CXXRecordDecl *D);
-
-  /// \brief Make this statement a namespace injection.
-  void setNamespaceInjection(NamespaceDecl *D);
-
   /// \brief Returns the kind of injection.
   InjectionKind getInjectionKind() const { 
-    assert(InjectedDecl && "Injected declaration not set");
+    assert(Reflection || Injection && "Statement not configured");
     return (InjectionKind)InjectionStmtBits.InjectionKind; 
   }
 
-  /// \brief Returns true if the injection is a compound statement.
-  bool isBlockInjection() const { return getInjectionKind() == Block; }
+  /// \brief Whether the injection holds a reflected declaration or not.
+  bool isReflectedDeclaration() const { 
+    return getInjectionKind() == ReflectedDecl;
+  }
 
-  /// \brief Returns true if the injection is a class definition.
-  bool isClassInjection() const { return getInjectionKind() == Class; }
+  Decl *getReflectedDeclaration() const {
+    assert(isReflectedDeclaration() && "Not a reflected declaration");
+    return Injection.get<Decl *>();
+  }
+
+  /// \brief Whether the source expression is, in some way, dependent.
+  bool isDependentReflection() const {
+    return getReflectedDeclaration() == nullptr;
+  }
+
+  /// \brief The dependent reflection. This may be null.
+  Expr *getReflection() const {
+    assert(isReflectedDeclaration() && "Not a reflected declaration");
+    return Reflection;
+  }
+
+  /// \brief The local modifications applied to the injection, if any.
+  /// This is an expression that accesses the modifications value.
+  const Expr *getModifications() const { return Modifications; }
+
+  /// \brief Set the modification access expression.
+  void setModifications(Expr *E) { Modifications = E; }
+
+  /// \brief Whether the injection holds a fragment or not.
+  bool isFragment() const { 
+    return getInjectionKind() <= NamespaceFragment;
+  }
+
+  /// \brief Returns true if the injection is a compound statement.
+  bool isBlockFragment() const { 
+    return getInjectionKind() == BlockFragment; 
+  }
+
+  /// \brief Returns true if the injection is a class fragment.
+  bool isClassFragment() const { 
+    return getInjectionKind() == ClassFragment; 
+  }
   
-  /// \brief Returns true if the injection is a namespace definition.
-  bool isNamespaceInjection() const { 
-    return getInjectionKind() == Namespace; 
+  /// \brief Returns true if the injection is a namespace fragment.
+  bool isNamespaceFragment() const { 
+    return getInjectionKind() == NamespaceFragment; 
+  }
+  /// \brief Returns the fragment as a declaration.
+  Decl *getFragment() const { 
+    assert(isFragment() && "Injection has an expression");
+    return Injection.get<Decl *>();
   }
 
   /// \brief Returns the declaration containing the injected code.
-  DeclContext *getInjectionContext() const { 
-    return cast<DeclContext>(InjectedDecl); 
+  DeclContext *getFragmentAsContext() const { 
+    return cast<DeclContext>(getFragment()); 
   }
 
   /// \brief Returns the injected compound statement.
-  CompoundStmt *getInjectedBlock() const;
+  CompoundStmt *getBlockFragment() const;
 
   /// \brief Returns the injected class definition.
-  CXXRecordDecl *getInjectedClass() const;
+  CXXRecordDecl *getClassFragment() const;
 
   /// \brief Returns the injected namespace definition.
-  NamespaceDecl *getInjectedNamespace() const;
+  NamespaceDecl *getNamespaceFragment() const;
+
+  /// \brief Make this statement a block fragment injection.
+  void setBlockFragment(CXXMethodDecl *D);
+
+  /// \brief Make this statement a class fragment injection.
+  void setClassFragment(CXXRecordDecl *D);
+
+  /// \brief Make this statement a namespace fragment injection.
+  void setNamespaceFragment(NamespaceDecl *D);
 
   SourceLocation getLocStart() const LLVM_READONLY { return ArrowLoc; }
   SourceLocation getLocEnd() const LLVM_READONLY;

@@ -24,6 +24,7 @@ using namespace clang;
 /// \verbatim
 /// injection-statement:
 ///   '->' injection-capture_opt injection
+///   '->' constant-expression ';'
 ///
 /// injection-capture:
 ///   '[' identifier-list ']'
@@ -32,10 +33,11 @@ using namespace clang;
 ///   'do' compound-statement
 ///   class-key identifier_opt '{' member-specification_opt '}'
 ///   'namespace' identifier_opt '{' namespace-body '}'
+///   compound-statement
 ///
 /// \endverbatim
 ///
-/// TODO: Support the optional identifier for namespace injections.
+/// TODO: Implement expression injection.
 StmtResult Parser::ParseCXXInjectionStmt() {
   assert(Tok.is(tok::arrow));
   SourceLocation ArrowLoc = ConsumeToken();
@@ -44,6 +46,7 @@ StmtResult Parser::ParseCXXInjectionStmt() {
   // statement. Establish a new declaration scope for the following injection.
   ParseScope InjectionScope(this, Scope::DeclScope | Scope::InjectionScope);
 
+  /*
   // Parse the optional capture list; identifiers are resolved as they are
   // parsed. We inject them later on.
   SmallVector<Decl*, 4> Captures;
@@ -54,6 +57,7 @@ StmtResult Parser::ParseCXXInjectionStmt() {
       return StmtError();
     }
 
+    // FIXME: Deprecate named capture. Also, note that t
     while (Tok.isNot(tok::r_square)) {
       if (Tok.isNot(tok::identifier)) {
         Diag(Tok, diag::err_expected) << tok::identifier;
@@ -77,34 +81,36 @@ StmtResult Parser::ParseCXXInjectionStmt() {
       return StmtError();
     }
   }
+  */
 
   switch (Tok.getKind()) {
     case tok::kw_do:
-      return ParseCXXBlockInjection(ArrowLoc, Captures);
+      return ParseCXXBlockInjection(ArrowLoc);
 
     case tok::kw_struct:
     case tok::kw_class:
     case tok::kw_union:
-      return ParseCXXClassInjection(ArrowLoc, Captures);
+      return ParseCXXClassInjection(ArrowLoc);
 
     case tok::kw_namespace:
-      return ParseCXXNamespaceInjection(ArrowLoc, Captures);
+      return ParseCXXNamespaceInjection(ArrowLoc);
+
+    case tok::l_brace:
+      llvm_unreachable("Expression capture not implemented");
 
     default:
-      Diag(Tok.getLocation(), diag::err_expected_injection);
-      return StmtError();
+      return ParseCXXReflectionInjection(ArrowLoc);
   }
 }
 
-StmtResult Parser::ParseCXXBlockInjection(SourceLocation ArrowLoc,
-                                          CapturedDeclsList &Captures) {
+StmtResult Parser::ParseCXXBlockInjection(SourceLocation ArrowLoc) {
   assert(Tok.is(tok::kw_do) && "expected 'do'");
 
   // FIXME: Save the introducer token?
   ConsumeToken();
 
-  StmtResult Injection = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, 
-                                                    Sema::IK_Block, Captures);
+  StmtResult Injection 
+      = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, /*IsBlock=*/true);
 
   // Parse the block statement as if it were a lambda '[]()stmt'. 
   ParseScope BodyScope(this, Scope::BlockScope | 
@@ -116,14 +122,13 @@ StmtResult Parser::ParseCXXBlockInjection(SourceLocation ArrowLoc,
   return Injection;
 }
 
-StmtResult Parser::ParseCXXClassInjection(SourceLocation ArrowLoc,
-                                          CapturedDeclsList &Captures) {
+StmtResult Parser::ParseCXXClassInjection(SourceLocation ArrowLoc) {
   assert(Tok.isOneOf(tok::kw_struct, tok::kw_class, tok::kw_union) &&
          "expected 'struct', 'class', or 'union'");
 
   // Pre-build the statement and associate its captures.
-  StmtResult Injection = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, 
-                                                    Sema::IK_Class, Captures);
+  StmtResult Injection 
+      = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, /*IsBlock=*/false);
 
   DeclSpec::TST TagType;
   if (Tok.is(tok::kw_struct))
@@ -170,14 +175,12 @@ StmtResult Parser::ParseCXXClassInjection(SourceLocation ArrowLoc,
   return Injection;
 }
 
-StmtResult Parser::ParseCXXNamespaceInjection(SourceLocation ArrowLoc,
-                                              CapturedDeclsList &Captures) {
+StmtResult Parser::ParseCXXNamespaceInjection(SourceLocation ArrowLoc) {
   assert(Tok.is(tok::kw_namespace) && "expected 'namespace'");
 
   // Pre-build the statement and associate its captures.
-  StmtResult Injection = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, 
-                                                    Sema::IK_Namespace, 
-                                                    Captures);
+  StmtResult Injection 
+      = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, /*IsBlock=*/false);
 
   SourceLocation NamespaceLoc = ConsumeToken();
   IdentifierInfo *Id = nullptr;
@@ -234,3 +237,11 @@ StmtResult Parser::ParseCXXNamespaceInjection(SourceLocation ArrowLoc,
   return Injection;
 }
 
+StmtResult Parser::ParseCXXReflectionInjection(SourceLocation ArrowLoc) {
+  ExprResult Reflection = ParseConstantExpression();
+  if (Reflection.isInvalid())
+    return StmtError();
+  if (ExpectAndConsumeSemi(diag::err_expected_semi_after_expr))
+    return StmtError();
+  return Actions.ActOnReflectionInjection(ArrowLoc, Reflection.get());
+}

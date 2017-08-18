@@ -4478,6 +4478,38 @@ public:
   }
 };
 
+/// \brief Represents an id-expression of the form 'idexpr(args)'. Some
+/// of the arguments in args are dependent. 
+class CXXDependentIdExpr : public Expr {
+  DeclarationNameInfo NameInfo;
+public:
+  CXXDependentIdExpr(DeclarationNameInfo DNI, QualType T);
+
+  CXXDependentIdExpr(EmptyShell Empty)
+    : Expr(CXXDependentIdExprClass, Empty) {}
+
+  /// \brief Returns the evaluated expression. 
+  DeclarationNameInfo getNameInfo() const { return NameInfo; }
+
+  SourceLocation getLocStart() const { return getSourceRange().getBegin(); }
+  SourceLocation getLocEnd() const { return getSourceRange().getEnd(); }
+  SourceRange getSourceRange() const {
+    return NameInfo.getCXXIdExprNameRange();
+  }
+
+  child_range children() { 
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const { 
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+  
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXDependentIdExprClass;
+  }
+};
+
 } // end namespace clang
 
 #endif

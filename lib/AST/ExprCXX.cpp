@@ -1425,9 +1425,23 @@ SourceLocation ReflectionExpr::getLocEnd() const {
   return OpLoc;
 }
 
+static bool AnyTypeDependentExprs(ArrayRef<Expr *> Args) {
+  for (unsigned i = 0; i < Args.size(); ++i)
+    if (Args[i]->isTypeDependent())
+      return true;
+  return false;
+}
+
 static bool AnyValueDependentExprs(ArrayRef<Expr *> Args) {
   for (unsigned i = 0; i < Args.size(); ++i)
     if (Args[i]->isValueDependent())
+      return true;
+  return false;
+}
+
+static bool AnyInstantiationDependentExprs(ArrayRef<Expr *> Args) {
+  for (unsigned i = 0; i < Args.size(); ++i)
+    if (Args[i]->isInstantiationDependent())
       return true;
   return false;
 }
@@ -1456,3 +1470,12 @@ ReflectionTraitExpr::ReflectionTraitExpr(ASTContext &C, ReflectionTrait RT,
   for (unsigned i = 0; i != NumArgs; ++i)
     Args[i] = InitArgs[i];
 }
+
+// Assume that the name is an ordinary lvalue for now.
+CXXDependentIdExpr::CXXDependentIdExpr(DeclarationNameInfo DNI, QualType T)
+  : Expr(CXXDependentIdExprClass, T, VK_LValue, OK_Ordinary, 
+         AnyTypeDependentExprs(DNI.getName().getCXXIdExprArguments()), 
+         AnyValueDependentExprs(DNI.getName().getCXXIdExprArguments()), 
+         AnyInstantiationDependentExprs(DNI.getName().getCXXIdExprArguments()), 
+         false), 
+    NameInfo(DNI) {}

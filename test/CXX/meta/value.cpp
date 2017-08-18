@@ -12,7 +12,7 @@ using namespace cppx::meta;
 $class basic_value {
   // Check members first.
   constexpr {
-    for... (auto f : $basic_value.member_functions()) {
+    for... (auto f : $prototype.member_functions()) {
       compiler.require(!f.is_virtual(),   "a value type may not have a virtual function");
       compiler.require(!f.is_protected(), "a value type may not have a protected function");
       compiler.require(!f.is_destructor() || f.is_public(), "a value destructor must be public");
@@ -26,7 +26,7 @@ $class basic_value {
   // default_members(), etc.
   constexpr {
     access_kind mode = default_access;
-    for... (auto m : $basic_value.members()) {
+    for... (auto m : $prototype.members()) {
       if (mode == default_access) {
 
         // NOTE: You need to use 'if constexpr' here because not every member
@@ -39,6 +39,14 @@ $class basic_value {
         if constexpr (m.is_access_specifier())
           mode = m.access();
       }
+      
+      // FIXME: This is a bit of a hack. We really want to avoid re-injecting
+      // the nested name specifier (although, this may actually be the
+      // prototype).
+      if constexpr (m.is_class_type())
+        continue;
+      
+      -> m;
     }
   }
 
@@ -49,7 +57,6 @@ $class basic_value {
   basic_value& operator=(const basic_value& that) = default;
   basic_value& operator=(basic_value&& that)      = default;
 };
-
 
 $class comparable {
   bool operator==(const comparable& that) const {
@@ -88,7 +95,6 @@ $class regular : basic_value, comparable { };
 
 $class value : basic_value, ordered { };
 
-
 value foo {
   int a;
 public:
@@ -99,6 +105,7 @@ private:
 
 int main() {
   compiler.debug($foo);
+
   foo f1;
   foo f2 = f1;
   // (void)f1.a; // error: private

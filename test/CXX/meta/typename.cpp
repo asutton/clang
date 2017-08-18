@@ -1,5 +1,7 @@
 // RUN: echo
 
+#include <cppx/meta>
+
 void f1() {
   typename($int) n1;
   static_assert(__is_same(decltype(n1), int));

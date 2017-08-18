@@ -2626,12 +2626,10 @@ private:
   using CapturedDeclsList = SmallVectorImpl<Decl *>;
 
   StmtResult ParseCXXInjectionStmt();
-  StmtResult ParseCXXBlockInjection(SourceLocation ArrowLoc,
-                                    CapturedDeclsList &Catpures);
-  StmtResult ParseCXXClassInjection(SourceLocation ArrowLoc,
-                                    CapturedDeclsList &Catpures);
-  StmtResult ParseCXXNamespaceInjection(SourceLocation ArrowLoc,
-                                    CapturedDeclsList &Catpures);
+  StmtResult ParseCXXBlockInjection(SourceLocation ArrowLoc);
+  StmtResult ParseCXXClassInjection(SourceLocation ArrowLoc);
+  StmtResult ParseCXXNamespaceInjection(SourceLocation ArrowLoc);
+  StmtResult ParseCXXReflectionInjection(SourceLocation ArrowLoc);
 
 #if 0
   void InjectTokens(Stmt *Injection, CachedTokens &Toks);
