@@ -8471,6 +8471,12 @@ public:
   bool EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E);
   bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
 
+  Decl* ActOnStartCXXFragment(SourceLocation Loc, 
+                              SmallVectorImpl<Expr *> &Captures);
+  ExprResult BuildCXXFragmentExpr(SourceLocation Loc,
+                                  SmallVectorImpl<Expr *> &Captures,
+                                  Decl *Fragment, Decl *Content);
+
   using CapturedDeclsList = SmallVectorImpl<Decl *>;
 
   DeclResult ActOnInjectionCapture(IdentifierLocPair P);
@@ -8484,6 +8490,8 @@ public:
   void ActOnStartNamespaceFragment(Stmt *S, Decl *D);
   void ActOnFinishNamespaceFragment(Stmt *S);
   StmtResult ActOnReflectionInjection(SourceLocation ArrowLoc, Expr *Ref);
+
+  StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Ref);
 
   using InjectionInfo = Expr::InjectionInfo;
 

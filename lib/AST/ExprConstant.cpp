@@ -4056,6 +4056,7 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     if (Info.checkingPotentialConstantExpression())
       return ESR_Succeeded;
 
+#if 0
     // Register the injection as an effect.
     if (Info.EvalStatus.Injections) {
       const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(S);
@@ -4084,6 +4085,7 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
 
       return ESR_Succeeded;
     }
+#endif
 
     Info.CCEDiag(S->getLocStart(), diag::note_injection_outside_constexpr_decl);
     return ESR_Failed;
@@ -10417,6 +10419,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CoyieldExprClass:
   case Expr::CompilerErrorExprClass:
   case Expr::CXXDependentIdExprClass:
+  case Expr::CXXFragmentExprClass:
     return ICEDiag(IK_NotICE, E->getLocStart());
 
   case Expr::InitListExprClass: {

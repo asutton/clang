@@ -508,7 +508,6 @@ namespace  {
     void VisitGotoStmt(const GotoStmt *Node);
     void VisitCXXCatchStmt(const CXXCatchStmt *Node);
     void VisitCapturedStmt(const CapturedStmt *Node);
-    void VisitCXXInjectionStmt(const CXXInjectionStmt *Node);
 
     // OpenMP
     void VisitOMPExecutableDirective(const OMPExecutableDirective *Node);
@@ -1854,38 +1853,6 @@ void ASTDumper::VisitCXXCatchStmt(const CXXCatchStmt *Node) {
 void ASTDumper::VisitCapturedStmt(const CapturedStmt *Node) {
   VisitStmt(Node);
   dumpDecl(Node->getCapturedDecl());
-}
-
-static void dumpCaptures(ASTDumper &Dumper, const CXXInjectionStmt *Node) {
-  for (Expr *E : Node->captures())
-    Dumper.dumpStmt(E);
-}
-
-void ASTDumper::VisitCXXInjectionStmt(const CXXInjectionStmt *Node) {
-  VisitStmt(Node);
-  switch (Node->getInjectionKind()) {
-  case CXXInjectionStmt::BlockFragment:
-    OS << " block";
-    dumpCaptures(*this, Node);
-    dumpStmt(Node->getBlockFragment());
-    break;
-  case CXXInjectionStmt::ClassFragment:
-    OS << " class";
-    dumpCaptures(*this, Node);
-    dumpDecl(Node->getClassFragment());
-    break;
-  case CXXInjectionStmt::NamespaceFragment:
-    OS << " namespace";
-    dumpCaptures(*this, Node);
-    dumpDecl(Node->getNamespaceFragment());
-    break;
-  case CXXInjectionStmt::ReflectedDecl:
-    OS << " reflection";
-    dumpStmt(Node->getReflection());
-    if (!Node->isDependentReflection())
-      dumpDecl(Node->getReflectedDeclaration());
-    break;
-  }
 }
 
 //===----------------------------------------------------------------------===//

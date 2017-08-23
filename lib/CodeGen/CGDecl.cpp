@@ -92,6 +92,10 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
   case Decl::ConstructorUsingShadow:
   case Decl::ObjCTypeParam:
   case Decl::Binding:
+  case Decl::Metaclass: // $class X { ... }
+  case Decl::Constexpr: // constexpr { ... }
+  case Decl::CXXInjection: // inject expr;
+  case Decl::CXXFragment: // fragment decl;
     llvm_unreachable("Declaration should not be in declstmts!");
   case Decl::Function:  // void X();
   case Decl::Record:    // struct/union/class X;
@@ -104,8 +108,6 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
   case Decl::OMPThreadPrivate:
   case Decl::OMPCapturedExpr:
   case Decl::Empty:
-  case Decl::Metaclass: // $class X { ... }
-  case Decl::Constexpr: // constexpr { ... }
     // None of these decls require codegen support.
     return;
 

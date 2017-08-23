@@ -27,6 +27,7 @@
 
 namespace clang {
 
+class CXXFragmentDecl;
 class CXXTemporary;
 class MSPropertyDecl;
 class TemplateArgumentListInfo;
@@ -4507,6 +4508,92 @@ public:
   
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXDependentIdExprClass;
+  }
+};
+
+/// \brief An expression that introduces a source code fragment.
+///
+/// This expression binds together two constructs: the declaration of a
+/// source code fragment, and a subexpression that computes a reflection of
+/// the fragment. For example, this expression:
+///
+///     __fragment struct { int x; }
+///
+/// introduces the fragment containing struct { int x; } and the reflection of
+/// that entity.
+///
+/// FIXME: The destination context might actually be a block statement; as in:
+/// inject a statement at the end of this block.
+class CXXFragmentExpr : public Expr {
+  /// \brief The location of the introducer token.
+  SourceLocation IntroLoc;
+
+  /// \brief The number of captured declarations.
+  std::size_t NumCaptures;
+
+  /// \brief The references to captured variables. These are all DeclRefExprs.
+  /// We store these instead of their underlying declarations to facilitate
+  /// their evaluation during injection. In particular, the evaluation of an
+  /// injection statement entails the substitution of the values of captured
+  /// declarations into placeholders.
+  Expr** Captures;
+
+  /// The fragment introduced by the expression.
+  CXXFragmentDecl *Fragment;
+
+  /// The expression that constructs the reflection value for the fragment.
+  Stmt *Reflection;
+
+public:
+  CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc, QualType T,
+                  ArrayRef<Expr *> Captures, CXXFragmentDecl *Fragment, 
+                  Expr *Reflection);
+
+  explicit CXXFragmentExpr(EmptyShell Empty)
+      : Expr(CXXFragmentExprClass, Empty), IntroLoc(), NumCaptures(), 
+        Captures(), Fragment() {}
+
+  /// \brief The number of captured declarations.
+  std::size_t getNumCaptures() const { return NumCaptures; }
+
+  /// \brief The Ith capture of the injection statement.
+  const Expr *getCapture(std::size_t I) const { return Captures[I]; }
+  Expr *getCapture(std::size_t I) { return Captures[I]; }
+  
+  using capture_iterator = Expr**;
+  using capture_range = llvm::iterator_range<capture_iterator>;
+  
+  capture_iterator begin_captures() const { return Captures; }
+  capture_iterator end_captures() const { return Captures + NumCaptures; }
+  
+  capture_range captures() const { 
+    return capture_range(begin_captures(), end_captures());
+  }
+
+  /// \brief The introduced fragment.
+  CXXFragmentDecl *getFragment() const { return Fragment; }
+
+  /// \brief The subexpression computing the reflection.
+  Expr *getReflection() const { 
+    return reinterpret_cast<Expr *>(Reflection); 
+  }
+
+  child_range children() { 
+    return child_range(&Reflection, &Reflection + 1);
+  }
+
+  const_child_range children() const { 
+    return const_child_range(&Reflection, &Reflection + 1);
+  }
+
+  /// \brief The location of the introducer token.
+  SourceLocation getIntroLoc() const { return IntroLoc; }
+
+  SourceLocation getLocStart() const { return IntroLoc; }
+  SourceLocation getLocEnd() const { return IntroLoc; }
+  
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXFragmentExprClass;
   }
 };
 

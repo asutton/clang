@@ -3872,6 +3872,89 @@ public:
   friend class ASTDeclReader;
 };
 
+/// \brief Contains a fragment of source code.
+///
+/// This is an implicit structure created when defining a source code fragment.
+/// The nested declaration is called the fragment's content. This declaration
+/// contains the set of constant parameters over which the the fragment is
+/// defined. This has no corresponding concrete syntax.
+///
+/// Example:
+///
+///     contexpr int n = 4;
+///     auto x = fragment class { int x = n; };
+///
+/// The fragment expression introduces an implicit fragment declaration
+/// containing the referenced fragment (the expression maintains captured
+/// values). The fragment declaration contains the class definition, and
+/// the variable is initialized with its reflection.
+///
+/// Note the fragment itself is not part of the declaration context, but held
+/// separately.
+///
+/// FIXME: The fragment might also be statement.
+class CXXFragmentDecl : public Decl, public DeclContext {
+  virtual void anchor();
+
+  /// The source code fragment.
+  Decl* Content;
+
+  CXXFragmentDecl(DeclContext *DC, SourceLocation IntroLoc)
+      : Decl(CXXFragment, DC, IntroLoc), DeclContext(CXXFragment), Content() {}
+public:
+  static CXXFragmentDecl *Create(ASTContext &CXT, DeclContext *DC,
+                                 SourceLocation IntroLoc);
+
+  static CXXFragmentDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  /// \brief The contained fragment.
+  Decl* getContent() const { return Content; }
+
+  /// \brief Sets the contained fragment.
+  void setContent(Decl *D) { 
+    assert(!Content && "Content already set");
+    Content = D;
+  }
+
+  /// brief True if the fragment has dynamic type T.
+  template<typename T>
+  bool isA() const { return isa<T>(Content); }
+
+  /// \brief The fragment dynamically cast as the given type or nullptr.
+  template<typename T>
+  T* getAs() const { return dyn_cast<T>(Content); }
+};
+
+/// Represents the projection of a declaration or declarations or fragment 
+/// into a parent context. 
+///
+/// Example:
+///
+///     struct S {
+///       inject class { int a; }
+///     };
+///
+/// The fragment containing 'a' is injected into the enclosing class.
+///
+/// FIXME: Is it possible for the declaration context to be a statement?
+class CXXInjectionDecl : public Decl, public DeclContext {
+  virtual void anchor();
+
+  /// The injection source; a reflection.
+  Expr *Reflection;
+
+  CXXInjectionDecl(DeclContext *DC, SourceLocation Loc, Expr *Ref)
+    : Decl(CXXInjection, DC, Loc), DeclContext(CXXInjection), Reflection(Ref) {}
+public:
+  static CXXInjectionDecl *Create(ASTContext &CXT, DeclContext *DC,
+                                  SourceLocation IntroLoc, Expr *Ref);
+
+  static CXXInjectionDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  /// \brief The reflection.
+  Expr *getReflection() const { return Reflection; }
+};
+
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier
 /// into a diagnostic with <<.
 const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,

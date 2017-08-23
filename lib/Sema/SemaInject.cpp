@@ -23,8 +23,95 @@
 using namespace clang;
 using namespace sema;
 
-DeclResult
-Sema::ActOnInjectionCapture(IdentifierLocPair P) {
+#if 0
+// Find variables to capture in the given scope. 
+static void FindCapturesInScope(Sema &SemaRef, Scope *S, 
+                                SmallVectorImpl<VarDecl *> &Vars) {
+  for (Decl *D : S->decls()) {
+    if (VarDecl *Var = dyn_cast<VarDecl>(D))
+      Vars.push_back(Var);
+  }
+}
+
+// Search the scope list for captured variables. When S is null, we're
+// applying applying a transformation.
+static void FindCaptures(Sema &SemaRef, Scope *S, FunctionDecl *Fn, 
+                         SmallVectorImpl<VarDecl *> &Vars) {
+  assert(S && "Expected non-null scope");
+  while (S && S->getEntity() != Fn) {
+    FindCapturesInScope(SemaRef, S, Vars);
+    S = S->getParent();
+  }
+  assert(S && "Walked off of scope stack");
+  FindCapturesInScope(SemaRef, S, Vars);
+}
+#endif
+
+/// Returns the variable from a captured declaration.
+static VarDecl *GetVariableFromCapture(Expr *E)
+{
+  Expr *Ref = cast<ImplicitCastExpr>(E)->getSubExpr();
+  return cast<VarDecl>(cast<DeclRefExpr>(Ref)->getDecl());
+}
+
+// Create a placeholder for each captured expression in the scope of the
+// fragment. For some captured variable 'v', these have the form:
+//
+//    constexpr auto v = <opaque>;
+//
+// These are replaced by their values during injection.
+static void CreatePlaceholder(Sema &SemaRef, CXXFragmentDecl *Frag, Expr *E) {
+  ValueDecl *Var = GetVariableFromCapture(E);
+  SourceLocation IdLoc = Var->getLocation();
+  IdentifierInfo *Id = Var->getIdentifier();
+  QualType T = SemaRef.Context.DependentTy;
+  TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(T);
+  VarDecl *Placeholder = VarDecl::Create(SemaRef.Context, Frag, IdLoc, IdLoc, 
+                                         Id, T, TSI, SC_Static);
+  Placeholder->setConstexpr(true);
+  Placeholder->setImplicit(true);
+  Placeholder->setInitStyle(VarDecl::CInit);
+  Placeholder->setInit(
+      new (SemaRef.Context) OpaqueValueExpr(IdLoc, T, VK_RValue));
+  Placeholder->setReferenced(true);
+  Placeholder->markUsed(SemaRef.Context);
+  Frag->addDecl(Placeholder);
+}
+
+static void CreatePlaceholders(Sema &SemaRef, CXXFragmentDecl *Frag, 
+                               SmallVectorImpl<Expr *> &Captures) {
+  std::for_each(Captures.begin(), Captures.end(), [&](Expr *E) {
+    CreatePlaceholder(SemaRef, Frag, E);
+  });
+}
+
+/// Called at the start of a source code fragment to establish the fragment
+/// declaration and placeholders.
+Decl * Sema::ActOnStartCXXFragment(SourceLocation Loc, 
+                                   SmallVectorImpl<Expr *> & Captures) {
+  CXXFragmentDecl *Fragment = CXXFragmentDecl::Create(Context, CurContext, Loc);
+  CreatePlaceholders(*this, Fragment, Captures);
+  return Fragment;
+}
+
+ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, 
+                                      SmallVectorImpl<Expr *> &Captures, 
+                                      Decl *Fragment, Decl *Content) {
+  // Bind the content the fragment.
+  CXXFragmentDecl *FD = cast<CXXFragmentDecl>(Fragment);
+  FD->setContent(Content);
+
+  /// Build an expression that produces the reflection.
+  ExprResult E = BuildDeclReflection(Loc, Content);
+  if (E.isInvalid())
+    return ExprError();
+  QualType T = E.get()->getType();
+
+  return new (Context) CXXFragmentExpr(Context, Loc, T, Captures, FD, E.get());
+}
+
+
+DeclResult Sema::ActOnInjectionCapture(IdentifierLocPair P) {
   IdentifierInfo *Id = P.first;
   SourceLocation IdLoc = P.second;
 
@@ -65,6 +152,7 @@ Sema::ActOnInjectionCapture(IdentifierLocPair P) {
   return D;
 }
 
+#if 0
 /// Returns the variable from a captured declaration.
 static VarDecl *GetVariableFromCapture(Expr *E)
 {
@@ -130,6 +218,7 @@ static void FindCaptures(Sema &SemaRef, Scope *S, FunctionDecl *Fn,
   assert(S && "Walked off of scope stack");
   FindCapturesInScope(SemaRef, S, Vars);
 }
+#endif
 
 /// Returns a partially constructed injection statement.
 ///
@@ -142,7 +231,8 @@ static void FindCaptures(Sema &SemaRef, Scope *S, FunctionDecl *Fn,
 StmtResult Sema::ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc,
                                     bool IsBlock, 
                                     SmallVectorImpl<Expr *> *Captures) {
-
+  llvm_unreachable("not implemented");
+#if 0
   // Compute the implicitly captured set of local variables for an injection.
   SmallVector<Expr *, 4> Refs;
   if (!Captures) {
@@ -217,6 +307,7 @@ StmtResult Sema::ActOnInjectionStmt(Scope *S, SourceLocation ArrowLoc,
   }
 
   return Injection;
+  #endif
 }
 
 void Sema::ActOnStartBlockFragment(Scope *S) {
@@ -233,11 +324,13 @@ void Sema::ActOnFinishBlockFragment(Scope *S, Stmt *Body) {
 /// Associate the fragment with the injection statement and process any 
 /// captured declarations.
 void Sema::ActOnStartClassFragment(Stmt *S, Decl *D) {
+#if 0
   CXXInjectionStmt *Injection = cast<CXXInjectionStmt>(S);
   CXXRecordDecl *Class = cast<CXXRecordDecl>(D);
   Class->setFragment(true);
   Injection->setClassFragment(Class);
   CreatePlaceholders(*this, Class, Injection->captures());
+#endif
 }
 
 /// Returns the completed injection statement.
@@ -248,11 +341,13 @@ void Sema::ActOnFinishClassFragment(Stmt *S) { }
 /// Called prior to the parsing of namespace members. This injects captured
 /// declarations for the purpose of lookup. Returns false if this fails.
 void Sema::ActOnStartNamespaceFragment(Stmt *S, Decl *D) {
+#if 0
   CXXInjectionStmt *Injection = cast<CXXInjectionStmt>(S);
   NamespaceDecl *Ns = cast<NamespaceDecl>(D);
   Ns->setFragment(true);
   Injection->setNamespaceFragment(Ns);
   CreatePlaceholders(*this, Ns, Injection->captures());
+#endif
 }
 
 /// Returns the completed injection statement.
@@ -262,7 +357,8 @@ void Sema::ActOnFinishNamespaceFragment(Stmt *S) { }
 
 /// Generates an injection for a copy of the reflected declaration.
 StmtResult Sema::ActOnReflectionInjection(SourceLocation ArrowLoc, Expr *Ref) {
-  
+  llvm_unreachable("not implemented");
+#if 0
   if (Ref->isTypeDependent() || Ref->isValueDependent())
     return new (Context) CXXInjectionStmt(ArrowLoc, Ref);
 
@@ -293,6 +389,16 @@ StmtResult Sema::ActOnReflectionInjection(SourceLocation ArrowLoc, Expr *Ref) {
     IS->setModifications(Mods.get());
 
   return IS;
+#endif
+}
+
+/// Build a new reflection statement.
+///
+/// FIXME: Verify that Ref is actually a reflection.
+StmtResult
+Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Ref)
+{
+  return new (Context) CXXInjectionStmt(Loc, Ref);
 }
 
 // Returns an integer value describing the target context of the injection.
@@ -466,7 +572,7 @@ bool Sema::InjectBlockStatements(SourceLocation POI, InjectionInfo &II) {
   return true;
 }
 
-
+#if 0
 // The first NumCapture declarations in the [Iter, End) are placeholders.
 // Replace those with new declarations of the form:
 //
@@ -495,6 +601,7 @@ static void ReplacePlaceholders(Sema &SemaRef, SourceCodeInjector &Injector,
   // Stop seeing placeholders in subsequent transformations.
   Injector.ReplacePlaceholders = true;
 }
+#endif
 
 // Called after a metaprogram has been evaluated to apply the resulting
 // injections as source code.
@@ -502,6 +609,7 @@ bool Sema::InjectClassMembers(SourceLocation POI, InjectionInfo &II) {
   if (!CurContext->isRecord())
     return InvalidInjection(*this, POI, 1, CurContext);
 
+#if 0
   // Note that we are instantiating a template.
   InstantiatingTemplate Inst(*this, POI);
 
@@ -532,6 +640,8 @@ bool Sema::InjectClassMembers(SourceLocation POI, InjectionInfo &II) {
   }
 
   return !Target->isInvalidDecl();
+#endif
+  return true;
 }
 
 bool Sema::InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II) {
@@ -560,6 +670,7 @@ bool Sema::InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II) {
 }
 
 bool Sema::InjectReflectedDeclaration(SourceLocation POI, InjectionInfo &II) {
+#if 0
   // Note that we are instantiating a template.
   InstantiatingTemplate Inst(*this, POI);
   
@@ -690,13 +801,14 @@ bool Sema::InjectReflectedDeclaration(SourceLocation POI, InjectionInfo &II) {
 
   // Finally, update the owning context.
   Result->getDeclContext()->updateDecl(Result);
-
+#endif
   return true;
 }
 
 static bool
 ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II, 
                const CXXInjectionStmt *IS) {
+#if 0
    switch (IS->getInjectionKind()) {
     case CXXInjectionStmt::BlockFragment:
       return SemaRef.InjectBlockStatements(POI, II);
@@ -707,6 +819,8 @@ ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II,
     case CXXInjectionStmt::ReflectedDecl:
       return SemaRef.InjectReflectedDeclaration(POI, II);
   }
+#endif
+  return true;
 }
 
 /// Inject a sequence of source code fragments or modification requests

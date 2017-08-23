@@ -97,3 +97,6 @@ def Import : Decl;
 def OMPThreadPrivate : Decl;
 def Empty : Decl;
 def Constexpr : Decl;
+def CXXFragment : Decl;
+def CXXInjection : Decl;
+

@@ -334,6 +334,8 @@ namespace clang {
     void VisitCapturedDecl(CapturedDecl *CD);
     void VisitEmptyDecl(EmptyDecl *D);
     void VisitConstexprDecl(ConstexprDecl *D);
+    void VisitCXXFragmentDecl(CXXFragmentDecl *D);
+    void VisitCXXInjectionDecl(CXXInjectionDecl *D);
 
     std::pair<uint64_t, uint64_t> VisitDeclContext(DeclContext *DC);
 
@@ -2292,6 +2294,14 @@ void ASTDeclReader::VisitConstexprDecl(ConstexprDecl *D) {
   else
     D->Representation = ReadDeclAs<CXXRecordDecl>();
   D->Call = cast_or_null<CallExpr>(Record.readExpr());
+}
+
+void ASTDeclReader::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
+  llvm_unreachable("not implemented");
+}
+
+void ASTDeclReader::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
+  llvm_unreachable("not implemented");
 }
 
 std::pair<uint64_t, uint64_t>

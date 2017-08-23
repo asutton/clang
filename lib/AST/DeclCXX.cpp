@@ -2546,6 +2546,31 @@ static const char *getAccessName(AccessSpecifier AS) {
   llvm_unreachable("Invalid access specifier!");
 }
 
+void CXXFragmentDecl::anchor() {}
+
+CXXFragmentDecl *CXXFragmentDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                                         SourceLocation IntroLoc) {
+  return new (Cxt, DC) CXXFragmentDecl(DC, IntroLoc);
+}
+
+CXXFragmentDecl *CXXFragmentDecl::CreateDeserialized(ASTContext &C, 
+                                                     unsigned ID) {
+  return new (C, ID) CXXFragmentDecl(nullptr, SourceLocation());
+}
+
+void CXXInjectionDecl::anchor() {}
+
+CXXInjectionDecl *CXXInjectionDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                                           SourceLocation IntroLoc, Expr* E) {
+  return new (Cxt, DC) CXXInjectionDecl(DC, IntroLoc, E);
+}
+
+CXXInjectionDecl *CXXInjectionDecl::CreateDeserialized(ASTContext &C, 
+                                                       unsigned ID) {
+  return new (C, ID) CXXInjectionDecl(nullptr, SourceLocation(), nullptr);
+}
+
+
 const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
                                            AccessSpecifier AS) {
   return DB << getAccessName(AS);

@@ -1883,6 +1883,15 @@ DEF_TRAVERSE_DECL(ConstexprDecl, {
   // FIXME: Not sure if we can do anything useful here.
 })
 
+DEF_TRAVERSE_DECL(CXXFragmentDecl, {
+  // FIXME: Traverse capture expressions?
+  TRY_TO(TraverseDecl(D->getContent()));
+});
+
+DEF_TRAVERSE_DECL(CXXInjectionDecl, {
+  TRY_TO(TraverseStmt(D->getReflection()));
+});
+
 DEF_TRAVERSE_DECL(FieldDecl, {
   TRY_TO(TraverseDeclaratorHelper(D));
   if (D->isBitField())
@@ -2538,6 +2547,7 @@ DEF_TRAVERSE_STMT(CXXFoldExpr, {})
 DEF_TRAVERSE_STMT(AtomicExpr, {})
 DEF_TRAVERSE_STMT(CXXConstantExpr, {})
 DEF_TRAVERSE_STMT(CXXDependentIdExpr, {})
+DEF_TRAVERSE_STMT(CXXFragmentExpr, {})
 
 // For coroutines expressions, traverse either the operand
 // as written or the implied calls, depending on what the

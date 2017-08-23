@@ -958,11 +958,15 @@ void ASTStmtReader::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
   E->setRParenLoc(ReadSourceLocation());
 }
 
-void ASTStmtReader::VisitCXXConstantExpr(CXXConstantExpr *S) {
+void ASTStmtReader::VisitCXXConstantExpr(CXXConstantExpr *E) {
   llvm_unreachable("not implemented");
 }
 
-void ASTStmtReader::VisitCXXDependentIdExpr(CXXDependentIdExpr *S) {
+void ASTStmtReader::VisitCXXDependentIdExpr(CXXDependentIdExpr *E) {
+  llvm_unreachable("not implemented");
+}
+
+void ASTStmtReader::VisitCXXFragmentExpr(CXXFragmentExpr *E) {
   llvm_unreachable("not implemented");
 }
 

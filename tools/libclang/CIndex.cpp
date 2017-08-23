@@ -1269,6 +1269,7 @@ bool CursorVisitor::VisitDeclarationNameInfo(DeclarationNameInfo Name) {
   case clang::DeclarationName::CXXDeductionGuideName:
   case clang::DeclarationName::CXXOperatorName:
   case clang::DeclarationName::CXXUsingDirective:
+  case clang::DeclarationName::CXXIdExprName:
     return false;
 
   case clang::DeclarationName::CXXConstructorName:
@@ -5848,6 +5849,8 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::PragmaDetectMismatch:
   case Decl::UsingPack:
   case Decl::Metaclass: // FIXME: Is this right?
+  case Decl::CXXFragment:
+  case Decl::CXXInjection:
     return C;
 
   // Declaration kinds that don't make any sense here, but are

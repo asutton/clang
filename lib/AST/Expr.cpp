@@ -2893,6 +2893,7 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case FunctionParmPackExprClass:
   case TypoExprClass:
   case CXXFoldExprClass:
+  case CXXDependentIdExprClass:
     llvm_unreachable("shouldn't see dependent / unresolved nodes here");
 
   case DeclRefExprClass:
@@ -2929,6 +2930,7 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case ReflectionTraitExprClass:
   case CompilerErrorExprClass:
   case CXXConstantExprClass:
+  case CXXFragmentExprClass:
     // These never have a side-effect.
     return false;
 

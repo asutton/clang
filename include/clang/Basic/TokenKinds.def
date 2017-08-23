@@ -534,6 +534,12 @@ REFLECTION_TRAIT_2(__modify_virtual, ModifyVirtual)
 REFLECTION_TRAIT_1(__modify_constexpr, ModifyConstexpr)
 KEYWORD(__compiler_error            , KEYALL)
 
+// Placeholders for future syntax
+KEYWORD(__fragment                  , KEYALL)
+KEYWORD(__inject                    , KEYALL)
+KEYWORD(__generate                  , KEYALL)
+
+
 // Apple Extension.
 KEYWORD(__private_extern__          , KEYALL)
 KEYWORD(__module_private__          , KEYALL)

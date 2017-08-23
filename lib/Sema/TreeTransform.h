@@ -1506,8 +1506,16 @@ public:
     return getSema().ActOnCompilerErrorExpr(Message, BuiltinLoc, RParenLoc);
   }
 
+  /// \brief Build a new constant expression for E.
   ExprResult RebuildCXXConstantExpr(Expr *E) {
     return getSema().BuildConstantExpression(E);
+  }
+
+  /// \brief Build a new fragment expression.
+  ExprResult RebuildCXXFragmentExpr(SourceLocation Loc, 
+                                    SmallVectorImpl<Expr *> &Captures, 
+                                    Decl *Fragment, Decl *Content) {
+    return getSema().BuildCXXFragmentExpr(Loc, Captures, Fragment, Content);
   }
 
   /// \brief Build a new Objective-C \@try statement.
@@ -2130,6 +2138,10 @@ public:
                                          Stmt *Body) {
     // FIXME: Actually implement this function.
     llvm_unreachable("unimplemented");
+  }
+
+  StmtResult RebuildCXXInjectionStmt(SourceLocation Loc, Expr *Ref) {
+    return getSema().BuildCXXInjectionStmt(Loc, Ref);
   }
 
   /// \brief Build a new C++0x range-based for statement.
@@ -7270,6 +7282,30 @@ TreeTransform<Derived>::TransformCXXDependentIdExpr(CXXDependentIdExpr *E) {
   return getDerived().RebuildDeclarationNameExpr(SS, R, false);
 }
 
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
+  // Transform captures first.
+  SmallVector<Expr *, 8> Captures;
+  for (Expr *Old : E->captures()) {
+    ExprResult New = getDerived().TransformExpr(Old);
+    if (New.isInvalid())
+      return ExprError();
+    Captures.push_back(New.get());
+  }
+
+  // Create the fragment wrapper.
+  Decl *F = getSema().ActOnStartCXXFragment(E->getLocStart(), Captures);
+
+  // Rebuild nested declaration.
+  Sema::ContextRAII Switch(getSema(), cast<CXXFragmentDecl>(F));
+  Decl *D = getDerived().TransformLocalDecl(E->getFragment());
+  if (!D)
+    return ExprError();
+
+  return getDerived().RebuildCXXFragmentExpr(E->getLocStart(), Captures, F, D);
+}
+
 // Objective-C Statements.
 
 template<typename Derived>
@@ -7652,6 +7688,12 @@ TreeTransform<Derived>::TransformCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
 template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
+  ExprResult E = TransformExpr(S->getReflection());
+  if (E.isInvalid())
+    return StmtError();
+  return RebuildCXXInjectionStmt(S->getLocStart(), E.get());
+
+#if 0
   if (S->isReflectedDeclaration()) {
     ExprResult E = TransformExpr(S->getReflection());
     if (E.isInvalid())
@@ -7744,8 +7786,8 @@ TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
   default:
     llvm_unreachable("Invalid injection kind");
   }
-
   return IS;
+#endif
 }
 
 template<typename Derived>

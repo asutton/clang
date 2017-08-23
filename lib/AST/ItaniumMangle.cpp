@@ -3344,6 +3344,7 @@ recurse:
   case Expr::ReflectionExprClass:
   case Expr::ReflectionTraitExprClass:
   case Expr::CompilerErrorExprClass:
+  case Expr::CXXDependentIdExprClass:
     llvm_unreachable("unexpected statement kind");
 
   // FIXME: invent manglings for all these.
@@ -3381,6 +3382,7 @@ recurse:
   case Expr::PseudoObjectExprClass:
   case Expr::AtomicExprClass:
   case Expr::CXXConstantExprClass:
+  case Expr::CXXFragmentExprClass:
   {
     if (!NullOut) {
       // As bad as this diagnostic is, it's better than crashing.

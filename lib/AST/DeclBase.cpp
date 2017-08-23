@@ -762,7 +762,6 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case TranslationUnit:
     case ExternCContext:
     case Decomposition:
-
     case UsingDirective:
     case BuiltinTemplate:
     case ClassTemplateSpecialization:
@@ -777,6 +776,8 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case OMPThreadPrivate:
     case OMPCapturedExpr:
     case Empty:
+    case CXXFragment:
+    case CXXInjection:
       // Never looked up by name.
       return 0;
   }

@@ -644,183 +644,47 @@ public:
 };
 
 /// Represents a C++ injection statement.
+///
+/// An injection statement, when evaluated, queues a source code modification,
+/// usually the injection of a fragment into the metaprogram evaluation
+/// context.
+///
+/// Example:
+///
+///     generate class { int a; }
+///
 class CXXInjectionStmt : public Stmt {
-  /// \brief The location of the '->'  token.
-  SourceLocation ArrowLoc;
+  SourceLocation IntroLoc;
 
-  /// \brief The number of captured declarations.
-  std::size_t NumCaptures;
+  /// The reflection being injected.
+  Stmt *Reflection;
 
-  /// \brief The references to captured variables. These are all DeclRefExprs.
-  /// We store these instead of their underlying declarations to facilitate
-  /// their evaluation during injection. In particular, the evaluation of an
-  /// injection statement entails the substitution of the values of captured
-  /// declarations into placeholders.
-  Expr** Captures;
-
-  /// Stores an expression that computes the reflection being injected.
-  Expr *Reflection;
-
-  /// Stores local modifications to a reflection.
-  Expr *Modifications;
-
-  /// Stores the actual thing being injected. The specific kind of declaration
-  /// depends on the injection kind (stored in InjectionStmtBits). The value
-  /// is an expression only if it is a dependent reflection injection.
-  ///
-  /// FIXME: We currently lose the expression in the ReflectedDecl case. We
-  /// should probably make a 3rd option containing an expr/decl pair so we
-  /// have full information.
-  llvm::PointerUnion<Decl *, Expr *> Injection;
 public:
-
-  /// \brief The kind of injection.
-  enum InjectionKind
-  {
-    BlockFragment,     // Injecting a sequence of statements
-    ClassFragment,     // Injecting class members
-    NamespaceFragment, // Injecting namespace members
-    ReflectedDecl,     // Injecting a (copy of a) reflected declaration
-  };
-
-  CXXInjectionStmt(ASTContext &Cxt, SourceLocation AL, 
-                   SmallVectorImpl<Expr *> &Caps);
-
-  CXXInjectionStmt(SourceLocation AL, Expr *E)
-      : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), NumCaptures(), Captures(),
-        Reflection(E), Modifications(), Injection() {
-    InjectionStmtBits.InjectionKind = ReflectedDecl;
-  }
-
-  CXXInjectionStmt(SourceLocation AL, Expr *E, Decl *D)
-      : Stmt(CXXInjectionStmtClass), ArrowLoc(AL), NumCaptures(), Captures(),
-        Reflection(E), Modifications(), Injection(D) {
-    InjectionStmtBits.InjectionKind = ReflectedDecl;
-  }
+  CXXInjectionStmt(SourceLocation IntroLoc, Expr*Ref)
+    : Stmt(CXXInjectionStmtClass), IntroLoc(IntroLoc), Reflection(Ref) {}
 
   explicit CXXInjectionStmt(EmptyShell Empty)
-      : Stmt(CXXInjectionStmtClass, Empty), ArrowLoc(), NumCaptures(), 
-        Captures(), Reflection(), Modifications(), Injection() {}
+      : Stmt(CXXInjectionStmtClass, Empty), IntroLoc(), Reflection() {}
 
-  /// \brief Returns the location of the injected arrow.
-  SourceLocation getArrowLoc() const { return ArrowLoc; }
+  /// \brief The introduced reflection.
+  Expr *getReflection() const { return reinterpret_cast<Expr *>(Reflection); }
 
-  /// \brief The number of captured declarations.
-  std::size_t getNumCaptures() const { return NumCaptures; }
+  /// \brief The location of introducer token.
+  SourceLocation getIntroLoc() const { return IntroLoc; }
 
-  /// \brief The Ith capture of the injection statement.
-  Expr *getCapture(std::size_t I) { return Captures[I]; }
-  
-  /// \brief The Ith capture of the injection statement.
-  const Expr *getCapture(std::size_t I) const { return Captures[I]; }
-
-  using capture_iterator = Expr**;
-  using capture_range = llvm::iterator_range<capture_iterator>;
-  capture_iterator begin_captures() const { return Captures; }
-  capture_iterator end_captures() const { return Captures + NumCaptures; }
-  capture_range captures() const { 
-    return capture_range(begin_captures(), end_captures());
+  SourceLocation getLocStart() const LLVM_READONLY { 
+    return IntroLoc; 
+  }  
+  SourceLocation getLocEnd() const LLVM_READONLY { 
+    return Reflection->getLocEnd(); 
   }
-
-private:
-  void setFragment(InjectionKind K, Decl *D) {
-    assert(!Injection && "Injected fragment already set");
-    InjectionStmtBits.InjectionKind = K;
-    Injection = D;
-  }
-public:
-
-  /// \brief Returns the kind of injection.
-  InjectionKind getInjectionKind() const { 
-    assert(Reflection || Injection && "Statement not configured");
-    return (InjectionKind)InjectionStmtBits.InjectionKind; 
-  }
-
-  /// \brief Whether the injection holds a reflected declaration or not.
-  bool isReflectedDeclaration() const { 
-    return getInjectionKind() == ReflectedDecl;
-  }
-
-  Decl *getReflectedDeclaration() const {
-    assert(isReflectedDeclaration() && "Not a reflected declaration");
-    return Injection.get<Decl *>();
-  }
-
-  /// \brief Whether the source expression is, in some way, dependent.
-  bool isDependentReflection() const {
-    return getReflectedDeclaration() == nullptr;
-  }
-
-  /// \brief The dependent reflection. This may be null.
-  Expr *getReflection() const {
-    assert(isReflectedDeclaration() && "Not a reflected declaration");
-    return Reflection;
-  }
-
-  /// \brief The local modifications applied to the injection, if any.
-  /// This is an expression that accesses the modifications value.
-  const Expr *getModifications() const { return Modifications; }
-
-  /// \brief Set the modification access expression.
-  void setModifications(Expr *E) { Modifications = E; }
-
-  /// \brief Whether the injection holds a fragment or not.
-  bool isFragment() const { 
-    return getInjectionKind() <= NamespaceFragment;
-  }
-
-  /// \brief Returns true if the injection is a compound statement.
-  bool isBlockFragment() const { 
-    return getInjectionKind() == BlockFragment; 
-  }
-
-  /// \brief Returns true if the injection is a class fragment.
-  bool isClassFragment() const { 
-    return getInjectionKind() == ClassFragment; 
-  }
-  
-  /// \brief Returns true if the injection is a namespace fragment.
-  bool isNamespaceFragment() const { 
-    return getInjectionKind() == NamespaceFragment; 
-  }
-  /// \brief Returns the fragment as a declaration.
-  Decl *getFragment() const { 
-    assert(isFragment() && "Injection has an expression");
-    return Injection.get<Decl *>();
-  }
-
-  /// \brief Returns the declaration containing the injected code.
-  DeclContext *getFragmentAsContext() const { 
-    return cast<DeclContext>(getFragment()); 
-  }
-
-  /// \brief Returns the injected compound statement.
-  CompoundStmt *getBlockFragment() const;
-
-  /// \brief Returns the injected class definition.
-  CXXRecordDecl *getClassFragment() const;
-
-  /// \brief Returns the injected namespace definition.
-  NamespaceDecl *getNamespaceFragment() const;
-
-  /// \brief Make this statement a block fragment injection.
-  void setBlockFragment(CXXMethodDecl *D);
-
-  /// \brief Make this statement a class fragment injection.
-  void setClassFragment(CXXRecordDecl *D);
-
-  /// \brief Make this statement a namespace fragment injection.
-  void setNamespaceFragment(NamespaceDecl *D);
-
-  SourceLocation getLocStart() const LLVM_READONLY { return ArrowLoc; }
-  SourceLocation getLocEnd() const LLVM_READONLY;
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXInjectionStmtClass;
   }
 
   child_range children() {
-    return child_range(child_iterator(), child_iterator());
+    return child_range(&Reflection, &Reflection + 1);
   }
 
   friend class ASTStmtReader;

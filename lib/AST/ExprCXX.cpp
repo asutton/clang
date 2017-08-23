@@ -1479,3 +1479,17 @@ CXXDependentIdExpr::CXXDependentIdExpr(DeclarationNameInfo DNI, QualType T)
          AnyInstantiationDependentExprs(DNI.getName().getCXXIdExprArguments()), 
          false), 
     NameInfo(DNI) {}
+
+
+CXXFragmentExpr::CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc, 
+                                 QualType T, ArrayRef<Expr *> Caps, 
+                                 CXXFragmentDecl *Frag, Expr *Ref)
+  : Expr(CXXFragmentExprClass, T, VK_RValue, OK_Ordinary, 
+         AnyTypeDependentExprs(Caps), 
+         AnyValueDependentExprs(Caps), 
+         AnyInstantiationDependentExprs(Caps), 
+         false), 
+    IntroLoc(IntroLoc), NumCaptures(Caps.size()),
+    Captures(new (Ctx) Expr*[NumCaptures]), Fragment(Frag), Reflection(Ref) {
+  std::copy(Caps.begin(), Caps.end(), Captures);
+}

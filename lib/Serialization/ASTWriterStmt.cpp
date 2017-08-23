@@ -943,11 +943,15 @@ void ASTStmtWriter::VisitCompilerErrorExpr(CompilerErrorExpr *E) {
   Code = serialization::EXPR_COMPILER_ERROR;
 }
 
-void ASTStmtWriter::VisitCXXConstantExpr(CXXConstantExpr *S) {
+void ASTStmtWriter::VisitCXXConstantExpr(CXXConstantExpr *E) {
   llvm_unreachable("not implemented");
 }
 
-void ASTStmtWriter::VisitCXXDependentIdExpr(CXXDependentIdExpr *S) {
+void ASTStmtWriter::VisitCXXDependentIdExpr(CXXDependentIdExpr *E) {
+  llvm_unreachable("not implemented");
+}
+
+void ASTStmtWriter::VisitCXXFragmentExpr(CXXFragmentExpr *E) {
   llvm_unreachable("not implemented");
 }
 

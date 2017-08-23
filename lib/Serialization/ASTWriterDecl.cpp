@@ -124,6 +124,8 @@ namespace clang {
     void VisitCapturedDecl(CapturedDecl *D);
     void VisitEmptyDecl(EmptyDecl *D);
     void VisitConstexprDecl(ConstexprDecl *D);
+    void VisitCXXFragmentDecl(CXXFragmentDecl *D);
+    void VisitCXXInjectionDecl(CXXInjectionDecl *D);
 
     void VisitDeclContext(DeclContext *DC);
     template <typename T> void VisitRedeclarable(Redeclarable<T> *D);
@@ -1058,6 +1060,14 @@ void ASTDeclWriter::VisitConstexprDecl(ConstexprDecl *D) {
   Record.AddDeclRef(Representation);
   Record.AddStmt(D->getCallExpr());
   Code = serialization::DECL_CONSTEXPR;
+}
+
+void ASTDeclWriter::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
+  llvm_unreachable("not implemented");
+}
+
+void ASTDeclWriter::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
+  llvm_unreachable("not implemented");
 }
 
 void ASTDeclWriter::VisitBlockDecl(BlockDecl *D) {

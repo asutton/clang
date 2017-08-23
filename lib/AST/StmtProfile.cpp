@@ -1757,12 +1757,16 @@ void StmtProfiler::VisitCompilerErrorExpr(const CompilerErrorExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXConstantExpr(const CXXConstantExpr *S) {
-  VisitExpr(S);
+void StmtProfiler::VisitCXXConstantExpr(const CXXConstantExpr *E) {
+  VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXDependentIdExpr(const CXXDependentIdExpr *S) {
-  VisitName(S->getNameInfo().getName());
+void StmtProfiler::VisitCXXDependentIdExpr(const CXXDependentIdExpr *E) {
+  VisitName(E->getNameInfo().getName());
+}
+
+void StmtProfiler::VisitCXXFragmentExpr(const CXXFragmentExpr *E) {
+  VisitExpr(E);
 }
 
 void StmtProfiler::VisitOpaqueValueExpr(const OpaqueValueExpr *E) {

@@ -893,13 +893,19 @@ Decl *TemplateDeclInstantiator::VisitMSPropertyDecl(MSPropertyDecl *D) {
 }
 
 Decl *TemplateDeclInstantiator::VisitMetaclassDecl(MetaclassDecl *D) {
-  // FIXME: I'm pretty sure that a metaclass can be a template. 
-  return D;
+  llvm_unreachable("not implemented");
 }
 
 Decl *TemplateDeclInstantiator::VisitConstexprDecl(ConstexprDecl *D) {
-  // FIXME: I'm pretty sure that a metaclass can be a template. 
-  return D;
+  llvm_unreachable("not implemented");
+}
+
+Decl *TemplateDeclInstantiator::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
+  llvm_unreachable("not implemented");
+}
+
+Decl *TemplateDeclInstantiator::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
+  llvm_unreachable("not implemented");
 }
 
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {

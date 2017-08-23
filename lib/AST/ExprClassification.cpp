@@ -139,6 +139,8 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::MSPropertyRefExprClass:
   case Expr::MSPropertySubscriptExprClass:
   case Expr::OMPArraySectionExprClass:
+  case Expr::CXXDependentIdExprClass:
+    // Dependent idexprs are tentatively classified as lvalues. Should they be?
     return Cl::CL_LValue;
 
     // C99 6.5.2.5p5 says that compound literals are lvalues.
@@ -194,6 +196,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::ReflectionExprClass:
   case Expr::ReflectionTraitExprClass:
   case Expr::CompilerErrorExprClass:
+  case Expr::CXXFragmentExprClass:
     return Cl::CL_PRValue;
 
     // Next come the complicated cases.

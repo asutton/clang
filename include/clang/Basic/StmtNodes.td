@@ -151,6 +151,7 @@ def MaterializeTemporaryExpr : DStmt<Expr>;
 def LambdaExpr : DStmt<Expr>;
 def CXXFoldExpr : DStmt<Expr>;
 def CXXDependentIdExpr : DStmt<Expr>;
+def CXXFragmentExpr : DStmt<Expr>;
 
 // C++ Coroutines TS expressions
 def CoroutineSuspendExpr : DStmt<Expr, 1>;
