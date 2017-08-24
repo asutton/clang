@@ -2574,7 +2574,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
   // FIXME: What should we do if there's a scope specifier. Also, what does
   // it mean to to have 'template idexpr(...)'?
   if (Tok.is(tok::kw_idexpr))
-    return ParseDeclnameId(Result);
+    return ParseCXXExprId(Result);
   
   if (getLangOpts().CPlusPlus && 
       (AllowDestructorName || SS.isSet()) && Tok.is(tok::tilde)) {

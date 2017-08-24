@@ -424,14 +424,6 @@ public:
       = TransformedLocalDecls.find(D);
     if (Known != TransformedLocalDecls.end())
       return Known->second;
-
-    // if (!D)
-    //   return nullptr;
-
-    // if (D->isInjectable() || D->getDeclContext()->isFragment())
-    //   // Always locally transform injectable declarations and fragments.
-    //   return getDerived().TransformLocalDecl(Loc, D);
-
     return D;
   }
 
@@ -1514,8 +1506,8 @@ public:
   /// \brief Build a new fragment expression.
   ExprResult RebuildCXXFragmentExpr(SourceLocation Loc, 
                                     SmallVectorImpl<Expr *> &Captures, 
-                                    Decl *Fragment, Decl *Content) {
-    return getSema().BuildCXXFragmentExpr(Loc, Captures, Fragment, Content);
+                                    Decl *Fragment) {
+    return getSema().BuildCXXFragmentExpr(Loc, Captures, Fragment);
   }
 
   /// \brief Build a new Objective-C \@try statement.
@@ -7303,7 +7295,11 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
   if (!D)
     return ExprError();
 
-  return getDerived().RebuildCXXFragmentExpr(E->getLocStart(), Captures, F, D);
+  F = getSema().ActOnFinishCXXFragment(F, D);
+  if (!F)
+    return ExprError();
+
+  return getDerived().RebuildCXXFragmentExpr(E->getLocStart(), Captures, F);
 }
 
 // Objective-C Statements.

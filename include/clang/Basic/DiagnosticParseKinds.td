@@ -1151,6 +1151,9 @@ def err_for_co_await_not_range_for : Error<
 // [Meta]
 let CategoryName = "Metaprogramming Issue" in {
 def err_expected_injection : Error<"expected injection">;
+def err_expected_fragment : Error<"expected fragment">;
+def err_expected_semi_after_fragment : Error<"expected ';' after fragment">;
+
 } // end of metaprogramming issues
 
 

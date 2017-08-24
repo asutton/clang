@@ -4942,6 +4942,13 @@ public:
     return DerivedSuccess(E->getValue(), E);
   }
 
+  bool VisitCXXFragmentExpr(const CXXFragmentExpr *E) {
+    APValue Result;
+    if (!Evaluate(Result, Info, E->getReflection()))
+      return false;
+    return DerivedSuccess(Result, E);
+  }
+
   /// Visit a value which is evaluated, but whose value is ignored.
   void VisitIgnoredValue(const Expr *E) {
     EvaluateIgnoredValue(Info, E);

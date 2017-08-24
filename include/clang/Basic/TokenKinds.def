@@ -537,6 +537,7 @@ KEYWORD(__compiler_error            , KEYALL)
 // Placeholders for future syntax
 KEYWORD(__fragment                  , KEYALL)
 KEYWORD(__inject                    , KEYALL)
+KEYWORD(__extend                    , KEYALL)
 KEYWORD(__generate                  , KEYALL)
 
 

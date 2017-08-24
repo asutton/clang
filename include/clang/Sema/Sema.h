@@ -50,6 +50,7 @@
 #include "clang/Sema/Weak.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/Optional.h"
+#include "llvm/ADT/PointerSumType.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -8383,17 +8384,72 @@ public:
 
   ExprResult BuildConstantExpression(Expr *E);
 
+  using ReflectionValue = llvm::PointerSumType<
+    ReflectionKind,
+    llvm::PointerSumTypeMember<RK_Decl, Decl *>, 
+    llvm::PointerSumTypeMember<RK_Type, Type *>, 
+    llvm::PointerSumTypeMember<RK_Base, CXXBaseSpecifier *>>;
+
+  using ReflectionPair = std::pair<ReflectionKind, void *>;
+
+  /// A wrapper around an exploded reflection pair. 
+  struct ReflectedConstruct {
+    bool Valid;
+    ReflectionPair P;
+
+    ReflectedConstruct() 
+      : Valid(false), P() { }
+    
+    ReflectedConstruct(std::uintptr_t V) 
+      : Valid(true), P(Explode(V)) { }
+
+    /// Returns true if the reflection is valid.
+    bool isValid() const { return Valid; }
+
+    /// Returns true if the reflection is invalid.
+    bool isInvalid() const { return !Valid; }
+
+    /// Converts to true when the reflection is valid.
+    explicit operator bool() const { return Valid; }
+
+    /// \brief The kind of construct reflected.
+    ReflectionKind getKind() const { return P.first; }
+
+    /// Returns true if this is a declaration.
+    bool isDeclaration() const { return P.first == RK_Decl; }
+    
+    /// Returns true if this is a type reflection.
+    bool isType() const { return P.first == RK_Type; }
+
+    /// \brief True if a reflection of a base class specifier.
+    bool isBaseSpecifier() const { return P.first == RK_Base; }
+
+    /// Returns the reflected declaration or nullptr if not a declaration.
+    Decl *getAsDeclaration() {
+      return isDeclaration() ? (Decl *)P.second : nullptr;
+    }
+
+    /// Returns the reflected type or nullptr if not a type.
+    Type *getAsType() {
+      return isType() ? (Type *)P.second : nullptr;
+    }
+
+    /// \brief The reflected base class specifier or nullptr.
+    CXXBaseSpecifier *getAsBaseSpecifier() {
+      return isBaseSpecifier() ? (CXXBaseSpecifier *)P.second : nullptr;
+    }
+
+    static ReflectionPair Explode(std::uintptr_t N);
+  };
+
   /// \brief True if T is the type of a reflection.
   bool isReflectionType(QualType T);
 
-  /// \brief Gets opaque node pointer from T.
-  void getReflectionValue(QualType T, APValue &V);
+  /// \brief Get the reflected construct from the expression E.
+  ReflectedConstruct EvaluateReflection(Expr *E);
 
-  /// \brief The kind of reflection source code construct.
-  ReflectionKind getReflectionKind(const APValue &V);
-
-  /// \brief An opaque pointer to the reflected node.
-  void* getReflectionNode(const APValue &V);
+  /// \brief Get the reflected declaration from E, or emit an error.
+  Decl *GetReflectedDeclaration(Expr *E);
 
   DeclarationNameInfo BuildIdExprName(SourceLocation OpLoc, 
                                       SmallVectorImpl<Expr *>& Parts,
@@ -8414,8 +8470,6 @@ public:
                                   SourceLocation RParenLoc);
   ExprResult BuildDeclReflection(SourceLocation Loc, Decl *D);
   ExprResult BuildTypeReflection(SourceLocation Loc, QualType T);
-
-  Decl *GetReflectedDeclaration(Expr *E);
 
   QualType BuildReflectedType(SourceLocation TypenameLoc, Expr *E);
   TypeResult ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc, Expr *E);
@@ -8471,27 +8525,22 @@ public:
   bool EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E);
   bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
 
-  Decl* ActOnStartCXXFragment(SourceLocation Loc, 
+  void ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures);
+  Decl *ActOnStartCXXFragment(SourceLocation Loc, 
                               SmallVectorImpl<Expr *> &Captures);
+  Decl *ActOnFinishCXXFragment(Decl *Fragment, Decl *Content);
+  ExprResult ActOnCXXFragmentExpr(SourceLocation Loc, 
+                                  SmallVectorImpl<Expr *> &Captures,
+                                  Decl *Fragment);
   ExprResult BuildCXXFragmentExpr(SourceLocation Loc,
                                   SmallVectorImpl<Expr *> &Captures,
-                                  Decl *Fragment, Decl *Content);
+                                  Decl *Fragment);
 
-  using CapturedDeclsList = SmallVectorImpl<Decl *>;
+  StmtResult ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);
+  StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);
 
-  DeclResult ActOnInjectionCapture(IdentifierLocPair P);
-
-  StmtResult ActOnInjectionStmt(Scope *S, SourceLocation AL, bool IsBlock,
-                                SmallVectorImpl<Expr *> *Captures = nullptr);
-  void ActOnStartBlockFragment(Scope *S);
-  void ActOnFinishBlockFragment(Scope *S, Stmt *Body);
-  void ActOnStartClassFragment(Stmt *S, Decl *D);
-  void ActOnFinishClassFragment(Stmt *S);
-  void ActOnStartNamespaceFragment(Stmt *S, Decl *D);
-  void ActOnFinishNamespaceFragment(Stmt *S);
-  StmtResult ActOnReflectionInjection(SourceLocation ArrowLoc, Expr *Ref);
-
-  StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Ref);
+  DeclGroupPtrTy ActOnCXXInjectionDecl(SourceLocation Loc, Expr *Reflection);
+  DeclGroupPtrTy BuildCXXInjectionDecl(SourceLocation Loc, Expr *Reflection);
 
   using InjectionInfo = Expr::InjectionInfo;
 

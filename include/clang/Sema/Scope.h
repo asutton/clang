@@ -128,9 +128,6 @@ public:
     /// \brief The scope of a C++ metaclass definition.
     /// Always has ClassScope set as well.
     MetaclassScope = 0x400000,
-
-    /// \brief The scope of an injection statement.
-    InjectionScope = 0x800000
   };
 private:
   /// The parent scope for this scope.  This is null for the translation-unit

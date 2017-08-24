@@ -9007,7 +9007,7 @@ def err_parameter_out_of_bounds : Error<
 def err_invalid_reflection : Error<
   "reflection requires a %select{declaration|type|expression}0">;
 def err_not_a_reflection : Error<
-  "the type %0 does not reflect an entity">;
+  "expression is not a reflection">;
 def err_modifies_mem_spec_of_non_member : Error<
   "modifying the %select{access|virtual}0-specifier of a "
   "non-member declaration">;

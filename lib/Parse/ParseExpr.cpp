@@ -641,9 +641,8 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 /// [G++]   binary-type-trait '(' type-id ',' type-id ')'           [TODO]
 /// [EMBT]  array-type-trait '(' type-id ',' integer ')'
 /// [clang] '^' block-literal
-/// [Meta]  '$' id-expression
-/// [Meta]  '$' type-id
-/// [Meta]  '$' nested-name-specifier[opt] namespace-name
+/// [Meta]  reflection-expression
+/// [Meta]  fragment-expression
 /// [Meta]  unary-reflection-trait '(' expression ')'
 /// [Meta]  binary-reflection-trait '(' expression ',' expression ')'
 /// [Meta]  '__compiler_error' '(' constant-expression ')'
@@ -1405,6 +1404,9 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::dollar:  // [Meta] '$' [id-expression | type-name | namespace-name]
     Res = ParseReflectExpression();
     break;
+
+  case tok::kw___fragment: // [Meta]: fragment-expression
+    return ParseCXXFragmentExpression();
 
 #define TYPE_TRAIT(N,Spelling,K) \
   case tok::kw_##Spelling:

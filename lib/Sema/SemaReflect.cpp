@@ -17,22 +17,12 @@
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/SemaInternal.h"
-#include "llvm/ADT/PointerSumType.h"
 
 using namespace clang;
 using namespace sema;
 
-
-using ReflectionValue = llvm::PointerSumType<
-  ReflectionKind,
-  llvm::PointerSumTypeMember<RK_Decl, Decl *>, 
-  llvm::PointerSumTypeMember<RK_Type, Type *>, 
-  llvm::PointerSumTypeMember<RK_Base, CXXBaseSpecifier *>>;
-
-using ReflectionPair = std::pair<ReflectionKind, void *>;
-
 /// Returns a pair containing the reflection kind and AST node pointer.
-static ReflectionPair ExplodeOpaqueValue(std::uintptr_t N) {
+Sema::ReflectionPair Sema::ReflectedConstruct::Explode(std::uintptr_t N) {
   // Look away. I'm totally breaking abstraction.
   using Helper = llvm::detail::PointerSumTypeHelper<
       ReflectionKind, 
@@ -43,44 +33,6 @@ static ReflectionPair ExplodeOpaqueValue(std::uintptr_t N) {
   void *P = (void *)(N & Helper::PointerMask);
   return {K, P};
 }
-
-/// A wrapper around an exploded reflection pair. This simplifies certain
-/// reflection tasks.
-struct ReflectedConstruct {
-  bool Valid;
-  ReflectionPair P;
-
-  ReflectedConstruct() 
-    : Valid(false), P() { }
-  
-  ReflectedConstruct(std::uintptr_t V) 
-    : Valid(true), P(ExplodeOpaqueValue(V)) { }
-
-  /// Returns true if the reflection is valid.
-  bool isValid() const { return Valid; }
-
-  /// Returns true if the reflection is invalid.
-  bool isInvalid() const { return !Valid; }
-
-  /// Converts to true when the reflection is valid.
-  explicit operator bool() const { return Valid; }
-
-  /// Returns true if this is a declaration.
-  bool isDeclaration() const { return P.first == RK_Decl; }
-  
-  /// Returns true if this is a type reflection.
-  bool isType() const { return P.first == RK_Type; }
-
-  /// Returns the reflected declaration or nullptr if not a declaration.
-  Decl *getAsDeclaration() {
-    return isDeclaration() ? (Decl *)P.second : nullptr;
-  }
-
-  /// Returns the reflected type or nullptr if not a type.
-  Type *getAsType() {
-    return isType() ? (Type *)P.second : nullptr;
-  }
-};
 
 /// FIXME: Move this to ASTContext.
 bool Sema::isReflectionType(QualType T) {
@@ -106,47 +58,23 @@ bool Sema::isReflectionType(QualType T) {
   return false;
 }
 
-/// This won't hold in the newer reflection model.
-void Sema::getReflectionValue(QualType T, APValue &V) {
-  assert(isReflectionType(T) && "Expected reflection type");
-
-  ClassTemplateSpecializationDecl *Class = 
-      cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
-  
-  const TemplateArgumentList& Args = Class->getTemplateArgs();
-  assert(Args.size() != 0 && 
-         "Invalid reflection argument list");
-  const TemplateArgument &Arg = Args.get(0);
-  assert(Arg.getKind() == TemplateArgument::Integral && 
-         "Invalid reflection argument");
-  
-  V = APValue(Arg.getAsIntegral());
-}
-
-
-ReflectionKind Sema::getReflectionKind(const APValue &V) {
-  return ExplodeOpaqueValue(V.getInt().getExtValue()).first;
-}
-
-void* Sema::getReflectionNode(const APValue &V) {
-  return ExplodeOpaqueValue(V.getInt().getExtValue()).second;
-}
-
-
-/// Diagnose a type reflection error and return a type error.
-static ExprResult ValueReflectionError(Sema& SemaRef, Expr *E) {
+static ExprResult ValueReflectionError(Sema &SemaRef, Expr *E) {
   SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_value)
     << E->getSourceRange();
   return ExprResult(true);
 }
 
-static ReflectedConstruct EvaluateReflection(Sema& S, Expr *E, QualType T) {
+Sema::ReflectedConstruct Sema::EvaluateReflection(Expr *E) {
+  QualType T = Context.getCanonicalType(E->getType());
   CXXRecordDecl *Class = T->getAsCXXRecordDecl();
-  assert(Class && "Not a class type");
+  if (!Class) {
+    ValueReflectionError(*this, E);
+    return ReflectedConstruct();
+  }
 
   // If the type is a reflection...
   if (!isa<ClassTemplateSpecializationDecl>(Class)) {
-    ValueReflectionError(S, E);
+    ValueReflectionError(*this, E);
     return ReflectedConstruct();
   }
   ClassTemplateSpecializationDecl *Spec = 
@@ -156,19 +84,19 @@ static ReflectedConstruct EvaluateReflection(Sema& S, Expr *E, QualType T) {
   DeclContext* Owner = Spec->getDeclContext();
   if (Owner->isInlineNamespace())
     Owner = Owner->getParent();
-  if (!Owner->Equals(S.RequireCppxMetaNamespace(E->getLocStart()))) {
-    S.Diag(E->getLocStart(), diag::err_not_a_reflection) << T;
+  if (!Owner->Equals(RequireCppxMetaNamespace(E->getLocStart()))) {
+    Diag(E->getLocStart(), diag::err_not_a_reflection);
     return ReflectedConstruct();
   }
 
   const TemplateArgumentList& Args = Spec->getTemplateArgs();
   if (Args.size() == 0) {
-    ValueReflectionError(S, E);
+    ValueReflectionError(*this, E);
     return ReflectedConstruct();
   }
   const TemplateArgument &Arg = Args.get(0);
   if (Arg.getKind() != TemplateArgument::Integral) {
-    ValueReflectionError(S, E);
+    ValueReflectionError(*this, E);
     return ReflectedConstruct();
   }
   
@@ -177,22 +105,12 @@ static ReflectedConstruct EvaluateReflection(Sema& S, Expr *E, QualType T) {
   return ReflectedConstruct(Data.getExtValue());
 }
 
-static ReflectedConstruct EvaluateReflection(Sema& S, Expr *E) {
-  QualType T = S.Context.getCanonicalType(E->getType());
-  CXXRecordDecl *Class = T->getAsCXXRecordDecl();
-  if (!Class) {
-    ValueReflectionError(S, E);
-    return ReflectedConstruct();
-  }
-  return EvaluateReflection(S, E, T);
-}
-
 /// Returns a reflected declaration or nullptr if E does not reflect a
 /// declaration. If E reflects a user-defined type, then this returns the
 /// declaration of that type.
 Decl *Sema::GetReflectedDeclaration(Expr *E)
 {
-  ReflectedConstruct R = EvaluateReflection(*this, E);
+  ReflectedConstruct R = EvaluateReflection(E);
   Decl *D = R.getAsDeclaration();
   if (!D)
     if (Type *T = R.getAsType())
@@ -410,7 +328,7 @@ static bool AppendInteger(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
 
 static bool
 AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
-  ReflectedConstruct RC = EvaluateReflection(S, E, T);
+  Sema::ReflectedConstruct RC = S.EvaluateReflection(E);
   if (Decl *D = RC.getAsDeclaration()) {
     // If this is a named declaration, append its identifier.
     if (!isa<NamedDecl>(D)) {
@@ -541,7 +459,7 @@ bool Sema::BuildDeclnameId(SmallVectorImpl<Expr *>& Parts,
 
 ExprResult Sema::ActOnHasNameExpr(SourceLocation KWLoc, Expr *E, 
                                   UnqualifiedId & I, SourceLocation RParenLoc) {
-  ReflectedConstruct RC = EvaluateReflection(*this, E);
+  ReflectedConstruct RC = EvaluateReflection(E);
   if (!RC)
     return ExprError();
   
@@ -926,19 +844,14 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
   if (!CheckReflectionArgs(*this, Args, Vals))
     return ExprError();
 
-  // FIXME: Verify that this is actually a reflected node.
-  std::pair<ReflectionKind, void *> Info =
-      ExplodeOpaqueValue(Vals[0].getExtValue());
-
   Reflector R = {*this, KWLoc, RParenLoc, Args, Vals};
-  switch (Info.first) {
-    case RK_Decl:
-      return R.Reflect(Kind, (Decl *)Info.second);
-    case RK_Type:
-      return R.Reflect(Kind, (Type *)Info.second);
-    case RK_Base:
-      return R.Reflect(Kind, (CXXBaseSpecifier *)Info.second);
-  }
+  ReflectedConstruct C = EvaluateReflection(Args[0]);
+  if (Decl *D = C.getAsDeclaration())
+    return R.Reflect(Kind, D);
+  if (Type *T = C.getAsType())
+    return R.Reflect(Kind, T);
+  if (CXXBaseSpecifier *B = C.getAsBaseSpecifier())
+    return R.Reflect(Kind, B);
 
   llvm_unreachable("Unhandled reflection kind");
 }
@@ -1751,7 +1664,7 @@ ExprResult Reflector::ReflectBase(Decl *D, const llvm::APSInt &N) {
   TemplateName TempName(Temp);
 
   // Build a template specialization, instantiate it, and then complete it.
-  ReflectionValue RV = ReflectionValue::create<RK_Base>(&*Iter);
+  Sema::ReflectionValue RV = Sema::ReflectionValue::create<RK_Base>(&*Iter);
   QualType IntPtrTy = S.Context.getIntPtrType();
   llvm::APSInt Val = S.Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
   Expr *Literal = new (S.Context) IntegerLiteral(S.Context, Val, IntPtrTy, KWLoc);
@@ -1780,13 +1693,12 @@ bool Sema::ModifyDeclarationAccess(ReflectionTraitExpr *E) {
 
   CheckReflectionArgs(*this, Args, Vals);
 
-  // FIXME: Verify that this is actually a reflected node.
-  auto Info = ExplodeOpaqueValue(Vals[0].getExtValue());
-  if (Info.first != RK_Decl) {
+  ReflectedConstruct C(Vals[0].getExtValue());
+  Decl *D = C.getAsDeclaration();
+  if (!D) {
     Diag(E->getLocStart(), diag::err_invalid_reflection) << 0;
     return false;
   }
-  Decl *D = (Decl *)Info.second;
 
   // FIXME: What about friend declarations?
   DeclContext *Owner = D->getDeclContext();
@@ -1821,13 +1733,12 @@ bool Sema::ModifyDeclarationVirtual(ReflectionTraitExpr *E) {
 
   CheckReflectionArgs(*this, Args, Vals);
 
-  // FIXME: Verify that this is actually a reflected node.
-  auto Info = ExplodeOpaqueValue(Vals[0].getExtValue());
-  if (Info.first != RK_Decl) {
+  ReflectedConstruct C(Vals[0].getExtValue());
+  Decl *D = C.getAsDeclaration();
+  if (!D) {
     Diag(E->getLocStart(), diag::err_invalid_reflection) << 0;
     return false;
   }
-  Decl *D = (Decl *)Info.second;
 
   DeclContext *Owner = D->getDeclContext();
   if (!Owner->isRecord()) {
@@ -1874,13 +1785,12 @@ bool Sema::ModifyDeclarationConstexpr(ReflectionTraitExpr *E) {
 
   CheckReflectionArgs(*this, Args, Vals);
 
-  // FIXME: Verify that this is actually a reflected node.
-  auto Info = ExplodeOpaqueValue(Vals[0].getExtValue());
-  if (Info.first != RK_Decl) {
+  ReflectedConstruct C(Vals[0].getExtValue());
+  Decl *D = C.getAsDeclaration();
+  if (!D) {
     Diag(E->getLocStart(), diag::err_invalid_reflection) << 0;
     return false;
   }
-  Decl *D = (Decl *)Info.second;
 
   if (VarDecl *Var = dyn_cast<VarDecl>(D)) {
     Var->setConstexpr(true);
@@ -1905,6 +1815,8 @@ static QualType TypeReflectionError(Sema &SemaRef, Expr *E) {
 }
 
 // Compute the type of a reflection.
+//
+// FIXME: A lot of this code seems to be duplicated from elsewhere.
 QualType
 GetNonDependentReflectedType(Sema &SemaRef, Expr *E)
 {
@@ -1935,21 +1847,20 @@ GetNonDependentReflectedType(Sema &SemaRef, Expr *E)
 
   // Decode the specialization argument as a type.
   llvm::APSInt Data = Arg.getAsIntegral();
-  std::pair<ReflectionKind, void *> Info =
-      ExplodeOpaqueValue(Data.getExtValue());
 
-  if (Info.first == RK_Type) {
+  Sema::ReflectedConstruct C(Data.getExtValue());
+
+  if (Type *T = C.getAsType()) {
     // Returns the referenced type. For example:
     //
     //    typename($int) x; // int x
-    QualType T((Type *)Info.second, 0);
-    return SemaRef.Context.getReflectedType(E, T);
-  } else if (Info.first == RK_Decl) {
+    QualType QT(T, 0);
+    return SemaRef.Context.getReflectedType(E, QT);
+  } else if (Decl *D = C.getAsDeclaration()) {
     // Returns the type of the referenced declaration. For example:
     //
     //    char x;
     //    typename($x) y; // char y
-    Decl *D = (Decl *)Info.second;
     if (!isa<ValueDecl>(D)) {
       SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_typed_decl)
                    << E->getSourceRange();
@@ -1958,7 +1869,6 @@ GetNonDependentReflectedType(Sema &SemaRef, Expr *E)
     return SemaRef.Context.getReflectedType(E, cast<ValueDecl>(D)->getType());
   }
   else
-    // FIXME: Should be equivalent to decltype(e).
     llvm_unreachable("expression type not implemented");
 }
 
@@ -2665,7 +2575,7 @@ bool Sema::ActOnUsingParameter(SourceLocation UsingLoc,
   // Then EllipsisLoc must be valid, and we inject all parameters.
   QualType RefTy;
   if (ReferencesFunction(*this, Reflection, RefTy)) {
-    ReflectedConstruct Cons = EvaluateReflection(*this, Reflection, RefTy);
+    ReflectedConstruct Cons = EvaluateReflection(Reflection);
     FunctionDecl *Fn = cast<FunctionDecl>(Cons.getAsDeclaration());
 
     // Clone each parameter, inserting a chunk for the declaration.
@@ -2687,7 +2597,7 @@ bool Sema::ActOnUsingParameter(SourceLocation UsingLoc,
   // If T is meta::parameter<X>, then we inject that one parameter.
   if (ReferencesParameter(*this, Reflection, RefTy)) {
     // Clone the referenced parameter.
-    ReflectedConstruct Cons = EvaluateReflection(*this, Reflection, RefTy);
+    ReflectedConstruct Cons = EvaluateReflection(Reflection);
     ParmVarDecl *Orig = cast<ParmVarDecl>(Cons.getAsDeclaration());
     TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Orig->getType());
     ParmVarDecl *New = ParmVarDecl::Create(Context, nullptr, 

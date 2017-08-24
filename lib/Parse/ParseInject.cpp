@@ -19,116 +19,113 @@
 
 using namespace clang;
 
-/// \brief Parse a C++ injection statement.
+/// Parse a fragment. Fragments can appear within fragment expressions and
+/// injection statements and declarations. Returns the parsed declaration
+/// fragment and captures for subsequent use.
 ///
-/// \verbatim
-/// injection-statement:
-///   '->' injection-capture_opt injection
-///   '->' constant-expression ';'
+///   fragment-expression:
+///     named-namespace-definition
+///     class-specifier
+///     enum-specifier
+///     compound-statement
 ///
-/// injection-capture:
-///   '[' identifier-list ']'
-///
-/// injection:
-///   'do' compound-statement
-///   class-key identifier_opt '{' member-specification_opt '}'
-///   'namespace' identifier_opt '{' namespace-body '}'
-///   compound-statement
-///
-/// \endverbatim
-///
-/// TODO: Implement expression injection.
-StmtResult Parser::ParseCXXInjectionStmt() {
-  assert(Tok.is(tok::arrow));
-  SourceLocation ArrowLoc = ConsumeToken();
+/// FIXME: The parses are a bit more custom than the usual definitions.
+Decl* Parser::ParseCXXFragment(SmallVectorImpl<Expr *> &Captures) {
+  // Implicitly capture automatic variables as captured constants.
+  Actions.ActOnCXXFragmentCapture(Captures);
 
-  // A name declared in the the injection statement is local to the injection
-  // statement. Establish a new declaration scope for the following injection.
-  ParseScope InjectionScope(this, Scope::DeclScope | Scope::InjectionScope);
+  // A name declared in the the fragment is not leaked into the enclosing
+  // scope. That is, fragments names are only accessible from within.
+  ParseScope FragmentScope(this, Scope::DeclScope);
 
-  /*
-  // Parse the optional capture list; identifiers are resolved as they are
-  // parsed. We inject them later on.
-  SmallVector<Decl*, 4> Captures;
-  if (Tok.is(tok::l_square)) {
-    BalancedDelimiterTracker T(*this, tok::l_square);
-    if (T.consumeOpen()) {
-      Diag(Tok, diag::err_expected) << tok::l_square;
-      return StmtError();
-    }
-
-    // FIXME: Deprecate named capture. Also, note that t
-    while (Tok.isNot(tok::r_square)) {
-      if (Tok.isNot(tok::identifier)) {
-        Diag(Tok, diag::err_expected) << tok::identifier;
-        return StmtError();
-      }
-
-      IdentifierInfo* Id = Tok.getIdentifierInfo();
-      SourceLocation Loc = ConsumeToken();
-      DeclResult Capture = 
-          Actions.ActOnInjectionCapture(IdentifierLocPair(Id, Loc));
-      if (Capture.isInvalid())
-        return StmtError();
-      Captures.push_back(Capture.get());
-
-      if (Tok.is(tok::comma))
-        ConsumeToken();
-    }
-
-    if (T.consumeClose()) {
-      Diag(Tok, diag::err_expected) << tok::r_square;
-      return StmtError();
-    }
-  }
-  */
+  // Start the fragment. The fragment is finished in one of the 
+  // ParseCXX*Fragment functions.
+  Decl *Fragment = Actions.ActOnStartCXXFragment(Tok.getLocation(), Captures);
 
   switch (Tok.getKind()) {
-    case tok::kw_do:
-      return ParseCXXBlockInjection(ArrowLoc);
+    case tok::kw_namespace:
+      return ParseNamespaceFragment(Fragment);
 
     case tok::kw_struct:
     case tok::kw_class:
     case tok::kw_union:
-      return ParseCXXClassInjection(ArrowLoc);
+      return ParseClassFragment(Fragment);
 
-    case tok::kw_namespace:
-      return ParseCXXNamespaceInjection(ArrowLoc);
+    case tok::kw_enum:
+      return ParseEnumFragment(Fragment);
 
     case tok::l_brace:
-      llvm_unreachable("Expression capture not implemented");
+      llvm_unreachable("block fragments not implemented");
 
     default:
-      return ParseCXXReflectionInjection(ArrowLoc);
+      break;
   }
+
+  Diag(Tok.getLocation(), diag::err_expected_fragment);
+  SkipUntil(tok::semi);
+  return nullptr;
 }
 
-StmtResult Parser::ParseCXXBlockInjection(SourceLocation ArrowLoc) {
-  assert(Tok.is(tok::kw_do) && "expected 'do'");
+/// Parses a namespace fragment. Returns the completed fragment declaration.
+Decl *Parser::ParseNamespaceFragment(Decl *Fragment) {
+  assert(Tok.is(tok::kw_namespace) && "expected 'namespace'");
 
-  // FIXME: Save the introducer token?
-  ConsumeToken();
+  SourceLocation NamespaceLoc = ConsumeToken();
+  IdentifierInfo *Id = nullptr;
+  SourceLocation IdLoc;
+  if (Tok.is(tok::identifier)) {
+    Id = Tok.getIdentifierInfo();
+    IdLoc = ConsumeToken();
+  } else {
+    // FIXME: This shouldn't be an error. ActOnStartNamespaceDef will 
+    // treat a missing identifier as the anonymous namespace, which this
+    // is not. An injection into the anonymous namespace must be written
+    // as:
+    //
+    //    -> namespace <id> { namespace { decls-to-inject } }
+    //
+    // Just generate a unique name for the namespace. Its guaranteed not 
+    // conflict since we're in a nested scope.
+    Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
+    return nullptr;
+  }
 
-  StmtResult Injection 
-      = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, /*IsBlock=*/true);
+  BalancedDelimiterTracker T(*this, tok::l_brace);
+  if (T.consumeOpen()) {
+    Diag(Tok, diag::err_expected) << tok::l_brace;
+    return nullptr;
+  }
 
-  // Parse the block statement as if it were a lambda '[]()stmt'. 
-  ParseScope BodyScope(this, Scope::BlockScope | 
-                             Scope::FnScope | 
-                             Scope::DeclScope);
-  Actions.ActOnStartBlockFragment(getCurScope());
-  StmtResult Body = ParseCompoundStatement();
-  Actions.ActOnFinishBlockFragment(getCurScope(), Body.get());
-  return Injection;
+  ParseScope NamespaceScope(this, Scope::DeclScope);
+
+  SourceLocation InlineLoc;
+  ParsedAttributesWithRange Attrs(AttrFactory);
+  UsingDirectiveDecl *ImplicitUsing = nullptr;
+  Decl *Ns = Actions.ActOnStartNamespaceDef(getCurScope(), InlineLoc,
+                                            NamespaceLoc, IdLoc, Id,
+                                            T.getOpenLocation(), 
+                                            Attrs.getList(), ImplicitUsing);
+
+  // Parse the declarations within the namespace. Note that this will match
+  // the closing brace. We don't allow nested specifiers for the vector.
+  std::vector<IdentifierInfo *> NsIds;
+  std::vector<SourceLocation> NsIdLocs;
+  std::vector<SourceLocation> NsLocs;
+  ParseInnerNamespace(NsIdLocs, NsIds, NsLocs, 0, InlineLoc, Attrs, T);
+
+  NamespaceScope.Exit();
+
+  Actions.ActOnFinishNamespaceDef(Ns, T.getCloseLocation());
+  if (Ns->isInvalidDecl())
+    return nullptr;
+  
+  return Actions.ActOnFinishCXXFragment(Fragment, Ns);
 }
 
-StmtResult Parser::ParseCXXClassInjection(SourceLocation ArrowLoc) {
+/// Parses a class fragment. Returns the completed fragment declaration.
+Decl *Parser::ParseClassFragment(Decl *Fragment) {
   assert(Tok.isOneOf(tok::kw_struct, tok::kw_class, tok::kw_union) &&
          "expected 'struct', 'class', or 'union'");
-
-  // Pre-build the statement and associate its captures.
-  StmtResult Injection 
-      = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, /*IsBlock=*/false);
 
   DeclSpec::TST TagType;
   if (Tok.is(tok::kw_struct))
@@ -162,86 +159,143 @@ StmtResult Parser::ParseCXXClassInjection(SourceLocation ArrowLoc) {
                                  /*ScopeEnumUsesClassTag=*/false, TR,
                                  /*IsTypeSpecifier*/false);
 
-  Actions.ActOnStartClassFragment(Injection.get(), Class);
-
   // Parse the class definition.
   ParsedAttributesWithRange PA(AttrFactory);
   ParseCXXMemberSpecification(ClassKeyLoc, SourceLocation(), PA, TagType,
                               Class);
   if (Class->isInvalidDecl())
-    return StmtError();
+    return nullptr;
   
-  Actions.ActOnFinishClassFragment(Injection.get());
-  return Injection;
+  return Actions.ActOnFinishCXXFragment(Fragment, Class);
 }
 
-StmtResult Parser::ParseCXXNamespaceInjection(SourceLocation ArrowLoc) {
-  assert(Tok.is(tok::kw_namespace) && "expected 'namespace'");
-
-  // Pre-build the statement and associate its captures.
-  StmtResult Injection 
-      = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, /*IsBlock=*/false);
-
-  SourceLocation NamespaceLoc = ConsumeToken();
-  IdentifierInfo *Id = nullptr;
-  SourceLocation IdLoc;
-  if (Tok.is(tok::identifier)) {
-    Id = Tok.getIdentifierInfo();
-    IdLoc = ConsumeToken();
-  } else {
-    // FIXME: This shouldn't be an error. ActOnStartNamespaceDef will 
-    // treat a missing identifier as the anonymous namespace, which this
-    // is not. An injection into the anonymous namespace must be written
-    // as:
-    //
-    //    -> namespace <id> { namespace { decls-to-inject } }
-    //
-    // Just generate a unique name for the namespace. Its guaranteed not 
-    // conflict since we're in a nested scope.
-    Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
-    return StmtError();
-  }
-
-  BalancedDelimiterTracker T(*this, tok::l_brace);
-  if (T.consumeOpen()) {
-    Diag(Tok, diag::err_expected) << tok::l_brace;
-    return StmtError();
-  }
-
-  ParseScope NamespaceScope(this, Scope::DeclScope);
-
-  SourceLocation InlineLoc;
-  ParsedAttributesWithRange Attrs(AttrFactory);
-  UsingDirectiveDecl *ImplicitUsing = nullptr;
-  Decl *Ns = Actions.ActOnStartNamespaceDef(getCurScope(), InlineLoc,
-                                            NamespaceLoc, IdLoc, Id,
-                                            T.getOpenLocation(), 
-                                            Attrs.getList(), ImplicitUsing);
-
-  Actions.ActOnStartNamespaceFragment(Injection.get(), Ns);
-
-  // Parse the declarations within the namespace. Note that this will match
-  // the closing brace. We don't allow nested specifiers for the vector.
-  std::vector<IdentifierInfo *> NsIds;
-  std::vector<SourceLocation> NsIdLocs;
-  std::vector<SourceLocation> NsLocs;
-  ParseInnerNamespace(NsIdLocs, NsIds, NsLocs, 0, InlineLoc, Attrs, T);
-
-  NamespaceScope.Exit();
-
-  Actions.ActOnFinishNamespaceDef(Ns, T.getCloseLocation());
-  if (Ns->isInvalidDecl())
-    return StmtError();
-  
-  Actions.ActOnFinishNamespaceFragment(Injection.get());
-  return Injection;
+/// Parses an enum fragment. Returns the completed fragment declaration.
+Decl *Parser::ParseEnumFragment(Decl *Fragment) {
+  llvm_unreachable("not implemented");
 }
 
-StmtResult Parser::ParseCXXReflectionInjection(SourceLocation ArrowLoc) {
-  ExprResult Reflection = ParseConstantExpression();
+// StmtResult Parser::ParseCXXBlockInjection(SourceLocation ArrowLoc) {
+//   assert(Tok.is(tok::kw_do) && "expected 'do'");
+
+//   // FIXME: Save the introducer token?
+//   ConsumeToken();
+
+//   StmtResult Injection 
+//       = Actions.ActOnInjectionStmt(getCurScope(), ArrowLoc, /*IsBlock=*/true);
+
+//   // Parse the block statement as if it were a lambda '[]()stmt'. 
+//   ParseScope BodyScope(this, Scope::BlockScope | 
+//                              Scope::FnScope | 
+//                              Scope::DeclScope);
+//   Actions.ActOnStartBlockFragment(getCurScope());
+//   StmtResult Body = ParseCompoundStatement();
+//   Actions.ActOnFinishBlockFragment(getCurScope(), Body.get());
+//   return Injection;
+// }
+
+
+/// Parse a fragment expression. It has the form:
+///
+///   fragment-expression:
+///     '__fragment' fragment
+ExprResult Parser::ParseCXXFragmentExpression() {
+  assert(Tok.is(tok::kw___fragment) && "Expected __fragment");
+  SourceLocation Loc = ConsumeToken();
+
+  // Scrape automatic variables as captured constants.
+  SmallVector<Expr *, 8> Captures;
+  Decl *Fragment = ParseCXXFragment(Captures);
+  if (!Fragment)
+    return ExprError();
+
+  return Actions.ActOnCXXFragmentExpr(Loc, Captures, Fragment);
+}
+
+/// \brief Parse a C++ injection statement.
+///
+///   injection-statement:
+///     '__generate' reflection ';'
+///     '__generate' fragment ';'
+StmtResult Parser::ParseCXXInjectionStatement() {
+  assert(Tok.is(tok::kw___generate) && "expected __generate");;
+  SourceLocation Loc = ConsumeToken();
+
+  /// Get a reflection as the operand of the 
+  ExprResult Reflection;
+  switch (Tok.getKind()) {
+    case tok::kw_namespace:
+    case tok::kw_struct:
+    case tok::kw_class:
+    case tok::kw_union:
+    case tok::kw_enum:
+    case tok::l_brace: {
+      SmallVector<Expr *, 8> Captures;
+      Decl *Fragment = ParseCXXFragment(Captures);
+      if (!Fragment)
+        return StmtError();
+      Reflection = Actions.ActOnCXXFragmentExpr(Loc, Captures, Fragment);
+      break;
+    }
+    
+    default: {
+      Reflection = ParseConstantExpression();
+      break;
+    }
+  }
   if (Reflection.isInvalid())
-    return StmtError();
-  if (ExpectAndConsumeSemi(diag::err_expected_semi_after_expr))
-    return StmtError();
-  return Actions.ActOnReflectionInjection(ArrowLoc, Reflection.get());
+    return StmtResult();
+
+  // FIXME: Save the semicolon?
+  ExpectAndConsumeSemi(diag::err_expected_semi_after_fragment);
+
+  return Actions.ActOnCXXInjectionStmt(Loc, Reflection.get());
+}
+
+/// \brief Parse a C++ injection declaration.
+///
+///   injection-statement:
+///     '__inject' reflection ';'
+///     '__inject' fragment ';'
+///
+/// Returns the group of declarations parsed.
+Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
+  assert(Tok.is(tok::kw___inject) && "expected __inject");
+  SourceLocation Loc = ConsumeToken();
+
+  /// Get a reflection as the operand of the 
+  ExprResult Reflection;
+  switch (Tok.getKind()) {
+    case tok::kw_namespace:
+    case tok::kw_struct:
+    case tok::kw_class:
+    case tok::kw_union:
+    case tok::kw_enum:
+    case tok::l_brace: {
+      SmallVector<Expr *, 8> Captures;
+      Decl *Fragment = ParseCXXFragment(Captures);
+      if (!Fragment)
+        return DeclGroupPtrTy();
+      Reflection = Actions.ActOnCXXFragmentExpr(Loc, Captures, Fragment);
+      break;
+    }
+    
+    default: {
+      Reflection = ParseConstantExpression();
+      break;
+    }
+  }
+  if (Reflection.isInvalid())
+    return DeclGroupPtrTy();
+
+  // FIXME: Save the semicolon?
+  ExpectAndConsumeSemi(diag::err_expected_semi_after_fragment);
+
+  return Actions.ActOnCXXInjectionDecl(Loc, Reflection.get());
+}
+
+// TODO: This is a bit weird... It's a declaration that modifies an existing
+// declaration, but not the immediate context. The AST should preserve the
+// entity, although this does nothing.
+Parser::DeclGroupPtrTy Parser::ParseCXXExtensionDeclaration() {
+  llvm_unreachable("not implemented");
 }

@@ -104,7 +104,7 @@ ExprResult Parser::ParseReflexprExpression() {
 /// Each argument in the constant-argument-list must be a constant expression.
 ///
 /// Returns true if parsing or semantic analysis fail.
-bool Parser::ParseDeclnameId(UnqualifiedId& Result) {
+bool Parser::ParseCXXExprId(UnqualifiedId& Result) {
   assert(Tok.is(tok::kw_idexpr));
   SourceLocation KeyLoc = ConsumeToken();
 

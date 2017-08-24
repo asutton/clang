@@ -207,9 +207,6 @@ void Scope::dumpImpl(raw_ostream &OS) const {
     } else if (Flags & MetaclassScope) {
       OS << "MetaclassScope";
       Flags &= ~MetaclassScope;
-    } else if (Flags & InjectionScope) {
-      OS << "InjectionScope";
-      Flags &= ~InjectionScope;
     }
 
     if (Flags)

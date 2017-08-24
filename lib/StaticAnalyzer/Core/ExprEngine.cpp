@@ -894,6 +894,12 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::OMPTargetTeamsDistributeParallelForSimdDirectiveClass:
     case Stmt::OMPTargetTeamsDistributeSimdDirectiveClass:
     case Stmt::CapturedStmtClass:
+    case Stmt::CXXPackExpansionStmtClass:
+    case Stmt::CXXTupleExpansionStmtClass:
+    case Stmt::CXXConstantExprClass:
+    case Stmt::CXXDependentIdExprClass:
+    case Stmt::CXXFragmentExprClass:
+    case Stmt::CXXInjectionStmtClass:
     {
       const ExplodedNode *node = Bldr.generateSink(S, Pred, Pred->getState());
       Engine.addAbortedBlock(node, currBldrCtx->getBlock());
@@ -981,9 +987,6 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CUDAKernelCallExprClass:
     case Stmt::OpaqueValueExprClass:
     case Stmt::AsTypeExprClass:
-    case Stmt::CXXPackExpansionStmtClass:
-    case Stmt::CXXTupleExpansionStmtClass:
-    case Stmt::CXXInjectionStmtClass:
       // Fall through.
 
     // Cases we intentionally don't evaluate, since they don't need

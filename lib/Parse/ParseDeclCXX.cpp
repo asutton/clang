@@ -2390,6 +2390,8 @@ void Parser::MaybeParseAndDiagnoseDeclSpecAfterCXX11VirtSpecifierSeq(
 ///         template-declaration
 /// [GNU]   '__extension__' member-declaration
 /// [Meta]  constexpr-declaration
+/// [Meta]  injection-declaration
+/// [Meta]  extension-declaration
 ///
 ///       member-declarator-list:
 ///         member-declarator
@@ -2546,10 +2548,20 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
                                  UsingLoc, DeclEnd, AS);
   }
 
-  // constexpr-declaration
+  // [Meta] constexpr-declaration
   if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw_constexpr) &&
       NextToken().is(tok::l_brace))
     return ParseConstexprDeclaration();
+
+  // [Meta] injection-declaration
+  if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw___inject) &&
+      NextToken().is(tok::l_brace))
+    return ParseCXXInjectionDeclaration();
+
+  // [Meta] extension-declaration
+  if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw___extend) &&
+      NextToken().is(tok::l_brace))
+    return ParseCXXExtensionDeclaration();
 
   // Hold late-parsed attributes so we can attach a Decl to them later.
   LateParsedAttrList CommonLateParsedAttrs;
@@ -3136,9 +3148,8 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
         break;
       }
 
-      unsigned F = S->getFlags();
-      if ((F & Scope::FnScope) || (F & Scope::InjectionScope))
-        // If we're in a function, function template, or injection then this 
+      if (S->getFlags() & Scope::FnScope)
+        // If we're in a function or function template, then this 
         // is a local class rather than a nested class.
         break;
     }

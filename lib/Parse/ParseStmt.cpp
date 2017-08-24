@@ -271,8 +271,25 @@ Retry:
     SemiError = "co_return";
     break;
 
-  case tok::arrow: // [Meta] injection-statement
-    return ParseCXXInjectionStmt();
+  case tok::kw___generate: // [Meta] injection-statement
+    Res = ParseCXXInjectionStatement();
+    SemiError = "__generate";
+    break;
+
+  case tok::kw___inject: { // [Meta] injection declaration
+    SourceLocation DeclStart = Tok.getLocation(), 
+                   DeclEnd = Tok.getLocation();
+    DeclGroupPtrTy Decls = ParseCXXInjectionDeclaration();
+    return Actions.ActOnDeclStmt(Decls, DeclStart, DeclEnd);
+  }
+
+  case tok::kw___extend: { // [Meta] extension declaration
+    SourceLocation DeclStart = Tok.getLocation(), 
+                   DeclEnd = Tok.getLocation();
+    DeclGroupPtrTy Decls = ParseCXXInjectionDeclaration();
+    return Actions.ActOnDeclStmt(Decls, DeclStart, DeclEnd);
+  }
+
 
   case tok::kw_asm: {
     ProhibitAttributes(Attrs);
