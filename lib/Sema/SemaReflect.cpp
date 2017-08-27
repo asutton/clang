@@ -37,6 +37,10 @@ Sema::ReflectionPair Sema::ReflectedConstruct::Explode(std::uintptr_t N) {
 /// FIXME: Move this to ASTContext.
 bool Sema::isReflectionType(QualType T) {
   if (CXXRecordDecl *Class = T->getAsCXXRecordDecl()) {
+    // Fragments are reflections.
+    if (Class->isFragment())
+      return true;
+
     // Reflections are specializations. 
     if (!isa<ClassTemplateSpecializationDecl>(Class)) 
       return false;
@@ -58,23 +62,23 @@ bool Sema::isReflectionType(QualType T) {
   return false;
 }
 
-static ExprResult ValueReflectionError(Sema &SemaRef, Expr *E) {
-  SemaRef.Diag(E->getLocStart(), diag::err_reflection_not_a_value)
-    << E->getSourceRange();
+static ExprResult ValueReflectionError(Sema &SemaRef, SourceLocation Loc) {
+  SemaRef.Diag(Loc, diag::err_reflection_not_a_value);
   return ExprResult(true);
 }
 
-Sema::ReflectedConstruct Sema::EvaluateReflection(Expr *E) {
-  QualType T = Context.getCanonicalType(E->getType());
+Sema::ReflectedConstruct Sema::EvaluateReflection(QualType T, 
+                                                  SourceLocation Loc) {
+  T = Context.getCanonicalType(T);
   CXXRecordDecl *Class = T->getAsCXXRecordDecl();
   if (!Class) {
-    ValueReflectionError(*this, E);
+    ValueReflectionError(*this, Loc);
     return ReflectedConstruct();
   }
 
   // If the type is a reflection...
   if (!isa<ClassTemplateSpecializationDecl>(Class)) {
-    ValueReflectionError(*this, E);
+    ValueReflectionError(*this, Loc);
     return ReflectedConstruct();
   }
   ClassTemplateSpecializationDecl *Spec = 
@@ -84,25 +88,30 @@ Sema::ReflectedConstruct Sema::EvaluateReflection(Expr *E) {
   DeclContext* Owner = Spec->getDeclContext();
   if (Owner->isInlineNamespace())
     Owner = Owner->getParent();
-  if (!Owner->Equals(RequireCppxMetaNamespace(E->getLocStart()))) {
-    Diag(E->getLocStart(), diag::err_not_a_reflection);
+  if (!Owner->Equals(RequireCppxMetaNamespace(Loc))) {
+    Diag(Loc, diag::err_not_a_reflection);
     return ReflectedConstruct();
   }
 
   const TemplateArgumentList& Args = Spec->getTemplateArgs();
   if (Args.size() == 0) {
-    ValueReflectionError(*this, E);
+    ValueReflectionError(*this, Loc);
     return ReflectedConstruct();
   }
   const TemplateArgument &Arg = Args.get(0);
   if (Arg.getKind() != TemplateArgument::Integral) {
-    ValueReflectionError(*this, E);
+    ValueReflectionError(*this, Loc);
     return ReflectedConstruct();
   }
   
   // Decode the specialization argument.
   llvm::APSInt Data = Arg.getAsIntegral();
-  return ReflectedConstruct(Data.getExtValue());
+  return ReflectedConstruct(Data.getExtValue());  
+}
+
+Sema::ReflectedConstruct Sema::EvaluateReflection(Expr *E) {
+  return EvaluateReflection(E->getType(), E->getExprLoc());
+
 }
 
 /// Returns a reflected declaration or nullptr if E does not reflect a
@@ -575,6 +584,9 @@ ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
     return ExprError();
 
   // Produce a value-initialized temporary of the required type.
+  //
+  // FIXME: We should actually return a reflection expression and attach
+  // the initializer for use in evaluation.
   SmallVector<Expr *, 1> Args;
   InitializedEntity Entity = InitializedEntity::InitializeTemporary(TempType);
   InitializationKind Kind = InitializationKind::CreateValue(Loc, Loc, Loc);

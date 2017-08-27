@@ -18,6 +18,7 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclVisitor.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/Sema/Initialization.h"
 #include "clang/Sema/SemaInternal.h"
 
 using namespace clang;
@@ -27,9 +28,12 @@ using namespace sema;
 static void FindCapturesInScope(Sema &SemaRef, Scope *S, 
                                 SmallVectorImpl<VarDecl *> &Vars) {
   for (Decl *D : S->decls()) {
-    if (VarDecl *Var = dyn_cast<VarDecl>(D))
-      if (Var->isLocalVarDeclOrParm())
+    if (VarDecl *Var = dyn_cast<VarDecl>(D)) {
+      // Only capture locals with initializers. This avoids the capture of
+      // a variable defining its own capture.
+      if (Var->isLocalVarDeclOrParm() && Var->hasInit())
         Vars.push_back(Var);
+    }
   }
 }
 
@@ -99,7 +103,8 @@ static void CreatePlaceholders(Sema &SemaRef, CXXFragmentDecl *Frag,
 }
 
 /// Called at the start of a source code fragment to establish the list of
-/// automatic variables captured.
+/// automatic variables captured. This is only called by the parser and searches
+/// the list of local variables in scope.
 void Sema::ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures) {
   assert(Captures.empty() && "Captures already specified");
   SmallVector<VarDecl *, 8> Vars;
@@ -130,16 +135,171 @@ ExprResult Sema::ActOnCXXFragmentExpr(SourceLocation Loc,
   return BuildCXXFragmentExpr(Loc, Captures, Fragment);
 }
 
-/// Builds a new fragment expression.
+/// \brief Builds a new fragment expression.
+/// Consider the following:
+///
+///   constexpr {
+///     int n = 0;
+///     auto x = __fragment class { int a, b, c };
+///   }
+///
+/// The type of the expression is a new meta:: class defined, approximately,
+/// like this:
+///
+///   using __base_type = typename($<fragment>); // for exposition
+///   
+///   struct __fragment_type : base_type
+///     // inherit constructors.
+///     using base_type::base_type;
+///
+///     // storage for capture values.
+///     int n;
+///   };
+///
+/// TODO: It seems like the base class subobject can be statically initialized
+/// as part of a default constructor instead of providing an inherited 
+/// constructor and deferring all initialization until evaluation time.
 ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, 
                                       SmallVectorImpl<Expr *> &Captures, 
                                       Decl *Fragment) {
   CXXFragmentDecl *FD = cast<CXXFragmentDecl>(Fragment);
-  ExprResult E = BuildDeclReflection(Loc, FD->getContent());
-  if (E.isInvalid())
+  
+  // Build the expression used to the reflection of fragment.
+  //
+  // TODO: We should be able to compute the type without generating an
+  // expression. We're not actually using the expression.
+  ExprResult Reflection = BuildDeclReflection(Loc, FD->getContent());
+  if (Reflection.isInvalid())
     return ExprError();
-  QualType T = E.get()->getType();
-  return new (Context) CXXFragmentExpr(Context, Loc, T, Captures, FD, E.get());
+
+  // Generate a fragment expression type.
+  //
+  // TODO: We currently use the declaration-global Fragment bit to indicate
+  // that the type of the expression is (indeed) a reflection of some kind.
+  // We might want create the class in the meta:: namespace and rely on only
+  // that information.
+  CXXRecordDecl *Class = CXXRecordDecl::Create(
+      Context, TTK_Class, CurContext, Loc, Loc, nullptr, nullptr);
+  Class->setImplicit(true);
+  Class->setFragment(true);
+  Class->startDefinition();
+  QualType ClassTy = Context.getRecordType(Class);
+  TypeSourceInfo *ClassTSI = Context.getTrivialTypeSourceInfo(ClassTy);
+
+  // Build the base class for the fragment type; this is the type of the
+  // reflected entity.s
+  QualType BaseTy = Reflection.get()->getType();
+  TypeSourceInfo *BaseTSI = Context.getTrivialTypeSourceInfo(BaseTy);
+  CXXBaseSpecifier* Base = new (Context) CXXBaseSpecifier(
+    SourceRange(Loc, Loc), false, true, AS_public, BaseTSI, SourceLocation());
+  Class->setBases(&Base, 1);
+
+  // Create a field for each capture.
+  SmallVector<FieldDecl *, 4> Fields;
+  for (Expr *E : Captures) {
+    VarDecl *Var = GetVariableFromCapture(E);
+    std::string Name = "__captured_" + Var->getIdentifier()->getName().str();
+    IdentifierInfo *Id = &Context.Idents.get(Name);
+    TypeSourceInfo *TypeInfo = Context.getTrivialTypeSourceInfo(Var->getType());
+    FieldDecl *Field = FieldDecl::Create(
+        Context, Class, Loc, Loc, Id, Var->getType(), TypeInfo, nullptr, false, 
+        ICIS_NoInit);
+    Field->setAccess(AS_public);
+    Field->setImplicit(true);
+    Fields.push_back(Field);
+    Class->addDecl(Field);
+  }
+  
+  // Build a constructor that accepts the generated members.
+  DeclarationName Name = Context.DeclarationNames.getCXXConstructorName(
+      Context.getCanonicalType(ClassTy));
+  DeclarationNameInfo NameInfo(Name, Loc);
+  CXXConstructorDecl *Ctor = CXXConstructorDecl::Create(
+      Context, Class, Loc, NameInfo, /*Type*/QualType(), /*TInfo=*/nullptr, 
+      /*isExplicit=*/true, /*isInline=*/true, /*isImplicitlyDeclared=*/false, 
+      /*isConstexpr=*/true);
+  Ctor->setAccess(AS_public);
+
+  // Build the function type for said constructor.
+  FunctionProtoType::ExtProtoInfo EPI;
+  EPI.ExceptionSpec.Type = EST_Unevaluated;
+  EPI.ExceptionSpec.SourceDecl = Ctor;
+  EPI.ExtInfo = EPI.ExtInfo.withCallingConv(
+      Context.getDefaultCallingConvention(/*IsVariadic=*/false,
+                                          /*IsCXXMethod=*/true));
+  SmallVector<QualType, 4> ArgTypes;
+  for (Expr *E : Captures) 
+    ArgTypes.push_back(E->getType());
+  QualType CtorTy = Context.getFunctionType(Context.VoidTy, ArgTypes, EPI);
+  Ctor->setType(CtorTy);
+
+  SmallVector<ParmVarDecl *, 4> Parms;
+  for (std::size_t I = 0; I < Captures.size(); ++I) {
+    Expr *E = Captures[I];
+    VarDecl *Var = GetVariableFromCapture(E);
+    std::string Name = "__parm_" + Var->getIdentifier()->getName().str();
+    IdentifierInfo* Id = &Context.Idents.get(Name);
+    QualType ParmTy = E->getType();
+    TypeSourceInfo *TypeInfo = Context.getTrivialTypeSourceInfo(ParmTy);
+    ParmVarDecl *Parm = ParmVarDecl::Create(
+        Context, Ctor, Loc, Loc, Id, ParmTy, TypeInfo, SC_None, nullptr);
+    Parm->setScopeInfo(0, I);
+    Parm->setImplicit(true);
+    Parms.push_back(Parm);
+  }
+  Ctor->setParams(Parms);
+
+  // Build constructor initializers.
+  std::size_t NumInits = Fields.size() + 1;
+  CXXCtorInitializer **Inits = new (Context) CXXCtorInitializer *[NumInits];
+  // Build the base initializer.
+  {
+    SourceLocation EL; // Empty ellipsis.
+    Expr *Arg = new (Context) ParenListExpr(Context, Loc, None, Loc);
+    Inits[0] = BuildBaseInitializer(BaseTy, BaseTSI, Arg, Class, EL).get();
+  }
+  // Build member initializers.
+  for (std::size_t I = 0; I < Parms.size(); ++I) {
+    ParmVarDecl *Parm = Parms[I];
+    FieldDecl *Field = Fields[I];
+    DeclRefExpr *Ref = new (Context) DeclRefExpr(
+        Parm, false, Parm->getType(), VK_LValue, Loc);
+    Expr *Arg = new (Context) ParenListExpr(Context, Loc, Ref, Loc);
+    Inits[I + 1] = BuildMemberInitializer(Field, Arg, Loc).get();
+  }
+  Ctor->setNumCtorInitializers(NumInits);
+  Ctor->setCtorInitializers(Inits);
+
+  // Build the definition.
+  Stmt *Def = new (Context) CompoundStmt(Context, None, Loc, Loc);
+  Ctor->setBody(Def);
+
+  Class->addDecl(Ctor);
+
+  Class->completeDefinition();
+
+  // Build an expression that that initializes the fragment object.
+  Expr *Init;
+  if (Captures.size() == 1) {
+    CXXConstructExpr *Cast = CXXConstructExpr::Create(
+        Context, ClassTy, Loc, Ctor, true, Captures,
+        /*HadMultipleCandidates=*/false, /*ListInitialization=*/false, 
+        /*StdInitListInitialization=*/false, /*ZeroInitialization=*/false,
+        CXXConstructExpr::CK_Complete, SourceRange(Loc, Loc));
+    Init = CXXFunctionalCastExpr::Create(
+        Context, ClassTy, VK_RValue, ClassTSI, CK_NoOp, Cast, 
+        /*Path=*/nullptr, Loc, Loc);
+  } else {
+    Init = new (Context) CXXTemporaryObjectExpr(
+        Context, Ctor, ClassTy, ClassTSI, Captures, SourceRange(Loc, Loc), 
+        /*HadMultipleCandidates=*/false, /*ListInitialization=*/false, 
+        /*StdInitListInitialization=*/false, /*ZeroInitialization=*/false);
+  }
+
+  // Finally, build the fragment expression.
+  CXXFragmentExpr *Result = new (Context) CXXFragmentExpr(Context, Loc, ClassTy, 
+                                                          Captures, FD, Init);
+  return Result;
 }
 
 /// Returns an injection statement.
@@ -157,48 +317,15 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) {
     }
   }
 
-  // FIXME: How do we access local modifications. We could attach an
-  // accessor expression like we do in the commented code below.
+  // Perform an lvalue-to-value conversion so that we get an rvalue in
+  // evaluation.
+  if (Reflection->isGLValue())
+    Reflection = ImplicitCastExpr::Create(Context, Reflection->getType(), 
+                                          CK_LValueToRValue, Reflection, 
+                                          nullptr, VK_RValue);
 
   return new (Context) CXXInjectionStmt(Loc, Reflection);
 }
-
-#if 0
-/// Generates an injection for a copy of the reflected declaration.
-StmtResult Sema::ActOnReflectionInjection(SourceLocation ArrowLoc, Expr *Ref) {
-  llvm_unreachable("not implemented");
-  if (Ref->isTypeDependent() || Ref->isValueDependent())
-    return new (Context) CXXInjectionStmt(ArrowLoc, Ref);
-
-  Decl *D = GetReflectedDeclaration(Ref);
-  if (!D)
-    return StmtError();
-
-  // Build the expression `ref.mods` to extract the list of local modifications
-  // during evaluation. Apply an lvalue to rvalue conversion so we get the
-  // referenced value during evaluation.
-
-  SourceLocation Loc = Ref->getLocStart();
-  UnqualifiedId Id;
-  Id.setIdentifier(PP.getIdentifierInfo("mods"), Loc);
-  CXXScopeSpec SS;
-  ExprResult Mods = ActOnMemberAccessExpr(getCurScope(), Ref, Loc, tok::period, 
-                                          SS, SourceLocation(), Id, nullptr);
-  Mods = ImplicitCastExpr::Create(Context, Ref->getType(), CK_LValueToRValue,
-                                  Mods.get(), nullptr, VK_RValue);
-
-  CXXInjectionStmt *IS = new (Context) CXXInjectionStmt(ArrowLoc, Ref, D);
-
-  // FIXME: This is not sufficient to solve the problem. We need to evaluate
-  // the expression, get the APValue and attach *those* modifications to the
-  // expression -- kind of like captured references (hint: reuse captures).
-
-  if (Mods.isUsable())
-    IS->setModifications(Mods.get());
-
-  return IS;
-}
-#endif
 
 /// An injection declaration injects its fragment members at this point
 /// in the program. 
@@ -640,20 +767,27 @@ bool Sema::InjectReflectedDeclaration(SourceLocation POI, InjectionInfo &II) {
 }
 
 static bool
-ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II, 
-               const CXXInjectionStmt *IS) {
-#if 0
-   switch (IS->getInjectionKind()) {
-    case CXXInjectionStmt::BlockFragment:
-      return SemaRef.InjectBlockStatements(POI, II);
-    case CXXInjectionStmt::ClassFragment:
-      return SemaRef.InjectClassMembers(POI, II);
-    case CXXInjectionStmt::NamespaceFragment:
-      return SemaRef.InjectNamespaceMembers(POI, II);
-    case CXXInjectionStmt::ReflectedDecl:
-      return SemaRef.InjectReflectedDeclaration(POI, II);
+ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
+  // Dig the reflection type out of the class.
+  CXXRecordDecl *Class = II.ReflectionType->getAsCXXRecordDecl();
+  if (Class->isFragment()) {
+    assert(Class->getNumBases() == 1 && "invalid injection");
+    CXXBaseSpecifier &Base = *Class->bases_begin();
+    Class = Base.getType()->getAsCXXRecordDecl();
+
+    // FIXME: Extract captured variables so we can apply them in the
+    // injection. Right?
   }
-#endif
+  QualType ReflectionTy = SemaRef.Context.getTagDeclType(Class);
+
+  // NOTE: This should be guaranteed not to fail.  
+  Sema::ReflectedConstruct Reflection = 
+      SemaRef.EvaluateReflection(ReflectionTy, POI);
+
+  // FIXME: Unpack modification traits. 
+
+  // FIXME: Actually inject source code members.
+
   return true;
 }
 
@@ -666,8 +800,7 @@ bool Sema::ApplySourceCodeModifications(SourceLocation POI,
                                    SmallVectorImpl<InjectionInfo> &Injections) {
   bool Ok = true;
   for (InjectionInfo &II : Injections) {
-    const CXXInjectionStmt *IS = dyn_cast<CXXInjectionStmt>(II.Injection);
-    Ok &= ApplyInjection(*this, POI, II, IS);
+    Ok &= ApplyInjection(*this, POI, II);
   }
   return Ok;
 }
@@ -686,7 +819,6 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
                           CXXRecordDecl *Final,
                           SmallVectorImpl<Decl *> &Fields) {
   
-
   CXXRecordDecl *Def = Meta->getDefinition();
 
   // Recursively inject base classes.

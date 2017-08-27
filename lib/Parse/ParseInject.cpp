@@ -216,6 +216,8 @@ ExprResult Parser::ParseCXXFragmentExpression() {
 ///   injection-statement:
 ///     '__generate' reflection ';'
 ///     '__generate' fragment ';'
+///
+/// Note that the statement parser will collect the trailing semicolon.
 StmtResult Parser::ParseCXXInjectionStatement() {
   assert(Tok.is(tok::kw___generate) && "expected __generate");;
   SourceLocation Loc = ConsumeToken();
@@ -244,9 +246,6 @@ StmtResult Parser::ParseCXXInjectionStatement() {
   }
   if (Reflection.isInvalid())
     return StmtResult();
-
-  // FIXME: Save the semicolon?
-  ExpectAndConsumeSemi(diag::err_expected_semi_after_fragment);
 
   return Actions.ActOnCXXInjectionStmt(Loc, Reflection.get());
 }

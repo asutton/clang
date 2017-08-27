@@ -8442,10 +8442,8 @@ public:
     static ReflectionPair Explode(std::uintptr_t N);
   };
 
-  /// \brief True if T is the type of a reflection.
   bool isReflectionType(QualType T);
-
-  /// \brief Get the reflected construct from the expression E.
+  ReflectedConstruct EvaluateReflection(QualType T, SourceLocation Loc);
   ReflectedConstruct EvaluateReflection(Expr *E);
 
   /// \brief Get the reflected declaration from E, or emit an error.

@@ -56,6 +56,8 @@ enum reflection_kind {
 // The base class of all reflected entities.
 template<reflection_t X, reflection_kind K>
 struct entity {
+  static constexpr reflection_t reflection_value = X;
+
   static constexpr void print() {
     return __reflect_print(X);
   }
@@ -125,8 +127,6 @@ struct entity {
 // The base class of all declarations.
 template<reflection_t X, reflection_kind K>
 struct decl : entity<X, K> {
-  static constexpr reflection_t node = X;
-
   static constexpr unsigned packed_traits = __reflect_traits(X);
 
   static constexpr decl_traits traits() {

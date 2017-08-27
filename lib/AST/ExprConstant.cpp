@@ -4052,43 +4052,27 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     llvm_unreachable("Pack expansion not implemented");
   }
 
-  case Stmt::CXXInjectionStmtClass: {
+  case Stmt::CXXInjectionStmtClass: {    
     if (Info.checkingPotentialConstantExpression())
       return ESR_Succeeded;
 
-#if 0
-    // Register the injection as an effect.
-    if (Info.EvalStatus.Injections) {
-      const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(S);
-
-      Info.EvalStatus.Injections->emplace_back(IS);
-      Expr::InjectionInfo &II = Info.EvalStatus.Injections->back();
-
-      if (IS->isReflectedDeclaration()) {
-        // There is no capture for a reflected declaration, but the value
-        // of the expression might have local modifications.        
-        if (const Expr *E = IS->getModifications()) {
-         APValue Val;
-          if (!Evaluate(Val, Info, E))
-           return ESR_Failed;
-          II.Modifications = Val;
-        }
-      }
-
-      // Evaluate capture values.
-      II.CaptureValues.resize(IS->getNumCaptures());
-      for (std::size_t I = 0; I < IS->getNumCaptures(); ++I) {
-        const Expr *E = IS->getCapture(I);
-        if (!Evaluate(II.CaptureValues[I], Info, E))
-          return ESR_Failed;
-      }
-
-      return ESR_Succeeded;
+    if (!Info.EvalStatus.Injections) {
+      // Only metapgrams can produce injection results.
+      Info.CCEDiag(S->getLocStart(), diag::note_injection_outside_constexpr_decl);
+      return ESR_Failed;
     }
-#endif
 
-    Info.CCEDiag(S->getLocStart(), diag::note_injection_outside_constexpr_decl);
-    return ESR_Failed;
+    // Compute the value of the injected reflection and its modifications.
+    const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(S);
+    Expr *Reflection = IS->getReflection();
+    APValue Result;
+    if (!Evaluate(Result, Info, Reflection))
+      return ESR_Failed;
+
+    // Queue the injection as a side effect.
+    Expr::InjectionInfo II {Reflection->getType(), Result};
+    Info.EvalStatus.Injections->push_back(II);
+    return ESR_Succeeded;
   }
 
   case Stmt::SwitchStmtClass:
@@ -4762,8 +4746,6 @@ public:
         } else
           FD = LambdaCallOp;
       }
-
-      
     } else
       return Error(E);
 
@@ -4943,8 +4925,14 @@ public:
   }
 
   bool VisitCXXFragmentExpr(const CXXFragmentExpr *E) {
+    if (Info.checkingPotentialConstantExpression())
+      return false;
+    
+    // Just evaluate the initializer to produce an object of fragment type.
+    // This will also evaluate the captured variables since they are
+    // arguments to the constructor call.
     APValue Result;
-    if (!Evaluate(Result, Info, E->getReflection()))
+    if (!Evaluate(Result, Info, E->getInitializer())) 
       return false;
     return DerivedSuccess(Result, E);
   }
@@ -5207,6 +5195,7 @@ bool LValueExprEvaluator::VisitVarDecl(const Expr *E, const VarDecl *VD) {
       return true;
     }
   }
+
   CallStackFrame *Frame = nullptr;
   if (VD->hasLocalStorage() && Info.CurrentCall->Index > 1) {
     // Only if a local variable was declared in the function currently being
@@ -9898,8 +9887,9 @@ public:
   // Try adding the injection for future processing.
   bool RegisterInjection(const Expr *E) {
     if (Info.EvalStatus.Injections) {
-      Info.EvalStatus.Injections->push_back(const_cast<Expr *>(E));
-      return true;
+      llvm_unreachable("not implemented");
+      // Info.EvalStatus.Injections->push_back(const_cast<Expr *>(E));
+      // return true;
     }
     return Error(E, diag::note_modification_outside_constexpr_decl);
   }

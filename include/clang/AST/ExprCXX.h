@@ -4522,8 +4522,9 @@ public:
 /// introduces the fragment containing struct { int x; } and the reflection of
 /// that entity.
 ///
-/// FIXME: The destination context might actually be a block statement; as in:
-/// inject a statement at the end of this block.
+/// FIXME: The destination context might actually be a block statement. As in:
+/// inject a statement at the end of this block. We don't currently support
+/// that.
 class CXXFragmentExpr : public Expr {
   /// \brief The location of the introducer token.
   SourceLocation IntroLoc;
@@ -4531,27 +4532,28 @@ class CXXFragmentExpr : public Expr {
   /// \brief The number of captured declarations.
   std::size_t NumCaptures;
 
-  /// \brief The references to captured variables. These are all DeclRefExprs.
-  /// We store these instead of their underlying declarations to facilitate
-  /// their evaluation during injection. In particular, the evaluation of an
-  /// injection statement entails the substitution of the values of captured
-  /// declarations into placeholders.
+  /// \brief The reference expressions to local variables. These are all 
+  /// DeclRefExprs. We store these instead of their underlying declarations 
+  /// to facilitate their evaluation during injection. 
+  ///
+  /// TODO: These are implicitly stored as operands to the initializer.
+  /// Do we need to store them twice?
   Expr** Captures;
 
   /// The fragment introduced by the expression.
   CXXFragmentDecl *Fragment;
 
   /// The expression that constructs the reflection value for the fragment.
-  Stmt *Reflection;
+  Stmt *Init;
 
 public:
   CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc, QualType T,
                   ArrayRef<Expr *> Captures, CXXFragmentDecl *Fragment, 
-                  Expr *Reflection);
+                  Expr *Init);
 
   explicit CXXFragmentExpr(EmptyShell Empty)
       : Expr(CXXFragmentExprClass, Empty), IntroLoc(), NumCaptures(), 
-        Captures(), Fragment() {}
+        Captures(), Init() {}
 
   /// \brief The number of captured declarations.
   std::size_t getNumCaptures() const { return NumCaptures; }
@@ -4573,17 +4575,15 @@ public:
   /// \brief The introduced fragment.
   CXXFragmentDecl *getFragment() const { return Fragment; }
 
-  /// \brief The subexpression computing the reflection.
-  Expr *getReflection() const { 
-    return reinterpret_cast<Expr *>(Reflection); 
-  }
+  /// \brief The expression that value initializes an object of this type.
+  Expr *getInitializer() const { return reinterpret_cast<Expr *>(Init); }
 
   child_range children() { 
-    return child_range(&Reflection, &Reflection + 1);
+    return child_range(&Init, &Init + 1);
   }
 
   const_child_range children() const { 
-    return const_child_range(&Reflection, &Reflection + 1);
+    return const_child_range(&Init, &Init + 1);
   }
 
   /// \brief The location of the introducer token.

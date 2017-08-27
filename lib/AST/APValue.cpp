@@ -309,23 +309,26 @@ void APValue::dump(raw_ostream &OS) const {
     }
     return;
   case Struct:
-    OS << "Struct ";
+    OS << "(Struct ";
     if (unsigned N = getStructNumBases()) {
-      OS << " bases: ";
+      OS << " [bases: ";
       getStructBase(0).dump(OS);
       for (unsigned I = 1; I != N; ++I) {
         OS << ", ";
         getStructBase(I).dump(OS);
       }
+      OS << ']';
     }
     if (unsigned N = getStructNumFields()) {
-      OS << " fields: ";
+      OS << " [fields: ";
       getStructField(0).dump(OS);
       for (unsigned I = 1; I != N; ++I) {
         OS << ", ";
         getStructField(I).dump(OS);
       }
+      OS << ']';
     }
+    OS << ')';
     return;
   case Union:
     OS << "Union: ";

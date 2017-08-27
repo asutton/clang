@@ -538,17 +538,12 @@ public:
   /// This is a set containing the values of captured declarations and the
   /// expression into which those will be substituted.
   struct InjectionInfo {
-    InjectionInfo(const Stmt *S) : Injection(S) { }
+    /// The type of the expression being injected. This determines how the
+    /// result will be interpreted semantically.
+    QualType ReflectionType;
 
-    /// A structure of bitfields indicating which modifications are to
-    /// be enabled.
-    APValue Modifications;
-
-    /// \brief the values computed for captured expressions.
-    SmallVector<APValue, 4> CaptureValues;
-
-    /// \brief The statement to which those values will be applied.
-    const Stmt *Injection;
+    /// The actual value computed by the injection statement.
+    APValue ReflectionValue;
   };
 
   /// EvalStatus is a struct with detailed info about an evaluation in progress.

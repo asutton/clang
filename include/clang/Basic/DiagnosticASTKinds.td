@@ -157,9 +157,9 @@ def note_constexpr_baa_value_insufficient_alignment : Note<
 
 // [Meta] Compile-time code generation
 def err_user_defined_error : Error<"%0">;
-def note_modification_outside_constexpr_decl : Error<
+def note_modification_outside_constexpr_decl : Note<
   "declaration modification outside of a constexpr-declaration">;
-def note_injection_outside_constexpr_decl : Error<
+def note_injection_outside_constexpr_decl : Note<
   "code injection outside of a constexpr-declaration">;
 
 def warn_integer_constant_overflow : Warning<
