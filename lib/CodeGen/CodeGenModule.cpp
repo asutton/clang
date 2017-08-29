@@ -3777,10 +3777,6 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
   if (D->getDeclContext() && D->getDeclContext()->isDependentContext())
     return;
 
-  // Ignore injectable declarations.
-  if (D->isInjectable())
-    return;
-
   switch (D->getKind()) {
   case Decl::CXXConversion:
   case Decl::CXXMethod:

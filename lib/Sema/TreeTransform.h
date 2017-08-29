@@ -13094,9 +13094,7 @@ TreeTransform<Derived>::TransformLocalVarDecl(VarDecl *D) {
   transformedLocalDecl(D, R);
 
   // FIXME: Propagate all variable properties.
-  R->setStorageClass(D->getStorageClass());
   R->setConstexpr(D->isConstexpr());
-  R->setInjectable(D->isInjectable());
 
   TransformAttributes(D, R);
 
@@ -13153,9 +13151,6 @@ TreeTransform<Derived>::TransformLocalParmVarDecl(ParmVarDecl *D) {
   // FIXME: Are there any attributes we need to set?
   // FIXME: Transform the default argument also.
   
-  // FIXME: Can parameters be injectable?
-  R->setInjectable(D->isInjectable());
-
   return R;
 }
 
@@ -13183,7 +13178,6 @@ TreeTransform<Derived>::TransformLocalFunctionDecl(FunctionDecl *D) {
   R->setAccess(D->getAccess());
   if (D->isDeletedAsWritten())
     getSema().SetDeclDeleted(R, R->getLocation());
-  R->setInjectable(D->isInjectable());
 
   TransformAttributes(D, R);
 
@@ -13220,7 +13214,6 @@ TreeTransform<Derived>::TransformLocalFieldDecl(FieldDecl *D) {
 
   R->setAccess(D->getAccess());
   R->setImplicit(D->isImplicit());
-  R->setInjectable(D->isInjectable());
 
   Owner->addDecl(R);
 
@@ -13241,7 +13234,6 @@ TreeTransform<Derived>::TransformLocalAccessSpecDecl(AccessSpecDecl *D) {
   Decl *R = AccessSpecDecl::Create(getSema().Context, D->getAccess(), Owner,
                                    D->getAccessSpecifierLoc(),
                                    D->getColonLoc());
-  R->setInjectable(D->isInjectable());
   Owner->addDecl(R);
   return R;
 }
@@ -13274,7 +13266,6 @@ TreeTransform<Derived>::TransformLocalCXXRecordDecl(CXXRecordDecl *D) {
 
   R->setImplicit(D->isImplicit());
   R->setFragment(D->isFragment());
-  R->setInjectable(D->isInjectable());
   R->setReferenced(D->isReferenced());
   Owner->addDecl(R);
 
@@ -13349,7 +13340,6 @@ TreeTransform<Derived>::TransformLocalCXXMethodDecl(CXXMethodDecl *D) {
     R->setVirtualAsWritten(true);
   if (D->isPure())
     SemaRef.CheckPureMethod(R, SourceRange());
-  R->setInjectable(D->isInjectable());
 
   TransformAttributes(D, R);
 
@@ -13381,8 +13371,6 @@ TreeTransform<Derived>::TransformLocalConstexprDecl(ConstexprDecl *D) {
   unsigned ScopeFlags; // Unused
   Decl *New = getSema().ActOnConstexprDecl(getSema().getCurScope(),
                                            D->getLocation(), ScopeFlags);
-
-  New->setInjectable(D->isInjectable());
 
   getSema().ActOnStartConstexprDecl(getSema().getCurScope(), New);
   StmtResult S = TransformStmt(D->getBody());
@@ -13420,7 +13408,6 @@ TreeTransform<Derived>::TransformLocalTypedefNameDecl(TypedefNameDecl *D) {
 
   TransformAttributes(D, R);
 
-  R->setInjectable(D->isInjectable());
   R->setInvalidDecl(Invalid);
 
   // If the old typedef was the name for linkage purposes of an anonymous

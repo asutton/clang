@@ -207,6 +207,7 @@ static std::string getStaticDeclName(CodeGenModule &CGM, const VarDecl &D) {
 
 llvm::Constant *CodeGenModule::getOrCreateStaticVarDecl(
     const VarDecl &D, llvm::GlobalValue::LinkageTypes Linkage) {
+
   // In general, we don't always emit static var decls once before we reference
   // them. It is possible to reference them before emitting the function that
   // contains them, and it is possible to emit the containing function multiple

@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TreeTransform.h"
+#include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
@@ -832,8 +833,15 @@ ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
     SourceCodeInjector Injector(SemaRef, InjectionDC);
     Injector.AddSubstitution(Injection, Injectee);
     Injector.AddReplacements(Injection->getDeclContext(), Class, Captures);
-    
-    llvm::outs() << "READY TO GO\n";
+
+    for (Decl *D : InjectionDC->decls()) {
+      Decl *R = Injector.TransformLocalDecl(D);
+      if (!R)
+        Injectee->setInvalidDecl(true);
+      
+      if (isa<NamespaceDecl>(Injection))
+        SemaRef.Consumer.HandleTopLevelDecl(DeclGroupRef(R));
+    }
 
   } else {
     // Inject the fragment itself.
