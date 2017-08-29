@@ -7287,19 +7287,21 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
   }
 
   // Create the fragment wrapper.
-  Decl *F = getSema().ActOnStartCXXFragment(E->getLocStart(), Captures);
+  SourceLocation Loc = E->getExprLoc();
+  Decl *F = getSema().ActOnStartCXXFragment(nullptr, Loc, Captures);
 
-  // Rebuild nested declaration.
+  // Rebuild nested declaration. Make sure the fragment is in context
+  // for the subsequent transformation (note: no scope).
   Sema::ContextRAII Switch(getSema(), cast<CXXFragmentDecl>(F));
   Decl *D = getDerived().TransformLocalDecl(E->getFragment());
   if (!D)
     return ExprError();
 
-  F = getSema().ActOnFinishCXXFragment(F, D);
+  F = getSema().ActOnFinishCXXFragment(nullptr, F, D);
   if (!F)
     return ExprError();
 
-  return getDerived().RebuildCXXFragmentExpr(E->getLocStart(), Captures, F);
+  return getDerived().RebuildCXXFragmentExpr(Loc, Captures, F);
 }
 
 // Objective-C Statements.

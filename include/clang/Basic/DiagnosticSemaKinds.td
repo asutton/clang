@@ -9026,6 +9026,8 @@ def note_use_loop_expansion : Note<
   "did you mean to use 'for...'">;  
 def err_reflection_not_a_type : Error<
   "expression does not reflect a type">;
+def err_reflection_not_a_decl : Error<
+  "expression does not reflect a declaration">;
 def err_reflection_not_a_typed_decl : Error<
   "expression does not reflect a typed declaration">;
 def err_reflection_not_a_value : Error<
@@ -9040,6 +9042,9 @@ def err_idexpr_not_an_identifer : Error<
   "declaration name %0 not is not an identifier">;
 
 // source code injection
+def err_invalid_injection_fragment : Error<
+  "cannot inject a %select{class|namespace}0 fragment into "
+  "%select{a function|a class|a namespace|global scope}1">;
 def err_invalid_injection : Error<
   "injecting %select{statements|class members|namespace members}0 into "
   "%select{a function|a class|a namespace|global scope}1">;

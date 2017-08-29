@@ -76,6 +76,14 @@ Sema::ReflectedConstruct Sema::EvaluateReflection(QualType T,
     return ReflectedConstruct();
   }
 
+  if (Class->isFragment()) {
+    // If the class is a fragment, then uses its base type for the
+    // evaluation.
+    assert(Class->getNumBases() == 1 && "invalid injection");
+    CXXBaseSpecifier &Base = *Class->bases_begin();
+    Class = Base.getType()->getAsCXXRecordDecl();
+  }
+
   // If the type is a reflection...
   if (!isa<ClassTemplateSpecializationDecl>(Class)) {
     ValueReflectionError(*this, Loc);

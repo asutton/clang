@@ -114,17 +114,21 @@ void Sema::ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures) {
 
 /// Called at the start of a source code fragment to establish the fragment
 /// declaration and placeholders. 
-Decl *Sema::ActOnStartCXXFragment(SourceLocation Loc, 
+Decl *Sema::ActOnStartCXXFragment(Scope* S, SourceLocation Loc, 
                                   SmallVectorImpl<Expr *> &Captures) {
   CXXFragmentDecl *Fragment = CXXFragmentDecl::Create(Context, CurContext, Loc);
   CreatePlaceholders(*this, Fragment, Captures);
+  if (S)
+    PushDeclContext(S, Fragment);
   return Fragment;
 }
 
 // Binds the content the fragment declaration. Returns the updated fragment.
-Decl *Sema::ActOnFinishCXXFragment(Decl *Fragment, Decl *Content) {
+Decl *Sema::ActOnFinishCXXFragment(Scope *S, Decl *Fragment, Decl *Content) {
   CXXFragmentDecl *FD = cast<CXXFragmentDecl>(Fragment);
   FD->setContent(Content);
+  if (S)
+    PopDeclContext();
   return FD;
 }
 
@@ -399,15 +403,24 @@ static bool InvalidInjection(Sema& S, SourceLocation POI, int SK,
 class SourceCodeInjector : public TreeTransform<SourceCodeInjector> {
   using BaseType = TreeTransform<SourceCodeInjector>;
 
-  // The fragment containing the code to be injected. This is either
-  // a function (for block injection), a class (for class injection), or a
-  // namespace (for namespace injection).
-  DeclContext *Fragment;
+  // The parent context of declarations being injected. When injecting a
+  // fragment, this is the fragment entity (not the fragment). When injecting 
+  // an existing declaration, this is the parent DC of that declaration.
+  //
+  // This is used to help determine which declarations are members of the
+  // current injection and which are not.
+  //
+  // FIXME: This probably doesn't work the way I'd like for non-fragments.
+  // Perhaps it would not be unreasonable to have a fragment injector and
+  // a non-fragment injector.
+  DeclContext *SourceDC;
 
 public:
   SourceCodeInjector(Sema &SemaRef, DeclContext *DC)
-      : TreeTransform<SourceCodeInjector>(SemaRef), Fragment(DC), 
-        ReplacePlaceholders(false) {}
+      : TreeTransform<SourceCodeInjector>(SemaRef), SourceDC(DC), 
+        ReplacePlaceholders(false) {
+    assert(!isa<CXXFragmentDecl>(DC) && "Source context cannot be a fragment");        
+  }
 
   // When true, declaration references to placeholders are substituted with
   // a constant expression denoting the captured value of the placeholder
@@ -424,6 +437,41 @@ public:
   // Replace the declaration From (in the injected statement or members) with
   // the declaration To (derived from the target context).
   void AddSubstitution(Decl *From, Decl *To) { transformedLocalDecl(From, To); }
+
+  // Register a set of values that will be used to replace the placeholders
+  // declared within the fragment.
+  void AddReplacements(DeclContext *Fragment, 
+                       CXXRecordDecl *ReflectionClass, 
+                       ArrayRef<APValue> Captures) {
+    assert(isa<CXXFragmentDecl>(Fragment) && "Context is not a fragment");
+    auto FieldIter = ReflectionClass->field_begin();
+    auto PlaceIter = Fragment->decls_begin();
+    for (std::size_t I = 0; I < Captures.size(); ++I) {
+      const APValue &Val = Captures[I];
+      QualType Ty = (*FieldIter)->getType();
+
+      // TODO: Verify that this is actually a placeholder.
+      Decl *Placeholder = *PlaceIter;
+
+      // Register the reference replacement.
+      TypedValue TV { Ty, Val };
+      PlaceholderValues[Placeholder] = TV;
+
+      ++PlaceIter;
+      ++FieldIter;
+    }
+
+    // // Build a mapping from each placeholder to its corresponding value.
+    // for (std::size_t I = 0; I < Captures.size(); ++I) {
+    //   assert(Iter != End && "ran out of declarations");
+    //   const Expr *Capture = S->getCapture(I);
+    //   ++Iter;
+    // }
+
+    // Indicate the declrefs to placeholders should be replaced.
+    ReplacePlaceholders = true;
+  }
+
 
   /// Transform the given type. Strip reflected types from the result so that
   /// the resulting AST no longer contains references to a reflected name.
@@ -460,7 +508,7 @@ public:
     // FIXME: Is there a better way to determine whether a declaration belongs
     // to a fragment?
     DeclContext *DC = D->getDeclContext();
-    while (DC && DC != Fragment)
+    while (DC && DC != SourceDC)
       DC = DC->getParent();
     if (DC)
       return TransformLocalDecl(Loc, D);
@@ -533,36 +581,7 @@ bool Sema::InjectBlockStatements(SourceLocation POI, InjectionInfo &II) {
   return true;
 }
 
-#if 0
-// The first NumCapture declarations in the [Iter, End) are placeholders.
-// Replace those with new declarations of the form:
-//
-//    constexpr t n = value
-//
-// where t, n and value are: the type of the original capture, the name
-// of the captured variable, and the computed value of that expression at
-// the time the capture was evaluated.
-//
-// Note that the replacement variables are not added to the output class.
-// They are replaced during transformation.
-static void ReplacePlaceholders(Sema &SemaRef, SourceCodeInjector &Injector,
-                                const CXXInjectionStmt *S, 
-                                const SmallVectorImpl<APValue> &Values, 
-                                DeclContext::decl_iterator &Iter, 
-                                DeclContext::decl_iterator End) {
-  // Build a mapping from each placeholder to its corresponding value.
-  for (std::size_t I = 0; I < S->getNumCaptures(); ++I) {
-    assert(Iter != End && "ran out of declarations");
-    const Expr *Capture = S->getCapture(I);
-    TypedValue TV { Capture->getType(), Values[I] };
-    Injector.PlaceholderValues[*Iter] = TV;
-    ++Iter;
-  }
 
-  // Stop seeing placeholders in subsequent transformations.
-  Injector.ReplacePlaceholders = true;
-}
-#endif
 
 // Called after a metaprogram has been evaluated to apply the resulting
 // injections as source code.
@@ -768,25 +787,59 @@ bool Sema::InjectReflectedDeclaration(SourceLocation POI, InjectionInfo &II) {
 
 static bool
 ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
-  // Dig the reflection type out of the class.
+  // Get the declaration to be injected. 
+  Sema::ReflectedConstruct Construct = 
+      SemaRef.EvaluateReflection(II.ReflectionType, POI);
+  Decl *Injection = nullptr;
+  if (Type *T = Construct.getAsType()) {
+    if (CXXRecordDecl *Class = T->getAsCXXRecordDecl())
+      Injection = Class;
+  } else
+    Injection = Construct.getAsDeclaration();
+  if (!Injection) {
+    SemaRef.Diag(POI, diag::err_reflection_not_a_decl);
+    return false;
+  }
+
+  // Dig values of captured values for instantiation.
   CXXRecordDecl *Class = II.ReflectionType->getAsCXXRecordDecl();
   if (Class->isFragment()) {
-    assert(Class->getNumBases() == 1 && "invalid injection");
-    CXXBaseSpecifier &Base = *Class->bases_begin();
-    Class = Base.getType()->getAsCXXRecordDecl();
+    assert(isa<CXXRecordDecl>(Injection) || isa<NamespaceDecl>(Injection));
+    DeclContext *InjectionDC = Decl::castToDeclContext(Injection);
 
-    // FIXME: Extract captured variables so we can apply them in the
-    // injection. Right?
+    // The kind of fragment must (broadly) match the kind of context.
+    DeclContext *CurrentDC = SemaRef.CurContext;
+    if (isa<CXXRecordDecl>(Injection) && !CurrentDC->isRecord()) {
+      InvalidInjection(SemaRef, POI, 1, CurrentDC);
+      return false;
+    } else if (isa<NamespaceDecl>(Injection) && !CurrentDC->isFileContext()) {
+      InvalidInjection(SemaRef, POI, 0, CurrentDC);
+      return false;
+    }
+    Decl *Injectee = Decl::castFromDeclContext(CurrentDC);
+
+    // Extract the captured values for replacement.
+    unsigned NumCaptures = II.ReflectionValue.getStructNumFields();
+    ArrayRef<APValue> Captures(None);
+    if (NumCaptures) {
+      APValue *First = &II.ReflectionValue.getStructField(0);
+      Captures = ArrayRef<APValue>(First, NumCaptures);
+    }
+
+    // Inject the members of the fragment.
+    //
+    // FIXME: Do modification traits apply to fragments? Probably not?
+    SourceCodeInjector Injector(SemaRef, InjectionDC);
+    Injector.AddSubstitution(Injection, Injectee);
+    Injector.AddReplacements(Injection->getDeclContext(), Class, Captures);
+    
+    llvm::outs() << "READY TO GO\n";
+
+  } else {
+    // Inject the fragment itself.
+
+    // FIXME: Unpack and apply the modification traits.
   }
-  QualType ReflectionTy = SemaRef.Context.getTagDeclType(Class);
-
-  // NOTE: This should be guaranteed not to fail.  
-  Sema::ReflectedConstruct Reflection = 
-      SemaRef.EvaluateReflection(ReflectionTy, POI);
-
-  // FIXME: Unpack modification traits. 
-
-  // FIXME: Actually inject source code members.
 
   return true;
 }

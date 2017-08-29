@@ -8524,9 +8524,9 @@ public:
   bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
 
   void ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures);
-  Decl *ActOnStartCXXFragment(SourceLocation Loc, 
+  Decl *ActOnStartCXXFragment(Scope *S, SourceLocation Loc, 
                               SmallVectorImpl<Expr *> &Captures);
-  Decl *ActOnFinishCXXFragment(Decl *Fragment, Decl *Content);
+  Decl *ActOnFinishCXXFragment(Scope *S, Decl *Fragment, Decl *Content);
   ExprResult ActOnCXXFragmentExpr(SourceLocation Loc, 
                                   SmallVectorImpl<Expr *> &Captures,
                                   Decl *Fragment);

@@ -40,7 +40,9 @@ Decl* Parser::ParseCXXFragment(SmallVectorImpl<Expr *> &Captures) {
 
   // Start the fragment. The fragment is finished in one of the 
   // ParseCXX*Fragment functions.
-  Decl *Fragment = Actions.ActOnStartCXXFragment(Tok.getLocation(), Captures);
+  Decl *Fragment = Actions.ActOnStartCXXFragment(getCurScope(), 
+                                                 Tok.getLocation(), 
+                                                 Captures);
 
   switch (Tok.getKind()) {
     case tok::kw_namespace:
@@ -119,7 +121,7 @@ Decl *Parser::ParseNamespaceFragment(Decl *Fragment) {
   if (Ns->isInvalidDecl())
     return nullptr;
   
-  return Actions.ActOnFinishCXXFragment(Fragment, Ns);
+  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Ns);
 }
 
 /// Parses a class fragment. Returns the completed fragment declaration.
@@ -166,7 +168,7 @@ Decl *Parser::ParseClassFragment(Decl *Fragment) {
   if (Class->isInvalidDecl())
     return nullptr;
   
-  return Actions.ActOnFinishCXXFragment(Fragment, Class);
+  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Class);
 }
 
 /// Parses an enum fragment. Returns the completed fragment declaration.
