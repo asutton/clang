@@ -447,6 +447,7 @@ public:
   /// where
   Decl* TransformLocalDecl(SourceLocation Loc, Decl *D);
 
+  Decl *TransformLocalEmptyDecl(EmptyDecl *D);
   Decl *TransformLocalVarDecl(VarDecl *D);
   Decl *TransformLocalParmVarDecl(ParmVarDecl *D);
   Decl *TransformLocalFunctionDecl(FunctionDecl *D);
@@ -13032,6 +13033,8 @@ TreeTransform<Derived>::TransformLocalDecl(SourceLocation Loc, Decl *D) {
   switch (D->getKind()) {
   default:
     break;
+  case Decl::Empty:
+    return getDerived().TransformLocalEmptyDecl(cast<EmptyDecl>(D));
   case Decl::Var:
     return getDerived().TransformLocalVarDecl(cast<VarDecl>(D));
   case Decl::ParmVar:
@@ -13043,11 +13046,9 @@ TreeTransform<Derived>::TransformLocalDecl(SourceLocation Loc, Decl *D) {
   case Decl::CXXMethod:
     return getDerived().TransformLocalCXXMethodDecl(cast<CXXMethodDecl>(D));
   case Decl::CXXConstructor:
-    return getDerived().
-      TransformLocalCXXConstructorDecl(cast<CXXConstructorDecl>(D));
+    return getDerived(). TransformLocalCXXConstructorDecl(cast<CXXConstructorDecl>(D));
   case Decl::CXXDestructor:
-    return getDerived().
-      TransformLocalCXXDestructorDecl(cast<CXXDestructorDecl>(D));
+    return getDerived(). TransformLocalCXXDestructorDecl(cast<CXXDestructorDecl>(D));
   case Decl::Field:
     return getDerived().TransformLocalFieldDecl(cast<FieldDecl>(D));
   case Decl::AccessSpec:
@@ -13072,6 +13073,14 @@ TransformTypeCanonical(Transformer &X, DeclWithTypeInfo *D) {
   QualType T = X.getSema().Context.getCanonicalType(TSI->getType());
   TypeLoc TL = TSI->getTypeLoc();
   return X.getSema().Context.getTrivialTypeSourceInfo(T, TL.getLocStart());
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalEmptyDecl(EmptyDecl *D) {
+  return EmptyDecl::Create(getSema().Context, 
+                           getSema().CurContext, 
+                           D->getLocation());
 }
 
 template<typename Derived>
