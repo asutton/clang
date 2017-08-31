@@ -7284,21 +7284,37 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
     ExprResult New = getDerived().TransformExpr(Old);
     if (New.isInvalid())
       return ExprError();
+    // Transforming an expression ignores implicit casts, so we have to 
+    // rebuild that here.
+    New = ImplicitCastExpr::Create(SemaRef.Context, New.get()->getType(), 
+                                    CK_LValueToRValue, New.get(), nullptr, 
+                                    VK_RValue);
     Captures.push_back(New.get());
   }
 
-  // Create the fragment wrapper.
+  // Create the fragment declaration and its placeholders.
   SourceLocation Loc = E->getExprLoc();
   Decl *F = getSema().ActOnStartCXXFragment(nullptr, Loc, Captures);
+  CXXFragmentDecl *NewFragment = cast<CXXFragmentDecl>(F);
+  CXXFragmentDecl *OldFragment = cast<CXXFragmentDecl>(E->getFragment());
 
-  // Rebuild nested declaration. Make sure the fragment is in context
-  // for the subsequent transformation (note: no scope).
-  Sema::ContextRAII Switch(getSema(), cast<CXXFragmentDecl>(F));
-  Decl *D = getDerived().TransformLocalDecl(E->getFragment());
-  if (!D)
+  // Create a mapping from old placeholders to new.
+  auto OldIter = OldFragment->decls_begin();
+  auto NewIter = NewFragment->decls_begin();
+  while (NewIter != NewFragment->decls_end()) {
+    transformedLocalDecl(*OldIter, *NewIter);
+    ++OldIter;
+    ++NewIter;
+  }
+
+  // Clone the underlying declaration.
+  Sema::ContextRAII Switch(getSema(), NewFragment);
+  Decl *OldContent = OldFragment->getContent();
+  Decl *NewContent = getDerived().TransformLocalDecl(OldContent);
+  if (!NewContent)
     return ExprError();
 
-  F = getSema().ActOnFinishCXXFragment(nullptr, F, D);
+  F = getSema().ActOnFinishCXXFragment(nullptr, NewFragment, NewContent);
   if (!F)
     return ExprError();
 
@@ -13467,7 +13483,6 @@ TreeTransform<Derived>::TransformLocalTemplateTemplateParmDecl(
                                                   TemplateTemplateParmDecl *D) {
   llvm_unreachable("not implemented");
 }
-
 
 template<typename Derived>/// Transform each parameter of a function.
 void 

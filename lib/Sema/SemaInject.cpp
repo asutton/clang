@@ -842,7 +842,6 @@ ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
       if (isa<NamespaceDecl>(Injection))
         SemaRef.Consumer.HandleTopLevelDecl(DeclGroupRef(R));
     }
-
   } else {
     // Inject the fragment itself.
 
