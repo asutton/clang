@@ -72,6 +72,7 @@ Sema::ReflectedConstruct Sema::EvaluateReflection(QualType T,
   T = Context.getCanonicalType(T);
   CXXRecordDecl *Class = T->getAsCXXRecordDecl();
   if (!Class) {
+    T->dump();
     ValueReflectionError(*this, Loc);
     return ReflectedConstruct();
   }
@@ -118,8 +119,18 @@ Sema::ReflectedConstruct Sema::EvaluateReflection(QualType T,
 }
 
 Sema::ReflectedConstruct Sema::EvaluateReflection(Expr *E) {
+  if (E->getType() == Context.getIntPtrType()) {
+    // If this looks like an encoded integer, then evaluate it as such.
+    //
+    // FIXME: This is *really* unsafe.
+    Expr::EvalResult Result;
+    if (!E->EvaluateAsRValue(Result, Context)) {
+      Diag(E->getExprLoc(), diag::err_expr_not_ice) << 1;
+      return ReflectedConstruct();
+    }
+    return ReflectedConstruct(Result.Val.getInt().getExtValue());
+  }
   return EvaluateReflection(E->getType(), E->getExprLoc());
-
 }
 
 /// Returns a reflected declaration or nullptr if E does not reflect a
