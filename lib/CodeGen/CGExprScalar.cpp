@@ -422,6 +422,12 @@ public:
     return CGF.EmitTrapCall(llvm::Intrinsic::trap);
   }
 
+  Value *VisitCXXConstantExpr(CXXConstantExpr *E) {
+    if (E->getType()->isVoidType())
+      return nullptr;
+    return CGF.CGM.EmitConstantValue(E->getValue(), E->getType());
+  }
+
   // l-values.
   Value *VisitDeclRefExpr(DeclRefExpr *E) {
     if (CodeGenFunction::ConstantEmission result = CGF.tryEmitAsConstant(E)) {

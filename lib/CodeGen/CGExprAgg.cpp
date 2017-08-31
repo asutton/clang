@@ -123,6 +123,8 @@ public:
     return Visit(E->getReplacement());
   }
 
+  void VisitCXXConstantExpr(CXXConstantExpr *E);
+
   // l-values.
   void VisitDeclRefExpr(DeclRefExpr *E) {
     // For aggregates, we should always be able to emit the variable
@@ -1424,6 +1426,15 @@ void AggExprEmitter::VisitDesignatedInitUpdateExpr(DesignatedInitUpdateExpr *E) 
   LValue DestLV = CGF.MakeAddrLValue(Dest.getAddress(), E->getType());
   EmitInitializationToLValue(E->getBase(), DestLV);
   VisitInitListExpr(E->getUpdater());
+}
+
+void AggExprEmitter::VisitCXXConstantExpr(CXXConstantExpr *E) {
+  // Create a temporary for the value and store the constant.
+  llvm::Constant *Const = CGF.CGM.EmitConstantValue(E->getValue(), E->getType());
+  Address Addr = CGF.CreateMemTemp(E->getType());
+  CGF.InitTempAlloca(Addr, Const);
+  RValue RV = RValue::getAggregate(Addr);
+  EmitFinalDestCopy(E->getType(), RV);
 }
 
 //===----------------------------------------------------------------------===//
