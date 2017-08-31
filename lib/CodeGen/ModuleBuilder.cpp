@@ -173,6 +173,14 @@ namespace {
 
       assert(D->doesThisDeclarationHaveABody());
 
+      // Don't act on functions defined within a fragment.
+      DeclContext *DC = D->getDeclContext();
+      while (DC) {
+        if (isa<CXXFragmentDecl>(DC))
+          return;
+        DC = DC->getParent();
+      }
+
       // Handle friend functions.
       if (D->isInIdentifierNamespace(Decl::IDNS_OrdinaryFriend)) {
         if (Ctx->getTargetInfo().getCXXABI().isMicrosoft()
