@@ -453,6 +453,7 @@ public:
   Decl *TransformLocalFunctionDecl(FunctionDecl *D);
   Decl *TransformLocalCXXRecordDecl(CXXRecordDecl *D);
   Decl *TransformLocalCXXMethodDecl(CXXMethodDecl *D);
+  Decl *TransformLocalCXXMethodDecl(CXXMethodDecl *D, bool MakeStatic);
   Decl *TransformLocalCXXConstructorDecl(CXXConstructorDecl *D);
   Decl *TransformLocalCXXDestructorDecl(CXXDestructorDecl *D);
   Decl *TransformLocalFieldDecl(FieldDecl *D);
@@ -13249,6 +13250,7 @@ TreeTransform<Derived>::TransformLocalFieldDecl(FieldDecl *D) {
     else
       R->setInClassInitializer(NewInit.get());
   }
+
   return R;
 }
 
@@ -13322,6 +13324,13 @@ TreeTransform<Derived>::TransformLocalCXXRecordDecl(CXXRecordDecl *D) {
 template<typename Derived>
 Decl *
 TreeTransform<Derived>::TransformLocalCXXMethodDecl(CXXMethodDecl *D) {
+  return TransformLocalCXXMethodDecl(D, false);
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalCXXMethodDecl(CXXMethodDecl *D, 
+                                                    bool MakeStatic) {
   DeclarationNameInfo NameInfo 
     = getDerived().TransformDeclarationNameInfo(D->getNameInfo());
 
@@ -13333,23 +13342,26 @@ TreeTransform<Derived>::TransformLocalCXXMethodDecl(CXXMethodDecl *D) {
   // FIXME: Handle conversion operators.
   CXXRecordDecl *CurClass = cast<CXXRecordDecl>(getSema().CurContext);
   CXXMethodDecl *R;
-  if (auto *Ctor = dyn_cast<CXXConstructorDecl>(D))
+  if (auto *Ctor = dyn_cast<CXXConstructorDecl>(D)) {
     R = CXXConstructorDecl::Create(getSema().Context, CurClass, 
                                    D->getLocation(), NameInfo, TSI->getType(), 
                                    TSI, Ctor->isExplicitSpecified(),
                                    Ctor->isInlineSpecified(),
                                    /*isImplicitlyDeclared=*/false,
                                    Ctor->isConstexpr(), InheritedConstructor());
-  else if (isa<CXXDestructorDecl>(D))
+  } else if (isa<CXXDestructorDecl>(D)) {
     R = CXXDestructorDecl::Create(getSema().Context, CurClass, D->getLocation(),
                                   NameInfo, TSI->getType(), TSI,
                                   D->isInlineSpecified(),
                                   /*isImplicitlyDeclared=*/false);
-  else
+  } else {
+    // Potentially override the storage class.
+    StorageClass SC = MakeStatic ? SC_Static : D->getStorageClass();
     R = CXXMethodDecl::Create(getSema().Context, CurClass, D->getLocStart(),
                               NameInfo, TSI->getType(), TSI, 
-                              D->getStorageClass(), D->isInlineSpecified(),
-                              D->isConstexpr(), D->getLocEnd());
+                              SC, D->isInlineSpecified(), D->isConstexpr(), 
+                              D->getLocEnd());
+  }
   transformedLocalDecl(D, R);
 
   TransformAttributes(D, R);

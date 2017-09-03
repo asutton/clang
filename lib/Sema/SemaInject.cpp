@@ -416,11 +416,19 @@ class SourceCodeInjector : public TreeTransform<SourceCodeInjector> {
   // a non-fragment injector.
   DeclContext *SourceDC;
 
+  /// The context into which an injection is made.
+  ///
+  /// This is used to determine if a declaration reference needs to be 
+  /// re-resolved, or if it can simply be reused. When the a declaration
+  /// is not a member of the target DC...
+  DeclContext *DestDC;
+
 public:
-  SourceCodeInjector(Sema &SemaRef, DeclContext *DC)
-      : TreeTransform<SourceCodeInjector>(SemaRef), SourceDC(DC), 
+  SourceCodeInjector(Sema &SemaRef, DeclContext *Src, DeclContext *Dst)
+      : TreeTransform<SourceCodeInjector>(SemaRef), SourceDC(Src), DestDC(Dst),
         ReplacePlaceholders(false) {
-    assert(!isa<CXXFragmentDecl>(DC) && "Source context cannot be a fragment");        
+    assert((SourceDC ? !isa<CXXFragmentDecl>(SourceDC) : true) && 
+           "Source context cannot be a fragment");        
   }
 
   // When true, declaration references to placeholders are substituted with
@@ -462,17 +470,9 @@ public:
       ++FieldIter;
     }
 
-    // // Build a mapping from each placeholder to its corresponding value.
-    // for (std::size_t I = 0; I < Captures.size(); ++I) {
-    //   assert(Iter != End && "ran out of declarations");
-    //   const Expr *Capture = S->getCapture(I);
-    //   ++Iter;
-    // }
-
     // Indicate the declrefs to placeholders should be replaced.
     ReplacePlaceholders = true;
   }
-
 
   /// Transform the given type. Strip reflected types from the result so that
   /// the resulting AST no longer contains references to a reflected name.
@@ -500,21 +500,154 @@ public:
     // Search for a previous transformation. We need to do this before the
     // context search below.
     auto Known = TransformedLocalDecls.find(D);
-    if (Known != TransformedLocalDecls.end()) {
+    if (Known != TransformedLocalDecls.end()) 
       return Known->second;
+
+    // Only perform a local transformation if D is a member of the current
+    // injection. Note that SourceDC is set only if it can have members.
+    if (SourceDC) {
+      DeclContext *DC = D->getDeclContext();
+      while (DC && DC != SourceDC)
+        DC = DC->getParent();
+      if (DC)
+        return TransformLocalDecl(Loc, D);
     }
 
-    // Don't transform declarations that are not local to the source context.
-    //
-    // FIXME: Is there a better way to determine whether a declaration belongs
-    // to a fragment?
-    DeclContext *DC = D->getDeclContext();
-    while (DC && DC != SourceDC)
-      DC = DC->getParent();
-    if (DC)
-      return TransformLocalDecl(Loc, D);
-    else
+    if (SourceDC->getParent() == D->getDeclContext()) {
+      // This is a reference to a member of the source's enclosing context.
+      // For example, it could be a reference to a member variable. For example,
+      // consider injecting S::f into a new class (call it T).
+      //
+      //    struct S {
+      //      int a;
+      //      int f() { return a; }
+      //    };
+      //
+      // The SourceDC is S::f and the non-member injection is S::a. Because
+      // both have the same context, we should interpret this as a request
+      // to look up a corresponding member in T (which may fail). In this
+      // case, the lookup would be required. If not, we'd have captured a
+      // reference to a member variable of another class -- not good.
+      //
+      // Unfortunately, this is ambiguous. Consider:
+      //
+      //    struct S {
+      //      static int a;
+      //      int f() { return a; }
+      //    };
+      //
+      // In this case, both the captured name and new lookup could be valid
+      // interpretations of the injection.
+      //
+      // For now, we always perform a lookup. If lookup fails and D was static
+      // then preserve the original declaration (see LookupDecl).
+      return LookupDecl(D);
+    }
+
+    return D;
+  }
+
+  Decl *InjectDecl(Decl *D)
+  {
+    return TransformLocalDecl(D);
+  }
+
+  // Try to find a declaration in the current context having the same
+  // identifier as D.
+  //
+  // FIXME: If we find multiple declarations, perform overload resolution.
+  Decl *LookupDecl(Decl *D) {
+    NamedDecl *ND = dyn_cast<NamedDecl>(D);
+    if (!ND)
       return D;
+
+    DeclarationName Name = ND->getDeclName();
+    DeclContext::lookup_result Lookup = DestDC->lookup(Name);
+
+    if (Lookup.empty()) {
+      // If lookup fails, but the original declaration was a static member of
+      // a class (or a global variable or function in a namespace) then return
+      // the original declaration. Otherwise, return nullptr, indicating
+      // an error.
+      int BadCapture = -1;
+      if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(ND)) {
+        if (!Method->isInstance())
+          BadCapture = 0;
+      } else if (FieldDecl *Field = dyn_cast<FieldDecl>(ND)) {
+        BadCapture = 1;
+      }
+      if (BadCapture >= 0)
+        getSema().Diag(D->getLocation(), diag::err_capture_non_static) 
+            << BadCapture;
+      return D;
+    }
+
+    if (Lookup.size() > 1)
+      llvm_unreachable("Injection requires overload resolution");
+
+    return Lookup.front();
+  }
+
+  Decl* RewriteAsStaticMember(Decl *D) {
+    if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(D))
+      return RewriteAsStaticMemberFunction(Method);
+    if (FieldDecl *Field = dyn_cast<FieldDecl>(D))
+      return RewriteAsStaticMemberVariable(Field);
+    else
+      return InjectDecl(D);
+  }
+
+  // Given a field, rewrite this as a static member.
+  Decl *RewriteAsStaticMemberVariable(FieldDecl *D) {
+    DeclContext *Owner = getSema().CurContext;
+
+    DeclarationNameInfo DNI(D->getDeclName(), D->getLocation());
+    DNI = TransformDeclarationNameInfo(DNI);
+    if (!DNI.getName())
+      return nullptr;
+
+    TypeSourceInfo *TSI = TransformTypeCanonical(getDerived(), D);
+    if (!TSI)
+      return nullptr;
+    
+    VarDecl *R 
+      = VarDecl::Create(getSema().Context, Owner, D->getLocation(), DNI,
+                        TSI->getType(), TSI, SC_Static);
+    transformedLocalDecl(D, R);
+
+    // FIXME: What attributes of a field can we really transform here.
+    // Note that the library should actually apply some limitations (e.g.,
+    // don't make mutable members static?).
+    Owner->addDecl(R);
+
+    // Transform the initializer and associated properties of the definition.
+    //
+    // FIXME: I'm pretty sure that initializer semantics are not being
+    // translated incorrectly.
+    if (Expr *OldInit = D->getInClassInitializer()) {
+      getSema().PushExpressionEvaluationContext(
+        Sema::ExpressionEvaluationContext::ConstantEvaluated, D);
+
+      ExprResult Init;
+      {
+        Sema::ContextRAII SwitchContext(SemaRef, R->getDeclContext());
+        Init = getDerived().TransformInitializer(OldInit, false);
+      }
+      if (!Init.isInvalid()) {
+        if (Init.get())
+          getSema().AddInitializerToDecl(R, Init.get(), false);
+        else
+          getSema().ActOnUninitializedDecl(R);
+      } else
+        R->setInvalidDecl();
+    }
+
+    return R;
+  }
+
+  // Given a field, rewrite this as a static member.
+  Decl *RewriteAsStaticMemberFunction(CXXMethodDecl *D) {
+    return TransformLocalCXXMethodDecl(D, true);
   }
 
   // If we have a substitution for the template parameter type apply
@@ -786,6 +919,211 @@ bool Sema::InjectReflectedDeclaration(SourceLocation POI, InjectionInfo &II) {
   return true;
 }
 
+// FIXME: This is not particularly good. It would be nice if we didn't have
+// to search for ths field.s
+static const APValue& DigOutModifications(const APValue &V, QualType T,
+                                          DeclarationName N)
+{
+  CXXRecordDecl *Class = T->getAsCXXRecordDecl();
+  assert(Class && "Expected a class");
+
+  auto Lookup = Class->lookup(N);
+  assert(Lookup.size() <= 1 && "Ambiguous reference to traits");
+  if (Lookup.empty()) {
+    // If we can't find the field, work up recursively.
+    if (Class->getNumBases()) {
+      CXXBaseSpecifier &B = *Class->bases().begin();
+      return DigOutModifications(V.getStructBase(0), B.getType(), N);
+    }
+  }
+  FieldDecl *F = cast<FieldDecl>(Lookup.front());
+  return V.getStructField(F->getFieldIndex());
+}
+
+/// Inject a fragment into the current context.
+static bool
+InjectFragment(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II,
+               Decl *Injection) {
+  assert(isa<CXXRecordDecl>(Injection) || isa<NamespaceDecl>(Injection));
+  DeclContext *InjectionDC = Decl::castToDeclContext(Injection);
+
+  // The kind of fragment must (broadly) match the kind of context.
+  DeclContext *CurrentDC = SemaRef.CurContext;
+  if (isa<CXXRecordDecl>(Injection) && !CurrentDC->isRecord()) {
+    InvalidInjection(SemaRef, POI, 1, CurrentDC);
+    return false;
+  } else if (isa<NamespaceDecl>(Injection) && !CurrentDC->isFileContext()) {
+    InvalidInjection(SemaRef, POI, 0, CurrentDC);
+    return false;
+  }
+  Decl *Injectee = Decl::castFromDeclContext(CurrentDC);
+
+  // Extract the captured values for replacement.
+  unsigned NumCaptures = II.ReflectionValue.getStructNumFields();
+  ArrayRef<APValue> Captures(None);
+  if (NumCaptures) {
+    APValue *First = &II.ReflectionValue.getStructField(0);
+    Captures = ArrayRef<APValue>(First, NumCaptures);
+  }
+
+  CXXRecordDecl *Class = II.ReflectionType->getAsCXXRecordDecl();
+
+  // Inject the members of the fragment. Note that the source DC is the
+  // nested content, not the fragment declaration.
+  //
+  // FIXME: Do modification traits apply to fragments? Probably not?
+  SourceCodeInjector Injector(SemaRef, InjectionDC, CurrentDC);
+  Injector.AddSubstitution(Injection, Injectee);
+  Injector.AddReplacements(Injection->getDeclContext(), Class, Captures);
+
+  for (Decl *D : InjectionDC->decls()) {
+    Decl *R = Injector.InjectDecl(D);
+    if (!R)
+      Injectee->setInvalidDecl(true);
+    
+    if (isa<NamespaceDecl>(Injection))
+      SemaRef.Consumer.HandleTopLevelDecl(DeclGroupRef(R));
+  }
+
+  return Injectee->isInvalidDecl();
+}
+
+static bool isClassMemberDecl(const Decl* D) {
+  return isa<FieldDecl>(D) || isa<CXXMethodDecl>(D);
+}
+
+/// Clone a declaration into the current context.
+static bool
+CloneDeclaration(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II, 
+                 Decl *Injection) {
+  // The kind of fragment must (broadly) match the kind of context.
+  DeclContext *InjectionDC = Injection->getDeclContext();
+  DeclContext *CurrentDC = SemaRef.CurContext;
+  if (InjectionDC->isRecord() && !CurrentDC->isRecord()) {
+    InvalidInjection(SemaRef, POI, 1, CurrentDC);
+    return false;
+  } else if (InjectionDC->isFileContext() && !CurrentDC->isFileContext()) {
+    InvalidInjection(SemaRef, POI, 0, CurrentDC);
+    return false;
+  }
+  Decl *Injectee = Decl::castFromDeclContext(CurrentDC);
+
+  // The source DC is either the injection itself or null. This means that
+  // any non-members of the injection will be looked up/handled differently.
+  DeclContext *SourceDC = dyn_cast<DeclContext>(Injection);
+  
+  // Configure the injection. Within the injected declaration, references
+  // to the enclosing context are replaced with references to the destination
+  // context.
+  SourceCodeInjector Injector(SemaRef, SourceDC, CurrentDC);
+  Injector.AddSubstitution(Decl::castFromDeclContext(InjectionDC), Injectee);
+
+  // Unpack the modification traits so we can apply them after generating
+  // the declaration.
+  DeclarationName TraitsName(&SemaRef.Context.Idents.get("mods"));
+  const APValue &Traits = DigOutModifications(II.ReflectionValue,
+                                              II.ReflectionType, 
+                                              TraitsName);
+
+  enum StorageMod { NoStorage, Static, Automatic, ThreadLocal };
+  enum AccessMod { NoAccess, Public, Private, Protected, Default };
+
+  // linkage_kind new_linkage : 2;
+  // access_kind new_access : 2;
+  // storage_kind new_storage : 2;
+  // bool make_constexpr : 1;
+  // bool make_virtual : 1;
+  // bool make_pure : 1;
+  AccessMod Access = (AccessMod)Traits.getStructField(1).getInt().getExtValue();
+  StorageMod Storage = (StorageMod)Traits.getStructField(2).getInt().getExtValue();
+  bool Constexpr = Traits.getStructField(3).getInt().getExtValue();
+  bool Virtual = Traits.getStructField(4).getInt().getExtValue();
+  bool Pure = Traits.getStructField(5).getInt().getExtValue();
+
+  assert(Storage != Automatic && "Can't make declarations automatic");
+  assert(Storage != ThreadLocal && "Thread local storage not implemented");
+
+  // Build the declaration. If there was a request to make field static, we'll
+  // need to build a new declaration.
+  Decl* Result;
+  if (isClassMemberDecl(Injection) && Storage == Static)
+    Result = Injector.RewriteAsStaticMember(Injection);
+  else
+    Result = Injector.InjectDecl(Injection);
+  if (!Result) {
+    Injectee->setInvalidDecl(true);
+    return false;
+  }
+
+  // Update access specifiers.
+  if (Access) {
+    if (!Result->getDeclContext()->isRecord()) {
+      SemaRef.Diag(POI, diag::err_modifies_mem_spec_of_non_member) << 0;
+      return false;
+    }
+    switch (Access) {
+    case Public:
+      Result->setAccess(AS_public);
+      break;
+    case Private:
+      Result->setAccess(AS_private);
+      break;
+    case Protected:
+      Result->setAccess(AS_protected);
+      break;
+    default:
+      llvm_unreachable("Invalid access specifier");
+    }
+  }
+
+  if (Constexpr) {
+    if (VarDecl *Var = dyn_cast<VarDecl>(Result)) {
+      Var->setConstexpr(true);
+      SemaRef.CheckVariableDeclarationType(Var);
+    }
+    else if (isa<CXXDestructorDecl>(Result)) {
+      SemaRef.Diag(POI, diag::err_declration_cannot_be_made_constexpr);
+      return false;
+    }
+    else if (FunctionDecl *Fn = dyn_cast<FunctionDecl>(Result)) {
+      Var->setConstexpr(true);
+      SemaRef.CheckConstexprFunctionDecl(Fn);
+    } else {
+      // Non-members cannot be virtual.
+      SemaRef.Diag(POI, diag::err_virtual_non_function);
+      return false;
+    }
+  }
+
+  if (Virtual) {
+    if (!isa<CXXMethodDecl>(Result)) {
+      SemaRef.Diag(POI, diag::err_virtual_non_function);
+      return false;
+    }
+    
+    CXXMethodDecl *Method = cast<CXXMethodDecl>(Result);
+    Method->setVirtualAsWritten(true);
+  
+    if (Pure) {
+      // FIXME: Move pure checks up?
+      int Err = 0;
+      if (Method->isDefaulted()) Err = 2;
+      else if (Method->isDeleted()) Err = 3;
+      else if (Method->isDefined()) Err = 1;
+      if (Err) {
+        SemaRef.Diag(POI, diag::err_cannot_make_pure_virtual) << (Err - 1);
+        return false;
+      }
+      SemaRef.CheckPureMethod(Method, Method->getSourceRange());
+    }
+  }
+
+  // Finally, update the owning context.
+  Result->getDeclContext()->updateDecl(Result);
+
+  return Injectee->isInvalidDecl(); 
+}
+
 static bool
 ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
   // Get the declaration to be injected. 
@@ -803,52 +1141,15 @@ ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
   }
 
   // Dig values of captured values for instantiation.
+  //
+  // TODO: The semantics of these operations are sufficiently different that
+  // they may want different AST nodes. Consider adding a new abstract operation
+  // for cloning existing methods.
   CXXRecordDecl *Class = II.ReflectionType->getAsCXXRecordDecl();
-  if (Class->isFragment()) {
-    assert(isa<CXXRecordDecl>(Injection) || isa<NamespaceDecl>(Injection));
-    DeclContext *InjectionDC = Decl::castToDeclContext(Injection);
-
-    // The kind of fragment must (broadly) match the kind of context.
-    DeclContext *CurrentDC = SemaRef.CurContext;
-    if (isa<CXXRecordDecl>(Injection) && !CurrentDC->isRecord()) {
-      InvalidInjection(SemaRef, POI, 1, CurrentDC);
-      return false;
-    } else if (isa<NamespaceDecl>(Injection) && !CurrentDC->isFileContext()) {
-      InvalidInjection(SemaRef, POI, 0, CurrentDC);
-      return false;
-    }
-    Decl *Injectee = Decl::castFromDeclContext(CurrentDC);
-
-    // Extract the captured values for replacement.
-    unsigned NumCaptures = II.ReflectionValue.getStructNumFields();
-    ArrayRef<APValue> Captures(None);
-    if (NumCaptures) {
-      APValue *First = &II.ReflectionValue.getStructField(0);
-      Captures = ArrayRef<APValue>(First, NumCaptures);
-    }
-
-    // Inject the members of the fragment.
-    //
-    // FIXME: Do modification traits apply to fragments? Probably not?
-    SourceCodeInjector Injector(SemaRef, InjectionDC);
-    Injector.AddSubstitution(Injection, Injectee);
-    Injector.AddReplacements(Injection->getDeclContext(), Class, Captures);
-
-    for (Decl *D : InjectionDC->decls()) {
-      Decl *R = Injector.TransformLocalDecl(D);
-      if (!R)
-        Injectee->setInvalidDecl(true);
-      
-      if (isa<NamespaceDecl>(Injection))
-        SemaRef.Consumer.HandleTopLevelDecl(DeclGroupRef(R));
-    }
-  } else {
-    // Inject the fragment itself.
-
-    // FIXME: Unpack and apply the modification traits.
-  }
-
-  return true;
+  if (Class->isFragment())
+    return InjectFragment(SemaRef, POI, II, Injection);
+  else
+    return CloneDeclaration(SemaRef, POI, II, Injection);
 }
 
 /// Inject a sequence of source code fragments or modification requests
@@ -896,7 +1197,7 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
   // FIXME: The point of instantiation/injection is incorrect.
   InstantiatingTemplate Inst(*this, Final->getLocation());
   ContextRAII SavedContext(*this, Final);
-  SourceCodeInjector Injector(*this, Def);
+  SourceCodeInjector Injector(*this, Def, nullptr);
 
   // When injecting replace references to the metaclass definition with
   // references to the final class.

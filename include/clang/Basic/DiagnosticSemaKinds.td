@@ -9048,6 +9048,8 @@ def err_invalid_injection_fragment : Error<
 def err_invalid_injection : Error<
   "injecting %select{statements|class members|namespace members}0 into "
   "%select{a function|a class|a namespace|global scope}1">;
+def err_capture_non_static : Error<
+  "injection captures a non-static member %select{function|variable}0">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {
