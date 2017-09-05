@@ -25,6 +25,13 @@
 using namespace clang;
 using namespace sema;
 
+static bool InjectFragment(Sema &SemaRef, SourceLocation POI, 
+                           QualType ReflectionTy, const APValue &ReflectionVal, 
+                           Decl *Injection, SmallVectorImpl<Decl *> &Decls);
+static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI, 
+                            QualType ReflectionTy, const APValue &ReflectionVal, 
+                            Decl *Injection, SmallVectorImpl<Decl *> &Decls);
+
 // Find variables to capture in the given scope. 
 static void FindCapturesInScope(Sema &SemaRef, Scope *S, 
                                 SmallVectorImpl<VarDecl *> &Vars) {
@@ -47,8 +54,8 @@ static void FindCaptures(Sema &SemaRef, Scope *S, FunctionDecl *Fn,
     FindCapturesInScope(SemaRef, S, Vars);
     S = S->getParent();
   }
-  assert(S && "Walked off of scope stack");
-  FindCapturesInScope(SemaRef, S, Vars);
+  if (S)
+    FindCapturesInScope(SemaRef, S, Vars);
 }
 
 /// Construct a reference to each captured value and force an r-value
@@ -337,33 +344,58 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) {
 Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc, 
                                                  Expr *Reflection) { 
   if (Reflection->isTypeDependent() || Reflection->isValueDependent()) {
-    // Preserve the declaration until instantiation.
     Decl *D = CXXInjectionDecl::Create(Context, CurContext, Loc, Reflection);
     return DeclGroupPtrTy::make(DeclGroupRef(D));
   }
 
-  // The operand must be a reflection.
-  QualType T = Reflection->getType();
-  if (!isReflectionType(T)) {
-    Diag(Reflection->getExprLoc(), diag::err_not_a_reflection);
+  // Force an lvalue-to-rvalue conversion.
+  if (Reflection->isGLValue())
+    Reflection = ImplicitCastExpr::Create(Context, Reflection->getType(), 
+                                          CK_LValueToRValue, Reflection, 
+                                          nullptr, VK_RValue);
+
+  // Get the declaration or fragment to be injected. 
+  QualType Ty = Reflection->getType();
+  Sema::ReflectedConstruct Construct = EvaluateReflection(Ty, Loc);
+  Decl *Injection = nullptr;
+  if (Type *T = Construct.getAsType()) {
+    if (CXXRecordDecl *Class = T->getAsCXXRecordDecl())
+      Injection = Class;
+  } else
+    Injection = Construct.getAsDeclaration();
+  if (!Injection) {
+    Diag(Loc, diag::err_reflection_not_a_decl);
     return DeclGroupPtrTy();
   }
 
-  // FIXME: C must either be a class or namespace. Inject members as
-  // appropriate.
-  ReflectedConstruct C = EvaluateReflection(Reflection);
-  if (Decl *D = C.getAsDeclaration()) {
-    llvm::outs() << "DECL FRAGMENT\n";
-    D->dump();
-  } else if (Type *T = C.getAsType()) {
-    llvm::outs() << "TYPE FRAGMENT\n";
-    D->dump();
-  } else {
+  // Evaluate the injection.
+  SmallVector<PartialDiagnosticAt, 8> Notes;
+  Expr::EvalResult Result;
+  Result.Diag = &Notes;
+  if (!Reflection->EvaluateAsRValue(Result, Context)) {
+    // FIXME: This is not the right error.
     Diag(Reflection->getExprLoc(), diag::err_not_a_reflection);
+    if (!Notes.empty()) {
+      for (const PartialDiagnosticAt &Note : Notes)
+        Diag(Note.first, Note.second);
+    }
     return DeclGroupPtrTy();
   }
-  
-  return DeclGroupPtrTy();
+
+  // Apply the corresponding operation. And accumulate the resulting
+  // declarations.
+  SmallVector<Decl *, 8> Decls;
+  CXXRecordDecl *Class = Ty->getAsCXXRecordDecl();
+  if (Class->isFragment()) {
+    if (!InjectFragment(*this, Loc, Ty, Result.Val, Injection, Decls))
+      return DeclGroupPtrTy();
+  } else {
+    if (!CopyDeclaration(*this, Loc, Ty, Result.Val, Injection, Decls))
+      return DeclGroupPtrTy();
+  }
+
+  DeclGroup *DG = DeclGroup::Create(Context, Decls.data(), Decls.size());
+  return DeclGroupPtrTy::make(DeclGroupRef(DG));
 }
 
 
@@ -783,146 +815,10 @@ bool Sema::InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II) {
   return true;
 }
 
-bool Sema::InjectReflectedDeclaration(SourceLocation POI, InjectionInfo &II) {
-#if 0
-  // Note that we are instantiating a template.
-  InstantiatingTemplate Inst(*this, POI);
-  
-  const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(II.Injection);
-  Decl *D = IS->getReflectedDeclaration();
-
-  // Determine if we can actually apply the injection. In general, the contexts
-  // of the injected declaration and the current context must be the same.
-  //
-  // FIXME: This is probably overly protective; it isn't entirely unreasonable
-  // to think about injecting namespace members as static members of a class.
-  DeclContext *SourceDC = D->getDeclContext();
-  if (CurContext->isRecord() && !SourceDC->isRecord())
-    return InvalidInjection(*this, POI, 1, CurContext);
-  if (CurContext->isFileContext() && !SourceDC->isFileContext())
-    return InvalidInjection(*this, POI, 2, CurContext);
-
-  Decl *Source = Decl::castFromDeclContext(SourceDC);
-  Decl *Target = Decl::castFromDeclContext(CurContext);
-  SourceCodeInjector Injector(*this, SourceDC);
-  Injector.AddSubstitution(Source, Target);
-
-  // FIXME: Unify this with other reflection facilities.
-
-  enum StorageKind { NoStorage, Static, Automatic, ThreadLocal };
-  enum AccessKind { NoAccess, Public, Private, Protected, Default };
-
-  StorageKind Storage = {};
-  AccessKind Access = {};
-  bool Constexpr = false;
-  bool Virtual = false;
-  bool Pure = false;
-
-  APValue Mods = II.Modifications;
-  if (!Mods.isUninit()) {
-    // linkage_kind new_linkage : 2;
-    // access_kind new_access : 2;
-    // storage_kind new_storage : 2;
-    // bool make_constexpr : 1;
-    // bool make_virtual : 1;
-    // bool make_pure : 1;
-
-    Access = (AccessKind)Mods.getStructField(1).getInt().getExtValue();
-    Storage = (StorageKind)Mods.getStructField(2).getInt().getExtValue();
-    Constexpr = Mods.getStructField(3).getInt().getExtValue();
-    Virtual = Mods.getStructField(4).getInt().getExtValue();
-    Pure = Mods.getStructField(5).getInt().getExtValue();
-  }
-
-  assert(Storage != Automatic && "Can't make declarations automatic");
-  assert(Storage != ThreadLocal && "Thread local storage not implemented");
-
-  // Build the declaration.
-  Decl* Result;
-  if (isa<FieldDecl>(D) && (Storage == Static)) {
-    llvm_unreachable("Rebuild field as var");
-  } else {
-    // An unmodified declaration.
-    Result = Injector.TransformLocalDecl(D);
-    if (!Result) {
-      Target->setInvalidDecl(true);
-      return false;
-    }
-  }
-
-  // Update access specifiers.
-  if (Access) {
-    if (!Result->getDeclContext()->isRecord()) {
-      Diag(POI, diag::err_modifies_mem_spec_of_non_member) << 0;
-      return false;
-    }
-    switch (Access) {
-    case Public:
-      Result->setAccess(AS_public);
-      break;
-    case Private:
-      Result->setAccess(AS_private);
-      break;
-    case Protected:
-      Result->setAccess(AS_protected);
-      break;
-    default:
-      llvm_unreachable("Invalid access specifier");
-    }
-  }
-
-  if (Constexpr) {
-    if (VarDecl *Var = dyn_cast<VarDecl>(Result)) {
-      Var->setConstexpr(true);
-      CheckVariableDeclarationType(Var);
-    }
-    else if (isa<CXXDestructorDecl>(Result)) {
-      Diag(POI, diag::err_declration_cannot_be_made_constexpr);
-      return false;
-    }
-    else if (FunctionDecl *Fn = dyn_cast<FunctionDecl>(Result)) {
-      Var->setConstexpr(true);
-      CheckConstexprFunctionDecl(Fn);
-    } else {
-      // Non-members cannot be virtual.
-      Diag(POI, diag::err_virtual_non_function);
-      return false;
-    }
-  }
-
-  if (Virtual) {
-    if (!isa<CXXMethodDecl>(Result)) {
-      Diag(POI, diag::err_virtual_non_function);
-      return false;
-    }
-    
-    CXXMethodDecl *Method = cast<CXXMethodDecl>(Result);
-    Method->setVirtualAsWritten(true);
-  
-    if (Pure) {
-      // FIXME: Move pure checks up?
-      int Err = 0;
-      if (Method->isDefaulted()) Err = 2;
-      else if (Method->isDeleted()) Err = 3;
-      else if (Method->isDefined()) Err = 1;
-      if (Err) {
-        Diag(POI, diag::err_cannot_make_pure_virtual) << (Err - 1);
-        return false;
-      }
-      CheckPureMethod(Method, Method->getSourceRange());
-    }
-  }
-
-  // Finally, update the owning context.
-  Result->getDeclContext()->updateDecl(Result);
-#endif
-  return true;
-}
-
 // FIXME: This is not particularly good. It would be nice if we didn't have
 // to search for ths field.s
-static const APValue& DigOutModifications(const APValue &V, QualType T,
-                                          DeclarationName N)
+static const APValue& GetModifications(const APValue &V, QualType T,
+                                       DeclarationName N)
 {
   CXXRecordDecl *Class = T->getAsCXXRecordDecl();
   assert(Class && "Expected a class");
@@ -933,7 +829,7 @@ static const APValue& DigOutModifications(const APValue &V, QualType T,
     // If we can't find the field, work up recursively.
     if (Class->getNumBases()) {
       CXXBaseSpecifier &B = *Class->bases().begin();
-      return DigOutModifications(V.getStructBase(0), B.getType(), N);
+      return GetModifications(V.getStructBase(0), B.getType(), N);
     }
   }
   FieldDecl *F = cast<FieldDecl>(Lookup.front());
@@ -941,9 +837,9 @@ static const APValue& DigOutModifications(const APValue &V, QualType T,
 }
 
 /// Inject a fragment into the current context.
-static bool
-InjectFragment(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II,
-               Decl *Injection) {
+bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
+                    const APValue &ReflectionVal, Decl *Injection,
+                    SmallVectorImpl<Decl *> &Decls) {
   assert(isa<CXXRecordDecl>(Injection) || isa<NamespaceDecl>(Injection));
   DeclContext *InjectionDC = Decl::castToDeclContext(Injection);
 
@@ -959,14 +855,14 @@ InjectFragment(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II,
   Decl *Injectee = Decl::castFromDeclContext(CurrentDC);
 
   // Extract the captured values for replacement.
-  unsigned NumCaptures = II.ReflectionValue.getStructNumFields();
+  unsigned NumCaptures = ReflectionVal.getStructNumFields();
   ArrayRef<APValue> Captures(None);
   if (NumCaptures) {
-    APValue *First = &II.ReflectionValue.getStructField(0);
+    const APValue *First = &ReflectionVal.getStructField(0);
     Captures = ArrayRef<APValue>(First, NumCaptures);
   }
 
-  CXXRecordDecl *Class = II.ReflectionType->getAsCXXRecordDecl();
+  CXXRecordDecl *Class = ReflectionTy->getAsCXXRecordDecl();
 
   // Inject the members of the fragment. Note that the source DC is the
   // nested content, not the fragment declaration.
@@ -980,6 +876,8 @@ InjectFragment(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II,
     Decl *R = Injector.InjectDecl(D);
     if (!R)
       Injectee->setInvalidDecl(true);
+
+    Decls.push_back(R);
     
     if (isa<NamespaceDecl>(Injection))
       SemaRef.Consumer.HandleTopLevelDecl(DeclGroupRef(R));
@@ -993,9 +891,9 @@ static bool isClassMemberDecl(const Decl* D) {
 }
 
 /// Clone a declaration into the current context.
-static bool
-CloneDeclaration(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II, 
-                 Decl *Injection) {
+static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI, 
+                            QualType ReflectionTy, const APValue &ReflectionVal, 
+                            Decl *Injection, SmallVectorImpl<Decl *> &Decls) {
   // The kind of fragment must (broadly) match the kind of context.
   DeclContext *InjectionDC = Injection->getDeclContext();
   DeclContext *CurrentDC = SemaRef.CurContext;
@@ -1020,10 +918,8 @@ CloneDeclaration(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II,
 
   // Unpack the modification traits so we can apply them after generating
   // the declaration.
-  DeclarationName TraitsName(&SemaRef.Context.Idents.get("mods"));
-  const APValue &Traits = DigOutModifications(II.ReflectionValue,
-                                              II.ReflectionType, 
-                                              TraitsName);
+  DeclarationName Name(&SemaRef.Context.Idents.get("mods"));
+  const APValue &Traits = GetModifications(ReflectionVal, ReflectionTy, Name);
 
   enum StorageMod { NoStorage, Static, Automatic, ThreadLocal };
   enum AccessMod { NoAccess, Public, Private, Protected, Default };
@@ -1121,12 +1017,14 @@ CloneDeclaration(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II,
   // Finally, update the owning context.
   Result->getDeclContext()->updateDecl(Result);
 
+  Decls.push_back(Result);
+
   return Injectee->isInvalidDecl(); 
 }
 
 static bool
 ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
-  // Get the declaration to be injected. 
+  // Get the declaration or fragment to be injected. 
   Sema::ReflectedConstruct Construct = 
       SemaRef.EvaluateReflection(II.ReflectionType, POI);
   Decl *Injection = nullptr;
@@ -1140,16 +1038,15 @@ ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
     return false;
   }
 
-  // Dig values of captured values for instantiation.
-  //
-  // TODO: The semantics of these operations are sufficiently different that
-  // they may want different AST nodes. Consider adding a new abstract operation
-  // for cloning existing methods.
-  CXXRecordDecl *Class = II.ReflectionType->getAsCXXRecordDecl();
+  // Apply the injection operation.
+  QualType Ty = II.ReflectionType;
+  const APValue &Val = II.ReflectionValue;
+  SmallVector<Decl *, 8> Decls;
+  CXXRecordDecl *Class = Ty->getAsCXXRecordDecl();
   if (Class->isFragment())
-    return InjectFragment(SemaRef, POI, II, Injection);
+    return InjectFragment(SemaRef, POI, Ty, Val, Injection, Decls);
   else
-    return CloneDeclaration(SemaRef, POI, II, Injection);
+    return CopyDeclaration(SemaRef, POI, Ty, Val, Injection, Decls);
 }
 
 /// Inject a sequence of source code fragments or modification requests
@@ -1160,9 +1057,8 @@ ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
 bool Sema::ApplySourceCodeModifications(SourceLocation POI, 
                                    SmallVectorImpl<InjectionInfo> &Injections) {
   bool Ok = true;
-  for (InjectionInfo &II : Injections) {
+  for (InjectionInfo &II : Injections)
     Ok &= ApplyInjection(*this, POI, II);
-  }
   return Ok;
 }
 

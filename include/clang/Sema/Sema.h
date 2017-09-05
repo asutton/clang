@@ -8548,7 +8548,6 @@ public:
   bool InjectBlockStatements(SourceLocation POI, InjectionInfo &II);
   bool InjectClassMembers(SourceLocation POI, InjectionInfo &II);
   bool InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II);
-  bool InjectReflectedDeclaration(SourceLocation POI, InjectionInfo &II);
 
   void ApplyMetaclass(MetaclassDecl *Meta, 
                       CXXRecordDecl *Proto, 
