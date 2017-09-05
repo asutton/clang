@@ -2548,20 +2548,19 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
                                  UsingLoc, DeclEnd, AS);
   }
 
+  // [Meta] injection-declaration
+  if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw___inject))
+    return ParseCXXInjectionDeclaration();
+
+  // [Meta] extension-declaration
+  if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw___extend))
+    return ParseCXXExtensionDeclaration();
+
   // [Meta] constexpr-declaration
   if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw_constexpr) &&
       NextToken().is(tok::l_brace))
     return ParseConstexprDeclaration();
 
-  // [Meta] injection-declaration
-  if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw___inject) &&
-      NextToken().is(tok::l_brace))
-    return ParseCXXInjectionDeclaration();
-
-  // [Meta] extension-declaration
-  if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw___extend) &&
-      NextToken().is(tok::l_brace))
-    return ParseCXXExtensionDeclaration();
 
   // Hold late-parsed attributes so we can attach a Decl to them later.
   LateParsedAttrList CommonLateParsedAttrs;

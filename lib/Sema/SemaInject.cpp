@@ -545,7 +545,7 @@ public:
         return TransformLocalDecl(Loc, D);
     }
 
-    if (SourceDC->getParent() == D->getDeclContext()) {
+    if (SourceDC && SourceDC->getParent() == D->getDeclContext()) {
       // This is a reference to a member of the source's enclosing context.
       // For example, it could be a reference to a member variable. For example,
       // consider injecting S::f into a new class (call it T).
