@@ -3963,6 +3963,15 @@ public:
 
   /// \brief The reflection.
   Expr *getReflection() const { return Reflection; }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXInjection; }
+  static DeclContext *castToDeclContext(const CXXInjectionDecl *D) {
+    return static_cast<DeclContext *>(const_cast<CXXInjectionDecl*>(D));
+  }
+  static CXXInjectionDecl *castFromDeclContext(const DeclContext *DC) {
+    return static_cast<CXXInjectionDecl *>(const_cast<DeclContext*>(DC));
+  }
 };
 
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier

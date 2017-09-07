@@ -172,8 +172,24 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation OpLoc, Expr *E) {
                      << Ovl->getSourceRange());
   }
 
-  if (!isa<DeclRefExpr>(E))
-    llvm_unreachable("Expression reflection not implemented");
+  if (!isa<DeclRefExpr>(E)) {
+    // We can get here when substituting through placeholders in a fragment.
+    // For example:
+    //
+    //    constexpr {
+    //      int n = 0;
+    //      __generate ... {
+    //        __inject $n;
+    //      };
+    //    }
+    //
+    // The fragment of __declare is a reflection whose operand refers to
+    // a placeholder. When we inject the fragment the name 'n' is replaced
+    // by a constant expression with n's value, not a reference to n. That's 
+    // an error -- you couldn't declare a value anyway.
+    Diag(E->getExprLoc(), diag::err_not_reflection);
+    return ExprError();
+  }
 
   // Build the reflection expression.
   return BuildDeclReflection(OpLoc, cast<DeclRefExpr>(E)->getDecl());

@@ -345,6 +345,7 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc,
                                                  Expr *Reflection) { 
   if (Reflection->isTypeDependent() || Reflection->isValueDependent()) {
     Decl *D = CXXInjectionDecl::Create(Context, CurContext, Loc, Reflection);
+    CurContext->addDecl(D);
     return DeclGroupPtrTy::make(DeclGroupRef(D));
   }
 
@@ -394,8 +395,14 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc,
       return DeclGroupPtrTy();
   }
 
-  DeclGroup *DG = DeclGroup::Create(Context, Decls.data(), Decls.size());
-  return DeclGroupPtrTy::make(DeclGroupRef(DG));
+  if (Decls.empty()) {
+    return DeclGroupPtrTy();
+  } else if (Decls.size() == 1) {
+    return DeclGroupPtrTy::make(DeclGroupRef(Decls.front()));
+  } else {
+    DeclGroup *DG = DeclGroup::Create(Context, Decls.data(), Decls.size());
+    return DeclGroupPtrTy::make(DeclGroupRef(DG));
+  }
 }
 
 
@@ -836,22 +843,44 @@ static const APValue& GetModifications(const APValue &V, QualType T,
   return V.getStructField(F->getFieldIndex());
 }
 
+static bool CheckInjectionContexts(Sema &SemaRef, SourceLocation POI,
+                                   DeclContext *Injection,
+                                   DeclContext *Injectee) {
+  if (Injection->isRecord() && !Injectee->isRecord()) {
+    InvalidInjection(SemaRef, POI, 1, Injectee);
+    return false;
+  } else if (Injection->isFileContext() && !Injectee->isFileContext()) {
+    InvalidInjection(SemaRef, POI, 0, Injectee);
+    return false;
+  }
+  return true;
+}
+
+static bool CheckInjectionKind(Sema &SemaRef, SourceLocation POI,
+                               Decl *Injection, DeclContext *Injectee) {
+  // Make sure that injection is marginally sane.
+  if (VarDecl *Var = dyn_cast<VarDecl>(Injection)) {
+    if (Var->hasLocalStorage() && !Injectee->isFunctionOrMethod()) {
+      SemaRef.Diag(POI, diag::err_injecting_local_into_invalid_scope)
+        << Injectee->isRecord();
+      return false;
+    }
+  }
+  return true;
+}
+
+
 /// Inject a fragment into the current context.
 bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
                     const APValue &ReflectionVal, Decl *Injection,
                     SmallVectorImpl<Decl *> &Decls) {
   assert(isa<CXXRecordDecl>(Injection) || isa<NamespaceDecl>(Injection));
   DeclContext *InjectionDC = Decl::castToDeclContext(Injection);
-
-  // The kind of fragment must (broadly) match the kind of context.
   DeclContext *CurrentDC = SemaRef.CurContext;
-  if (isa<CXXRecordDecl>(Injection) && !CurrentDC->isRecord()) {
-    InvalidInjection(SemaRef, POI, 1, CurrentDC);
+  
+  if (!CheckInjectionContexts(SemaRef, POI, InjectionDC, CurrentDC))
     return false;
-  } else if (isa<NamespaceDecl>(Injection) && !CurrentDC->isFileContext()) {
-    InvalidInjection(SemaRef, POI, 0, CurrentDC);
-    return false;
-  }
+
   Decl *Injectee = Decl::castFromDeclContext(CurrentDC);
 
   // Extract the captured values for replacement.
@@ -874,12 +903,15 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
 
   for (Decl *D : InjectionDC->decls()) {
     Decl *R = Injector.InjectDecl(D);
-    if (!R)
+    if (!R) {
       Injectee->setInvalidDecl(true);
-
+      continue;
+    }
     Decls.push_back(R);
     
-    if (isa<NamespaceDecl>(Injection))
+    // FIXME: This is probably not right. The notion of "top-level" corresponds
+    // roughly to LLVM's global definitions, not strictly TU-scoped entities.
+    if (isa<TranslationUnitDecl>(Injection))
       SemaRef.Consumer.HandleTopLevelDecl(DeclGroupRef(R));
   }
 
@@ -894,16 +926,15 @@ static bool isClassMemberDecl(const Decl* D) {
 static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI, 
                             QualType ReflectionTy, const APValue &ReflectionVal, 
                             Decl *Injection, SmallVectorImpl<Decl *> &Decls) {
-  // The kind of fragment must (broadly) match the kind of context.
   DeclContext *InjectionDC = Injection->getDeclContext();
   DeclContext *CurrentDC = SemaRef.CurContext;
-  if (InjectionDC->isRecord() && !CurrentDC->isRecord()) {
-    InvalidInjection(SemaRef, POI, 1, CurrentDC);
+
+  if (!CheckInjectionContexts(SemaRef, POI, InjectionDC, CurrentDC))
     return false;
-  } else if (InjectionDC->isFileContext() && !CurrentDC->isFileContext()) {
-    InvalidInjection(SemaRef, POI, 0, CurrentDC);
+
+  if (!CheckInjectionKind(SemaRef, POI, Injection, CurrentDC))
     return false;
-  }
+
   Decl *Injectee = Decl::castFromDeclContext(CurrentDC);
 
   // The source DC is either the injection itself or null. This means that

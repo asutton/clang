@@ -254,7 +254,7 @@ StmtResult Parser::ParseCXXInjectionStatement() {
 
 /// \brief Parse a C++ injection declaration.
 ///
-///   injection-statement:
+///   injection-declaration:
 ///     '__inject' reflection ';'
 ///     '__inject' fragment ';'
 ///
