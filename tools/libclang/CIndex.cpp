@@ -1732,6 +1732,10 @@ bool CursorVisitor::VisitInjectedClassNameTypeLoc(InjectedClassNameTypeLoc TL) {
   return Visit(MakeCursorTypeRef(TL.getDecl(), TL.getNameLoc(), TU));
 }
 
+bool CursorVisitor::VisitInjectedParmTypeLoc(InjectedParmTypeLoc TL) {
+  llvm_unreachable("unimplemented");
+}
+
 bool CursorVisitor::VisitAtomicTypeLoc(AtomicTypeLoc TL) {
   return Visit(TL.getValueLoc());
 }
@@ -5851,6 +5855,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::Metaclass: // FIXME: Is this right?
   case Decl::CXXFragment:
   case Decl::CXXInjection:
+  case Decl::CXXInjectedParm:
     return C;
 
   // Declaration kinds that don't make any sense here, but are

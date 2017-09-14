@@ -3974,6 +3974,27 @@ public:
   }
 };
 
+/// Represents the injection of parameters into a function parameter list.
+class CXXInjectedParmDecl : public ParmVarDecl {
+  /// The injection source; a reflection.
+  Expr *Reflection;
+
+  CXXInjectedParmDecl(ASTContext &Ctx, DeclContext *DC, SourceLocation Loc, 
+                      Expr *Ref);
+public:
+  static CXXInjectedParmDecl *Create(ASTContext &CXT, DeclContext *DC,
+                                     SourceLocation IntroLoc, Expr *Ref);
+
+  static CXXInjectedParmDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  /// \brief The reflection.
+  Expr *getReflection() const { return Reflection; }
+
+  // Implement isa/cast/dyncast/etc.
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXInjectedParm; }
+};
+
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier
 /// into a diagnostic with <<.
 const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,

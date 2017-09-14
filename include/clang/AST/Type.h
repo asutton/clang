@@ -4547,6 +4547,52 @@ public:
   }
 };
 
+class ParmVarDecl;
+
+/// \brief The type of a sequence of injected parameters. For example, in 
+/// this declaration:
+///
+///   void f(int n, __inject $g.parameters())
+///
+/// The type of f is void(int, <injected-parameter-type>).
+///
+/// These types are always canonical.
+///
+/// This type is partially sugared. When the reflection is non-dependent, this
+/// holds the sequence of non-dependent types.
+class InjectedParmType : public Type {
+  /// The expression that will eventually expand to a list of parameters.
+  Expr* Reflection;
+
+  /// The expanded parameters denotes by the reflection, when non-dependent.
+  ArrayRef<ParmVarDecl *> Expansions;
+
+  friend class ASTContext; // ASTContext creates these.
+  friend class ASTReader; // FIXME: ASTContext::getInjectedClassNameType is not
+                          // currently suitable for AST reading, too much
+                          // interdependencies.
+  friend class ASTNodeImporter;
+
+  InjectedParmType(Expr *E);
+  InjectedParmType(Expr *E, ArrayRef<ParmVarDecl *> Types);
+
+public:
+  Expr *getReflection() const { return Reflection; }
+
+  ArrayRef<ParmVarDecl *> getParameters() const { 
+    assert(!isDependentType() && "dependent injected parm type is not expanded");
+    return Expansions;
+  }
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == InjectedParm;
+  }
+};
+
+
 /// \brief The kind of a tag type.
 enum TagTypeKind {
   /// \brief The "struct" keyword.

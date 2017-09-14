@@ -2147,6 +2147,10 @@ Decl *TemplateDeclInstantiator::VisitParmVarDecl(ParmVarDecl *D) {
                                   /*ExpectParameterPack=*/ false);
 }
 
+Decl* TemplateDeclInstantiator::VisitCXXInjectedParmDecl(CXXInjectedParmDecl *D) {
+  llvm_unreachable("not implemented");
+}
+
 Decl *TemplateDeclInstantiator::VisitTemplateTypeParmDecl(
                                                     TemplateTypeParmDecl *D) {
   // TODO: don't always clone when decls are refcounted.

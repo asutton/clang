@@ -1889,6 +1889,7 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::ObjCTypeParam:
   case Type::Atomic:
   case Type::Pipe:
+  case Type::InjectedParm:
     llvm_unreachable("type is illegal as a nested name specifier");
 
   case Type::SubstTemplateTypeParmPack:
@@ -3026,6 +3027,10 @@ void CXXNameMangler::mangleType(const InjectedClassNameType *T) {
   // specialization out fully.  It may not actually be possible to see
   // this mangling, though.
   mangleType(T->getInjectedSpecializationType());
+}
+
+void CXXNameMangler::mangleType(const InjectedParmType *T) {
+  llvm_unreachable("cannot mangle injected parameters");
 }
 
 void CXXNameMangler::mangleType(const TemplateSpecializationType *T) {

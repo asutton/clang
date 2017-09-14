@@ -497,6 +497,10 @@ void ASTTypeWriter::VisitInjectedClassNameType(const InjectedClassNameType *T) {
   Code = TYPE_INJECTED_CLASS_NAME;
 }
 
+void ASTTypeWriter::VisitInjectedParmType(const InjectedParmType *T) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTTypeWriter::VisitObjCInterfaceType(const ObjCInterfaceType *T) {
   Record.AddDeclRef(T->getDecl()->getCanonicalDecl());
   Code = TYPE_OBJC_INTERFACE;
@@ -773,6 +777,10 @@ void TypeLocWriter::VisitElaboratedTypeLoc(ElaboratedTypeLoc TL) {
 
 void TypeLocWriter::VisitInjectedClassNameTypeLoc(InjectedClassNameTypeLoc TL) {
   Record.AddSourceLocation(TL.getNameLoc());
+}
+
+void TypeLocWriter::VisitInjectedParmTypeLoc(InjectedParmTypeLoc TL) {
+  llvm_unreachable("unimplemented");
 }
 
 void TypeLocWriter::VisitDependentNameTypeLoc(DependentNameTypeLoc TL) {

@@ -405,6 +405,171 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc,
   }
 }
 
+static ClassTemplateSpecializationDecl *ReferencedReflectionClass(Sema &SemaRef, 
+                                                                  Expr *E) {
+  QualType ExprTy = SemaRef.Context.getCanonicalType(E->getType());
+  if (!ExprTy->isRecordType())
+    return nullptr;
+  CXXRecordDecl* Class = ExprTy->getAsCXXRecordDecl();
+  if (!isa<ClassTemplateSpecializationDecl>(Class))
+    return nullptr;
+  ClassTemplateSpecializationDecl *Spec 
+      = cast<ClassTemplateSpecializationDecl>(Class);
+
+  // Make sure that this is actually defined in meta.
+  DeclContext* Owner = Class->getDeclContext();
+  if (Owner->isInlineNamespace())
+    Owner = Owner->getParent();
+  if (!Owner->Equals(SemaRef.RequireCppxMetaNamespace(E->getExprLoc()))) 
+    return nullptr;
+  return Spec;
+}
+
+// Returns true if ExprTy refers to either a reflected function or the 
+// parameters of a function. If true, Ref is set to the type containing the 
+// function's encoded value.
+static bool ReferencesFunction(Sema &SemaRef, Expr *E, QualType &RefTy)
+{
+  auto *Spec = ReferencedReflectionClass(SemaRef, E);
+  if (!Spec)
+    return false;
+  StringRef Name = Spec->getIdentifier()->getName();
+  if (Name == "function") {
+    RefTy = SemaRef.Context.getTagDeclType(Spec);
+    return true;
+  }
+  if (Name == "reflected_tuple") {
+    // Dig out the class containing the info type. It should be:
+    //    reflected_tupe<function<X>::parm_info>.
+    TemplateArgument First = Spec->getTemplateArgs()[0];
+    if (First.getKind() != TemplateArgument::Type)
+      return false;
+    QualType T = First.getAsType();
+    if (!T->isRecordType())
+      return false;
+    CXXRecordDecl *Class = T->getAsCXXRecordDecl();
+    if (Class->getIdentifier()->getName() != "parm_info")
+        return false;
+    if (!Class->getDeclContext()->isRecord())
+      return false;
+    Class = cast<CXXRecordDecl>(Class->getDeclContext());
+    if (Class->getIdentifier()->getName() != "function" &&
+        Class->getIdentifier()->getName() != "method")
+      return false;
+    RefTy = SemaRef.Context.getTagDeclType(Class);
+    return true;
+  }
+
+  return false;
+}
+
+// Returns true if E refers to a reflected parameter. If true, then Ref is
+// set to the type containing the parameter's encoded value.
+static bool ReferencesParameter(Sema &SemaRef, Expr *E, QualType &RefTy) {
+  auto *Spec = ReferencedReflectionClass(SemaRef, E);
+  if (!Spec)
+    return false;
+  StringRef Name = Spec->getIdentifier()->getName();
+  if (Name == "parameter") {
+    RefTy = SemaRef.Context.getTagDeclType(Spec);
+    return true;
+  }
+  return false;
+}
+
+bool Sema::ActOnCXXInjectedParameter(SourceLocation Loc, Expr *Reflection,
+                                     IdentifierInfo *II,
+                           SmallVectorImpl<DeclaratorChunk::ParamInfo> &Parms) {
+  if (Reflection->isTypeDependent() || Reflection->isValueDependent()) {
+    // The type is an injected parameter type.
+    QualType T = Context.getInjectedParmType(Reflection);
+    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(T);
+
+    // FIXME: Make the constructor accept the type.
+    ParmVarDecl *New = ParmVarDecl::Create(Context, 
+                                           Context.getTranslationUnitDecl(), 
+                                           Loc, Loc, II, T, TSI, SC_None,
+                                           nullptr);    
+    New->setScopeInfo(0, Parms.size());
+    Parms.push_back(DeclaratorChunk::ParamInfo(nullptr, Loc, New));
+    return true;
+  }
+
+  // If T is meta::function<X> or reflected_tuple<meta::function<X>::parm_info>
+  // Then EllipsisLoc must be valid, and we inject all parameters.
+  QualType RefTy;
+  if (ReferencesFunction(*this, Reflection, RefTy)) {
+    ReflectedConstruct C = EvaluateReflection(RefTy, Reflection->getExprLoc());
+    FunctionDecl *Fn = cast<FunctionDecl>(C.getAsDeclaration());
+
+    // Clone each parameter, inserting a chunk for the declaration.
+    for (ParmVarDecl *Orig : Fn->parameters()) {
+      TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Orig->getType());
+      ParmVarDecl *New = ParmVarDecl::Create(Context, 
+                                             Context.getTranslationUnitDecl(), 
+                                             Orig->getLocStart(), 
+                                             Orig->getLocation(), 
+                                             Orig->getIdentifier(),
+                                             Orig->getType(), TSI, SC_None,
+                                             nullptr);
+      New->setScopeInfo(0, Parms.size());
+      Parms.push_back(DeclaratorChunk::ParamInfo(New->getIdentifier(),
+                                                 New->getLocation(), New));
+    }
+    return true;
+  }
+
+  // If T is meta::parameter<X>, then we inject that one parameter.
+  if (ReferencesParameter(*this, Reflection, RefTy)) {
+    // Clone the referenced parameter.
+    ReflectedConstruct C = EvaluateReflection(RefTy, Reflection->getExprLoc());
+    ParmVarDecl *Orig = cast<ParmVarDecl>(C.getAsDeclaration());
+    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Orig->getType());
+    ParmVarDecl *New = ParmVarDecl::Create(Context, 
+                                           Context.getTranslationUnitDecl(),
+                                           Orig->getLocStart(), 
+                                           Orig->getLocation(), 
+                                           Orig->getIdentifier(),
+                                           Orig->getType(), TSI, SC_None,
+                                           nullptr);
+    New->setScopeInfo(0, Parms.size());
+
+    Parms.push_back(DeclaratorChunk::ParamInfo(New->getIdentifier(),
+                                               New->getLocation(), New));
+    return true;
+  }
+
+  // FIXME: Improve diagnostics.
+  Diag(Reflection->getExprLoc(), diag::err_compiler_error) << "invalid parameter";
+  return false;
+}
+
+
+QualType Sema::BuildInjectedParmType(SourceLocation Loc, Expr *E) {
+  if (E->isTypeDependent())
+    return Context.getInjectedParmType(E);
+
+  MarkDeclarationsReferencedInExpr(E);
+  
+  // If T is meta::function<X> or reflected_tuple<meta::function<X>::parm_info>
+  // Then EllipsisLoc must be valid, and we inject all parameters.
+  QualType RefTy;
+  if (ReferencesFunction(*this, E, RefTy)) {
+    ReflectedConstruct C = EvaluateReflection(RefTy, E->getExprLoc());
+    FunctionDecl *Fn = cast<FunctionDecl>(C.getAsDeclaration());
+    return Context.getInjectedParmType(E, Fn->parameters());
+  }
+
+  // If T is meta::parameter<X>, then we inject that one parameter.
+  if (ReferencesParameter(*this, E, RefTy)) {
+    llvm_unreachable("not implemented");
+  }
+
+  // FIXME: Improve diagnostics.
+  Diag(E->getExprLoc(), diag::err_compiler_error) << "invalid parameter";
+  return QualType();
+}
+
 
 // Returns an integer value describing the target context of the injection.
 // This correlates to the second %select in err_invalid_injection.

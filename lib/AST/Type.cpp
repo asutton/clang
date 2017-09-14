@@ -3116,6 +3116,25 @@ CXXRecordDecl *InjectedClassNameType::getDecl() const {
   return cast<CXXRecordDecl>(getInterestingTagDecl(Decl));
 }
 
+InjectedParmType::InjectedParmType(Expr *E)
+  : Type(InjectedParm, QualType(),
+         /*Dependent=*/true,
+         /*InstantiationDependent=*/true, 
+         /*VariablyModified=*/false,
+         /*ContainsUnexpandedParameterPack=*/false),
+      Reflection(E), Expansions(None) {
+  assert(E->isTypeDependent() && "expected dependent expression");
+}
+
+InjectedParmType::InjectedParmType(Expr *E, ArrayRef<ParmVarDecl *> Parms)
+  : Type(InjectedParm, QualType(), 
+         /*Dependent=*/false,
+         /*InstantiationDependent=*/false,
+         /*VariablyModified=*/false,
+         /*ContainsUnexpandedParameterPack=*/false),
+      Reflection(E), Expansions(Parms) { }
+
+
 IdentifierInfo *TemplateTypeParmType::getIdentifier() const {
   return isCanonicalUnqualified() ? nullptr : getDecl()->getIdentifier();
 }
@@ -3666,6 +3685,10 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::ObjCInterface:
   case Type::Atomic:
   case Type::Pipe:
+    return false;
+
+  case Type::InjectedParm:
+    // Can never be a pointer.
     return false;
   }
   llvm_unreachable("bad type kind!");

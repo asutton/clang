@@ -1555,7 +1555,9 @@ public:
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classofKind(Kind K) { return K == ParmVar; }
+  static bool classofKind(Kind K) { 
+    return K == ParmVar || K == CXXInjectedParm; 
+  }
 
 private:
   enum { ParameterIndexSentinel = (1 << NumParameterIndexBits) - 1 };

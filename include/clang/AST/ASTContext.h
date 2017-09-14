@@ -1318,6 +1318,9 @@ public:
 
   QualType getInjectedClassNameType(CXXRecordDecl *Decl, QualType TST) const;
 
+  QualType getInjectedParmType(Expr *E) const;
+  QualType getInjectedParmType(Expr *E, ArrayRef<ParmVarDecl *> Types) const;
+
   QualType getAttributedType(AttributedType::Kind attrKind,
                              QualType modifiedType,
                              QualType equivalentType);

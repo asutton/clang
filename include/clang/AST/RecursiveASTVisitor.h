@@ -1038,6 +1038,9 @@ DEF_TRAVERSE_TYPE(TemplateSpecializationType, {
 
 DEF_TRAVERSE_TYPE(InjectedClassNameType, {})
 
+DEF_TRAVERSE_TYPE(InjectedParmType,
+                  { TRY_TO(TraverseStmt(T->getReflection())); })
+
 DEF_TRAVERSE_TYPE(AttributedType,
                   { TRY_TO(TraverseType(T->getModifiedType())); })
 
@@ -1273,6 +1276,10 @@ DEF_TRAVERSE_TYPELOC(TemplateSpecializationType, {
 })
 
 DEF_TRAVERSE_TYPELOC(InjectedClassNameType, {})
+
+DEF_TRAVERSE_TYPELOC(InjectedParmType, {
+  TRY_TO(TraverseStmt(TL.getTypePtr()->getReflection()));
+})
 
 DEF_TRAVERSE_TYPELOC(ParenType, { TRY_TO(TraverseTypeLoc(TL.getInnerLoc())); })
 
@@ -1889,6 +1896,10 @@ DEF_TRAVERSE_DECL(CXXFragmentDecl, {
 });
 
 DEF_TRAVERSE_DECL(CXXInjectionDecl, {
+  TRY_TO(TraverseStmt(D->getReflection()));
+});
+
+DEF_TRAVERSE_DECL(CXXInjectedParmDecl, {
   TRY_TO(TraverseStmt(D->getReflection()));
 });
 

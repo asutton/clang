@@ -6445,6 +6445,10 @@ void TypeLocReader::VisitInjectedClassNameTypeLoc(InjectedClassNameTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation());
 }
 
+void TypeLocReader::VisitInjectedParmTypeLoc(InjectedParmTypeLoc TL) {
+  TL.setNameLoc(ReadSourceLocation());
+}
+
 void TypeLocReader::VisitDependentNameTypeLoc(DependentNameTypeLoc TL) {
   TL.setElaboratedKeywordLoc(ReadSourceLocation());
   TL.setQualifierLoc(ReadNestedNameSpecifierLoc());

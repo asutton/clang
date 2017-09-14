@@ -56,6 +56,7 @@ def Named : Decl<1>;
             : DDecl<VarTemplateSpecialization>;
         def ImplicitParam : DDecl<Var>;
         def ParmVar : DDecl<Var>;
+          def CXXInjectedParm : DDecl<ParmVar>;
         def Decomposition : DDecl<Var>;
         def OMPCapturedExpr : DDecl<Var>;
       def NonTypeTemplateParm : DDecl<Declarator>;

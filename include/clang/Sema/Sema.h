@@ -8472,9 +8472,7 @@ public:
   QualType BuildReflectedType(SourceLocation TypenameLoc, Expr *E);
   TypeResult ActOnTypeReflectionSpecifier(SourceLocation TypenameLoc, Expr *E);
 
-  bool ActOnUsingParameter(SourceLocation UsingLoc, SourceLocation EllipsisLoc,
-                           Expr *Reflection,
-                        SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);
+  QualType BuildInjectedParmType(SourceLocation Loc, Expr *E);
 
   NamespaceDecl *RequireCppxNamespace(SourceLocation Loc);
   NamespaceDecl *RequireCppxMetaNamespace(SourceLocation Loc);
@@ -8539,6 +8537,11 @@ public:
 
   DeclGroupPtrTy ActOnCXXInjectionDecl(SourceLocation Loc, Expr *Reflection);
   DeclGroupPtrTy BuildCXXInjectionDecl(SourceLocation Loc, Expr *Reflection);
+
+  bool ActOnCXXInjectedParameter(SourceLocation UsingLoc, Expr *Reflection,
+                                 IdentifierInfo *II,
+                        SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);
+
 
   using InjectionInfo = Expr::InjectionInfo;
 

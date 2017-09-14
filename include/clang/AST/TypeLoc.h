@@ -656,6 +656,17 @@ public:
   }
 };
 
+/// \brief Wrapper for source info for injected parameters.
+class InjectedParmTypeLoc :
+    public InheritingConcreteTypeLoc<TypeSpecTypeLoc,
+                                     InjectedParmTypeLoc,
+                                     InjectedParmType> {
+public:
+  Expr *getReflection() const {
+    return getTypePtr()->getReflection();
+  }
+};
+
 /// \brief Wrapper for source info for unresolved typename using decls.
 class UnresolvedUsingTypeLoc :
     public InheritingConcreteTypeLoc<TypeSpecTypeLoc,

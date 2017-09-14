@@ -1763,7 +1763,7 @@ Parser::TryParseParameterDeclarationClause(bool *InvalidAsDeclaration,
     
     // [Meta] 'using' when it does not start a declaration is a sign of
     // a function declarator.
-    if (Tok.is(tok::kw_using))
+    if (Tok.is(tok::kw___inject))
       return TPResult::True; 
 
     // An attribute-specifier-seq here is a sign of a function declarator.

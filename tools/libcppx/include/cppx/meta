@@ -315,6 +315,9 @@ struct array_type : type<X, array_type_kind> {
 
 template<reflection_t X>
 struct function_type : type<X, function_type_kind> {
+  static constexpr auto return_type() {
+    return __reflect_return(X);
+  }
 };
 
 template<reflection_t X>
@@ -561,6 +564,10 @@ struct function : typed<X, function_decl_kind> {
     return function_traits(__reflect_traits(X));
   }
 
+  static constexpr auto return_type() {
+    return __reflect_return(X);
+  }
+
   static constexpr bool is_constexpr() {
     return traits().is_constexpr;
   }
@@ -594,8 +601,28 @@ struct function : typed<X, function_decl_kind> {
 // A helper class for member functions.
 template<reflection_t X>
 struct method : typed<X, member_function_decl_kind> {
+  struct parm_info
+  {
+    static constexpr std::size_t size() {
+      return __reflect_num_parameters(X);
+    }
+
+    template<std::size_t I>
+    static constexpr auto get() {
+      return __reflect_parameter(X, I);
+    }
+  };
+
   static constexpr method_traits traits() {
     return method_traits(__reflect_traits(X));
+  }
+
+  static constexpr reflected_tuple<parm_info> parameters() {
+    return {};
+  }
+
+  static constexpr auto return_type() {
+    return __reflect_return(X);
   }
 
   // Method kind

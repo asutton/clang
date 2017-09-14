@@ -1805,6 +1805,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     case Type::UnresolvedUsing:
     case Type::Decltype:
     case Type::Reflected:
+    case Type::InjectedParm:
     case Type::UnaryTransform:
     case Type::Auto:
     case Type::DeducedTemplateSpecialization:
@@ -5242,6 +5243,13 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
     if (!OnlyDeduced)
       MarkUsedTemplateParameters(Ctx,
                                  cast<ReflectedType>(T)->getTypeReflection(),
+                                 OnlyDeduced, Depth, Used);
+    break;
+
+  case Type::InjectedParm:
+    if (!OnlyDeduced)
+      MarkUsedTemplateParameters(Ctx,
+                                 cast<InjectedParmType>(T)->getReflection(),
                                  OnlyDeduced, Depth, Used);
     break;
 

@@ -614,6 +614,10 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     break;
   }
 
+  case Type::InjectedParm:
+    // Two (non-identical) type parameters are never equal.
+    return false;
+
   case Type::DependentName: {
     const DependentNameType *Typename1 = cast<DependentNameType>(T1);
     const DependentNameType *Typename2 = cast<DependentNameType>(T2);

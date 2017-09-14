@@ -6273,17 +6273,10 @@ void Parser::ParseParameterDeclarationClause(
     if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
       break;
 
-    if (Tok.is(tok::kw_using)) {
-      // [Meta] Match a using declaration.
-      SourceLocation UsingLoc = ConsumeToken();
-      SourceLocation EllipsisLoc;
-      if (Tok.is(tok::ellipsis))
-        EllipsisLoc = ConsumeToken();
-      ExprResult Reflection = ParseConstantExpression();
-      if (Reflection.isInvalid())
+    if (Tok.is(tok::kw___inject)) {
+      // [Meta] Match an injected parameter declaration.
+      if (!ParseCXXInjectedParameter(ParamInfo))
         continue;
-      Actions.ActOnUsingParameter(UsingLoc, EllipsisLoc, Reflection.get(), 
-                                  ParamInfo);
     } else {
       // Parse the declaration-specifiers.
       // Just use the ParsingDeclaration "scope" of the declarator.

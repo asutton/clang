@@ -5080,6 +5080,11 @@ bool UnnamedLocalNoLinkageFinder::VisitInjectedClassNameType(
   return VisitTagDecl(T->getDecl());
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitInjectedParmType(
+                                                    const InjectedParmType* T) {
+  return false;
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitDependentNameType(
                                                    const DependentNameType* T) {
   return VisitNestedNameSpecifier(T->getQualifier());

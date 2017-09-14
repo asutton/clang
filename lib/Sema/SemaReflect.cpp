@@ -72,7 +72,6 @@ Sema::ReflectedConstruct Sema::EvaluateReflection(QualType T,
   T = Context.getCanonicalType(T);
   CXXRecordDecl *Class = T->getAsCXXRecordDecl();
   if (!Class) {
-    T->dump();
     ValueReflectionError(*this, Loc);
     return ReflectedConstruct();
   }
@@ -87,7 +86,7 @@ Sema::ReflectedConstruct Sema::EvaluateReflection(QualType T,
 
   // If the type is a reflection...
   if (!isa<ClassTemplateSpecializationDecl>(Class)) {
-    ValueReflectionError(*this, Loc);
+    Diag(Loc, diag::err_not_a_reflection);
     return ReflectedConstruct();
   }
   ClassTemplateSpecializationDecl *Spec = 
@@ -107,6 +106,7 @@ Sema::ReflectedConstruct Sema::EvaluateReflection(QualType T,
     ValueReflectionError(*this, Loc);
     return ReflectedConstruct();
   }
+
   const TemplateArgument &Arg = Args.get(0);
   if (Arg.getKind() != TemplateArgument::Integral) {
     ValueReflectionError(*this, Loc);
@@ -812,9 +812,17 @@ struct Reflector {
   ExprResult ReflectTraits(Type *T);
 
   ExprResult ReflectPointer(Decl *D);
+  
+  // FIXME: Extend this to work for types. For example, the value (type) of 
+  // an T[N] is T. The value type of cv-T is T.
   ExprResult ReflectValue(Decl *D);
+  
   ExprResult ReflectType(Decl *D);
 
+  ExprResult ReflectReturn(Decl* D);
+  ExprResult ReflectReturn(Type* T);
+
+  // FIXME: Extend this to work for function types as well.
   ExprResult ReflectNumParameters(Decl *D);
   ExprResult ReflectParameter(Decl *D, const llvm::APSInt &N);
 
@@ -939,6 +947,8 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
     return ReflectValue(D);
   case URT_ReflectType:
     return ReflectType(D);
+  case URT_ReflectReturn:
+    return ReflectReturn(D);
   case URT_ReflectNumParameters:
     return ReflectNumParameters(D);
   case BRT_ReflectParameter:
@@ -1315,7 +1325,6 @@ static inline std::uint32_t LaunderTraits(Traits S) {
   return ret;
 }
 
-
 ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
   switch (RT) {
   default:
@@ -1343,6 +1352,8 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Type *T) {
     return ReflectLexicalContext(T);
   case URT_ReflectTraits:
     return ReflectTraits(T);
+  case URT_ReflectReturn:
+    return ReflectReturn(T);
   case URT_ReflectNumMembers:
     return ReflectNumMembers(T->getAsTagDecl());
   case BRT_ReflectMember:
@@ -1606,6 +1617,19 @@ static FunctionDecl *RequireFunctionDecl(Reflector &R, Decl *D) {
     return nullptr;
   }
   return cast<FunctionDecl>(D);
+}
+
+/// Reflects the return type of the function.
+ExprResult Reflector::ReflectReturn(Decl *D) {
+  if (FunctionDecl *Fn = RequireFunctionDecl(*this, D))
+    return S.BuildTypeReflection(KWLoc, Fn->getReturnType());
+  return ExprError();
+}
+
+ExprResult Reflector::ReflectReturn(Type *T) {
+  if (FunctionType *Fn = dyn_cast<FunctionType>(T))
+    return S.BuildTypeReflection(KWLoc, Fn->getReturnType());
+  return ExprError();
 }
 
 /// Reflects the number of parameters of a function declaration.
@@ -2539,128 +2563,5 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   CD->getDeclContext()->removeDecl(CD);
   
   return Notes.empty();
-}
-
-static ClassTemplateSpecializationDecl *ReferencedReflectionClass(Sema &SemaRef, 
-                                                                  Expr *E) {
-  QualType ExprTy = SemaRef.Context.getCanonicalType(E->getType());
-  if (!ExprTy->isRecordType())
-    return nullptr;
-  CXXRecordDecl* Class = ExprTy->getAsCXXRecordDecl();
-  if (!isa<ClassTemplateSpecializationDecl>(Class))
-    return nullptr;
-  ClassTemplateSpecializationDecl *Spec 
-      = cast<ClassTemplateSpecializationDecl>(Class);
-
-  // Make sure that this is actually defined in meta.
-  DeclContext* Owner = Class->getDeclContext();
-  if (Owner->isInlineNamespace())
-    Owner = Owner->getParent();
-  if (!Owner->Equals(SemaRef.RequireCppxMetaNamespace(E->getExprLoc()))) 
-    return nullptr;
-  return Spec;
-}
-
-// Returns true if ExprTy refers to either a reflected function or the 
-// parameters of a function. If true, Ref is set to the type containing the 
-// function's encoded value.
-static bool ReferencesFunction(Sema &SemaRef, Expr *E, QualType &RefTy)
-{
-  auto *Spec = ReferencedReflectionClass(SemaRef, E);
-  if (!Spec)
-    return false;
-  StringRef Name = Spec->getIdentifier()->getName();
-  if (Name == "function") {
-    RefTy = SemaRef.Context.getTagDeclType(Spec);
-    return true;
-  }
-  if (Name == "reflected_tuple") {
-    // Dig out the class containing the info type. It should be:
-    //    reflected_tupe<function<X>::parm_info>.
-    TemplateArgument First = Spec->getTemplateArgs()[0];
-    if (First.getKind() != TemplateArgument::Type)
-      return false;
-    QualType T = First.getAsType();
-    if (!T->isRecordType())
-      return false;
-    CXXRecordDecl *Class = T->getAsCXXRecordDecl();
-    if (Class->getIdentifier()->getName() != "parm_info")
-        return false;
-    if (!Class->getDeclContext()->isRecord())
-      return false;
-    Class = cast<CXXRecordDecl>(Class->getDeclContext());
-    if (Class->getIdentifier()->getName() != "function")
-      return false;
-    RefTy = SemaRef.Context.getTagDeclType(Class);
-    return true;
-  }
-
-  return false;
-}
-
-// Returns true if E refers to a reflected parameter. If true, then Ref is
-// set to the type containing the parameter's encoded value.
-static bool ReferencesParameter(Sema &SemaRef, Expr *E, QualType &RefTy) {
-  auto *Spec = ReferencedReflectionClass(SemaRef, E);
-  if (!Spec)
-    return false;
-  StringRef Name = Spec->getIdentifier()->getName();
-  if (Name == "parameter") {
-    RefTy = SemaRef.Context.getTagDeclType(Spec);
-    return true;
-  }
-  return false;
-}
-
-bool Sema::ActOnUsingParameter(SourceLocation UsingLoc, 
-                               SourceLocation EllipsisLoc, Expr *Reflection,
-                           SmallVectorImpl<DeclaratorChunk::ParamInfo> &Parms) {
-  if (Reflection->isTypeDependent() || Reflection->isValueDependent())
-    llvm_unreachable("dependent using parameter");
-
-  // If T is meta::function<X> or reflected_tuple<meta::function<X>::parm_info>
-  // Then EllipsisLoc must be valid, and we inject all parameters.
-  QualType RefTy;
-  if (ReferencesFunction(*this, Reflection, RefTy)) {
-    ReflectedConstruct Cons = EvaluateReflection(Reflection);
-    FunctionDecl *Fn = cast<FunctionDecl>(Cons.getAsDeclaration());
-
-    // Clone each parameter, inserting a chunk for the declaration.
-    for (ParmVarDecl *Orig : Fn->parameters()) {
-      TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Orig->getType());
-      ParmVarDecl *New = ParmVarDecl::Create(Context, nullptr, 
-                                             Orig->getLocStart(), 
-                                             Orig->getLocation(), 
-                                             Orig->getIdentifier(),
-                                             Orig->getType(), TSI, SC_None,
-                                             nullptr);
-
-      Parms.push_back(DeclaratorChunk::ParamInfo(New->getIdentifier(),
-                                                 New->getLocation(), New));
-    }
-    return true;
-  }
-
-  // If T is meta::parameter<X>, then we inject that one parameter.
-  if (ReferencesParameter(*this, Reflection, RefTy)) {
-    // Clone the referenced parameter.
-    ReflectedConstruct Cons = EvaluateReflection(Reflection);
-    ParmVarDecl *Orig = cast<ParmVarDecl>(Cons.getAsDeclaration());
-    TypeSourceInfo *TSI = Context.getTrivialTypeSourceInfo(Orig->getType());
-    ParmVarDecl *New = ParmVarDecl::Create(Context, nullptr, 
-                                           Orig->getLocStart(), 
-                                           Orig->getLocation(), 
-                                           Orig->getIdentifier(),
-                                           Orig->getType(), TSI, SC_None,
-                                           nullptr);
-
-    Parms.push_back(DeclaratorChunk::ParamInfo(New->getIdentifier(),
-                                               New->getLocation(), New));
-    return true;
-  }
-
-  // FIXME: Improve diagnostics.
-  Diag(Reflection->getExprLoc(), diag::err_compiler_error) << "invalid parameter";
-  return false;
 }
 

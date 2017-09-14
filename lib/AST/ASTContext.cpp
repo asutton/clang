@@ -2764,6 +2764,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::UnaryTransform:
   case Type::DependentName:
   case Type::InjectedClassName:
+  case Type::InjectedParm:
   case Type::TemplateSpecialization:
   case Type::DependentTemplateSpecialization:
   case Type::TemplateTypeParm:
@@ -3420,6 +3421,19 @@ QualType ASTContext::getInjectedClassNameType(CXXRecordDecl *Decl,
     Types.push_back(newType);
   }
   return QualType(Decl->TypeForDecl, 0);
+}
+
+/// Return a unique reference to the injected parameter type for a given
+/// expression. 
+QualType ASTContext::getInjectedParmType(Expr *E) const {
+  Type* Ty = new (*this, TypeAlignment) InjectedParmType(E);
+  return QualType(Ty, 0);
+}
+
+QualType ASTContext::getInjectedParmType(Expr *E, 
+                                         ArrayRef<ParmVarDecl *> Types) const {
+  Type* Ty = new (*this, TypeAlignment) InjectedParmType(E, Types);
+  return QualType(Ty, 0);
 }
 
 /// getTypeDeclType - Return the unique reference to the type for the

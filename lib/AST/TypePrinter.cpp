@@ -231,6 +231,7 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::Attributed:
     case Type::PackExpansion:
     case Type::SubstTemplateTypeParm:
+    case Type::InjectedParm:
       CanPrefixQualifiers = false;
       break;
   }
@@ -1132,6 +1133,14 @@ void TypePrinter::printInjectedClassNameBefore(const InjectedClassNameType *T,
 }
 void TypePrinter::printInjectedClassNameAfter(const InjectedClassNameType *T,
                                                raw_ostream &OS) { }
+
+void TypePrinter::printInjectedParmBefore(const InjectedParmType *T,
+                                          raw_ostream &OS) {
+  OS << "__inject ";
+  T->getReflection()->printPretty(OS, nullptr, Policy);
+}
+void TypePrinter::printInjectedParmAfter(const InjectedParmType *T,
+                                         raw_ostream &OS) { }
 
 void TypePrinter::printElaboratedBefore(const ElaboratedType *T,
                                         raw_ostream &OS) {

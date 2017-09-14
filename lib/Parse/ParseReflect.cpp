@@ -460,3 +460,32 @@ Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
 
   return Actions.ConvertDeclToDeclGroup(D);
 }
+
+bool Parser::ParseCXXInjectedParameter(
+                       SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo) {
+  assert(Tok.is(tok::kw___inject) && "Expected __inject");
+  SourceLocation Loc = ConsumeToken();
+  
+  if (ExpectAndConsume(tok::l_paren))
+    return false;
+
+  // The constant expression is unevaluated; we get everything we need
+  // from it's type.
+  EnterExpressionEvaluationContext Unevaluated(
+      Actions, Sema::ExpressionEvaluationContext::Unevaluated);
+  ExprResult Reflection = ParseConstantExpression();
+  if (Reflection.isInvalid())
+    return false;
+
+  if (ExpectAndConsume(tok::r_paren))
+    return false;
+
+  IdentifierInfo *II = nullptr;
+  if (Tok.is(tok::identifier)) {
+    II = Tok.getIdentifierInfo();
+    ConsumeToken();
+  }
+
+  Actions.ActOnCXXInjectedParameter(Loc, Reflection.get(), II, ParamInfo);
+  return true;
+}

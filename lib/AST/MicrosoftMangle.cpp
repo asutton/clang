@@ -2403,6 +2403,11 @@ void MicrosoftCXXNameMangler::mangleType(const InjectedClassNameType *,
   llvm_unreachable("Cannot mangle injected class name type.");
 }
 
+void MicrosoftCXXNameMangler::mangleType(const InjectedParmType *,
+                                         Qualifiers, SourceRange) {
+  llvm_unreachable("Cannot mangle injected parameters type.");
+}
+
 void MicrosoftCXXNameMangler::mangleType(const TemplateSpecializationType *T,
                                          Qualifiers, SourceRange Range) {
   DiagnosticsEngine &Diags = Context.getDiags();

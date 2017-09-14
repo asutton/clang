@@ -2925,6 +2925,9 @@ ExprResult Sema::BuildDeclarationNameExpr(
 #include "clang/AST/DeclNodes.inc"
       llvm_unreachable("invalid value decl kind");
 
+    case Decl::CXXInjectedParm:
+      llvm_unreachable("forming reference to injected parm");
+
     // These shouldn't make it here.
     case Decl::ObjCAtDefsField:
     case Decl::ObjCIvar:
@@ -4646,7 +4649,7 @@ bool Sema::CheckCXXDefaultArgExpr(SourceLocation CallLoc, FunctionDecl *FD,
   // bound temporaries; see the comment in PR5810.
   // We don't need to do that with block decls, though, because
   // blocks in default argument expression can never capture anything.
-  if (auto Init = dyn_cast<ExprWithCleanups>(Param->getInit())) {
+  if (auto Init = dyn_cast<ExprWithCleanups>(Param->getInit())) { 
     // Set the "needs cleanups" bit regardless of whether there are
     // any explicit objects.
     Cleanup.setExprNeedsCleanups(Init->cleanupsHaveSideEffects());

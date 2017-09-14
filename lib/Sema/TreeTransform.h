@@ -469,6 +469,8 @@ public:
   Decl* TransformLocalTemplateTemplateParmDecl(TemplateTemplateParmDecl *D);
 
   Decl *TransformLocalCXXInjectionDecl(CXXInjectionDecl *D);
+  int TransformLocalCXXInjectedParmDecl(CXXInjectedParmDecl *D,
+                                        SmallVectorImpl<ParmVarDecl *> &Params);
 
   // \brief Transforms function parameter in D, adding them to R.
   void TransformFunctionParameters(FunctionDecl *D, FunctionDecl *R);
@@ -5116,10 +5118,37 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
       } else {
         NewParm = getDerived().TransformFunctionTypeParam(
             OldParm, indexAdjustment, None, /*ExpectParameterPack=*/ false);
+
       }
 
       if (!NewParm)
         return true;
+
+      // If this is an injection, expand the parameter.
+      //
+      // FIXME: It would be better if we did this *before* creating the new 
+      // parameter; that's just wasted memory.
+      QualType NewType = NewParm->getType();
+      if (const InjectedParmType *IPT = NewType->getAs<InjectedParmType>()) {
+        if (!IPT->isDependentType()) {
+          for (ParmVarDecl *Orig : IPT->getParameters()) {
+            ParmVarDecl *New = cast<ParmVarDecl>(TransformLocalParmVarDecl(Orig));
+            if (!New)
+              return true;
+
+            // Update the scope information for the new parameter.
+            New->setScopeInfo(New->getFunctionScopeDepth(), 
+                              OutParamTypes.size());
+            
+            if (ParamInfos)
+              PInfos.set(OutParamTypes.size(), ParamInfos[i]);
+            OutParamTypes.push_back(New->getType());
+            if (PVars)
+              PVars->push_back(New);
+          }
+          continue;
+        }
+      }
 
       if (ParamInfos)
         PInfos.set(OutParamTypes.size(), ParamInfos[i]);
@@ -5132,6 +5161,7 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
     // Deal with the possibility that we don't have a parameter
     // declaration for this parameter.
     QualType OldType = ParamTypes[i];
+
     bool IsPackExpansion = false;
     Optional<unsigned> NumExpansions;
     QualType NewType;
@@ -5210,9 +5240,25 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
       return true;
 
     if (IsPackExpansion)
-      NewType = getSema().Context.getPackExpansionType(NewType,
-                                                       NumExpansions);
+      NewType = getSema().Context.getPackExpansionType(NewType, NumExpansions);
 
+    if (const InjectedParmType *IPT = NewType->getAs<InjectedParmType>()) {
+      if (!IPT->isDependentType()) {
+        for (ParmVarDecl *Orig : IPT->getParameters()) {
+          QualType New = TransformType(Orig->getType());
+          if (New.isNull())
+            return true;
+          
+          if (ParamInfos)
+            PInfos.set(OutParamTypes.size(), ParamInfos[i]);
+          OutParamTypes.push_back(New);
+          if (PVars)
+            PVars->push_back(nullptr);
+        }
+        continue;
+      }
+    }
+    
     if (ParamInfos)
       PInfos.set(OutParamTypes.size(), ParamInfos[i]);
     OutParamTypes.push_back(NewType);
@@ -5298,6 +5344,21 @@ QualType TreeTransform<Derived>::TransformFunctionProtoType(
             ParamTypes, &ParamDecls, ExtParamInfos))
       return QualType();
   }
+
+  // FIXME: Remove this?
+  //
+  // // Rebuild the parameter list, accounting for ex
+  // SmallVector<QualType, 4> NewParmTypes;
+  // for (QualType Q : ParamTypes) {
+  //   if (const InjectedParmType *IPT = Q->getAs<InjectedParmType>()) {
+  //     Expr *Ref = IPT->getReflection();
+  //     if (!Ref->isTypeDependent() && !Ref->isValueDependent())
+  //       for (QualType X : IPT->getExpandedTypes())
+  //         NewParmTypes.push_back(X);
+  //   } else
+  //     NewParmTypes.push_back(Q);
+  // }
+  // ParamTypes = NewParmTypes;
 
   FunctionProtoType::ExtProtoInfo EPI = T->getExtProtoInfo();
 
@@ -5762,6 +5823,26 @@ QualType TreeTransform<Derived>::TransformInjectedClassNameType(
   if (!D) return QualType();
 
   QualType T = SemaRef.Context.getTypeDeclType(cast<TypeDecl>(D));
+  TLB.pushTypeSpec(T).setNameLoc(TL.getNameLoc());
+  return T;
+}
+
+template<typename Derived>
+QualType TreeTransform<Derived>::TransformInjectedParmType(
+                                         TypeLocBuilder &TLB,
+                                         InjectedParmTypeLoc TL) {
+  // Ensure that cleanups are handled properly.
+  EnterExpressionEvaluationContext Unevaluated(
+      getSema(), Sema::ExpressionEvaluationContext::Unevaluated);
+  
+  ExprResult E = getDerived().TransformExpr(TL.getReflection());
+  if (E.isInvalid())
+    return QualType();
+  
+  QualType T = getSema().BuildInjectedParmType(TL.getNameLoc(), E.get());
+  if (T.isNull())
+    return QualType();
+
   TLB.pushTypeSpec(T).setNameLoc(TL.getNameLoc());
   return T;
 }
@@ -12311,8 +12392,11 @@ TreeTransform<Derived>::TransformBlockExpr(BlockExpr *E) {
   // Parameter substitution.
   Sema::ExtParameterInfoBuilder extParamInfos;
   if (getDerived().TransformFunctionTypeParams(
-          E->getCaretLocation(), oldBlock->parameters(), nullptr,
-          exprFunctionType->getExtParameterInfosOrNull(), paramTypes, &params,
+          E->getCaretLocation(), 
+          oldBlock->parameters(), 
+          /*ParamTypes=*/nullptr,
+          exprFunctionType->getExtParameterInfosOrNull(), 
+          paramTypes, &params,
           extParamInfos)) {
     getSema().ActOnBlockError(E->getCaretLocation(), /*Scope=*/nullptr);
     return ExprError();
@@ -12998,6 +13082,8 @@ template<typename Transformer, typename DeclWithTypeInfo>
 inline TypeSourceInfo *
 TransformTypeCanonical(Transformer &X, DeclWithTypeInfo *D) {
   TypeSourceInfo *TSI = X.getDerived().TransformType(D->getTypeSourceInfo());
+  if (!TSI)
+    return nullptr;
   QualType T = X.getSema().Context.getCanonicalType(TSI->getType());
   TypeLoc TL = TSI->getTypeLoc();
   return X.getSema().Context.getTrivialTypeSourceInfo(T, TL.getLocStart());
@@ -13076,6 +13162,9 @@ template<typename Derived>
 Decl *
 TreeTransform<Derived>::TransformLocalParmVarDecl(ParmVarDecl *D) {
   TypeSourceInfo *TSI = TransformTypeCanonical(getDerived(), D); 
+  if (!TSI)
+    return nullptr;
+
   ParmVarDecl *R 
     = getSema().CheckParameter(getSema().Context.getTranslationUnitDecl(),
                                D->getLocation(), D->getLocation(),
@@ -13097,12 +13186,14 @@ TreeTransform<Derived>::TransformLocalFunctionDecl(FunctionDecl *D) {
   DeclContext *Owner = getSema().CurContext;
   DeclarationNameInfo NameInfo 
     = getDerived().TransformDeclarationNameInfo(D->getNameInfo());
-  TypeSourceInfo *TypeInfo 
-    = TransformTypeCanonical(getDerived(), D);
+  TypeSourceInfo *TSI = TransformTypeCanonical(getDerived(), D);
+  if (!TSI)
+    return nullptr;
+
   FunctionDecl *R 
     = FunctionDecl::Create(getSema().Context, Owner, D->getLocation(), 
                            NameInfo.getLoc(), NameInfo.getName(), 
-                           TypeInfo->getType(), TypeInfo, D->getStorageClass(), 
+                           TSI->getType(), TSI, D->getStorageClass(), 
                            D->isInlineSpecified(), D->hasWrittenPrototype(), 
                            D->isConstexpr());
   transformedLocalDecl(D, R);
@@ -13136,13 +13227,13 @@ TreeTransform<Derived>::TransformLocalFieldDecl(FieldDecl *D) {
   if (!DNI.getName())
     return nullptr;
 
-  TypeSourceInfo *TypeInfo = TransformTypeCanonical(getDerived(), D);
-  if (!TypeInfo)
+  TypeSourceInfo *TSI = TransformTypeCanonical(getDerived(), D);
+  if (!TSI)
     return nullptr;
   
   FieldDecl *R 
     = FieldDecl::Create(getSema().Context, Owner, D->getLocation(), DNI,
-                        TypeInfo->getType(), TypeInfo, /*Bitwidth*/nullptr, 
+                        TSI->getType(), TSI, /*Bitwidth*/nullptr, 
                          D->isMutable(), D->getInClassInitStyle());
 
   transformedLocalDecl(D, R);
@@ -13247,8 +13338,9 @@ TreeTransform<Derived>::TransformLocalCXXMethodDecl(CXXMethodDecl *D,
 
   // FIXME: The exception specification is not being translated correctly
   // for destructors (probably others).
-  TypeSourceInfo *TSI 
-    = TransformTypeCanonical(getDerived(), D);
+  TypeSourceInfo *TSI = TransformTypeCanonical(getDerived(), D);
+  if (!TSI)
+    return nullptr;
 
   // FIXME: Handle conversion operators.
   CXXRecordDecl *CurClass = cast<CXXRecordDecl>(getSema().CurContext);
@@ -13454,19 +13546,66 @@ TreeTransform<Derived>::TransformLocalCXXInjectionDecl(CXXInjectionDecl *D) {
     return *DG.begin();
 }
 
+// Apply 
+template<typename Derived>
+int
+TreeTransform<Derived>::TransformLocalCXXInjectedParmDecl(
+  CXXInjectedParmDecl *D, llvm::SmallVectorImpl<ParmVarDecl *> &Parms) {
+  // Transform the reflection.
+  ExprResult E = getDerived().TransformExpr(D->getReflection());
+  if (E.isInvalid())
+    return -1;
+
+  llvm_unreachable("not implemented");
+
+  // SmallVector<DeclaratorChunk::ParamInfo, 4> Info;
+  // if (!getSema().ActOnCXXInjectedParameter(D->getLocation(), E.get(), Info))
+  //   return -1;
+  
+  // // Copy gathered parameters.
+  // for (const DeclaratorChunk::ParamInfo &PI : Info)
+  //   Parms.push_back(cast<ParmVarDecl>(PI.Param));
+  // return Info.size();
+}
+
 /// Transform each parameter of a function.
 template<typename Derived>
 void 
 TreeTransform<Derived>::TransformFunctionParameters(FunctionDecl *D,
                                                     FunctionDecl *R) {
-  llvm::SmallVector<ParmVarDecl *, 4> Params;
-  for (ParmVarDecl *Old : D->parameters()) {
-    ParmVarDecl *New 
-      = cast<ParmVarDecl>(getDerived().TransformDecl(Old->getLocation(), Old));
-    New->setOwningFunction(R);
-    Params.push_back(New);
-  }
+  const FunctionProtoType *FnType = D->getType()->getAs<FunctionProtoType>();
+  Sema::ExtParameterInfoBuilder ParmInfo;
+  SmallVector<ParmVarDecl*, 4> Params;
+  SmallVector<QualType, 4> ParamTypes;
+  if (getDerived().TransformFunctionTypeParams(
+          R->getLocation(), D->parameters(), nullptr,
+          FnType->getExtParameterInfosOrNull(), ParamTypes, &Params, 
+          ParmInfo))
+    return;
+
   R->setParams(Params);
+
+  // llvm::SmallVector<ParmVarDecl *, 4> Params;
+  // for (ParmVarDecl *Old : D->parameters()) {
+  //   if (CXXInjectedParmDecl *IP = dyn_cast<CXXInjectedParmDecl>(Old)) { 
+  //     // Apply the transformation, returning N new parameters. Note that
+  //     // 0 is a valid number of parameters, so is a new injected parameter.
+  //     int N = getDerived().TransformLocalCXXInjectedParmDecl(IP, Params);
+  //     if (N < 0) {
+  //       R->setInvalidDecl(true);
+  //     } else {
+  //       // Update the owners of the function.
+  //       for (auto I = Params.end() - N; I != Params.end(); ++I)
+  //         (*I)->setOwningFunction(R);
+  //     }
+  //   } else {
+  //     ParmVarDecl *New 
+  //       = cast<ParmVarDecl>(getDerived().TransformDecl(Old->getLocation(), Old));
+  //     New->setOwningFunction(R);
+  //     Params.push_back(New);
+  //   }
+  // }
+  // R->setParams(Params);
 }
 
 

@@ -115,21 +115,20 @@ namespace clang {
     
     URT_ReflectType,
     URT_ReflectPointer, ///< For stored values.
-    URT_ReflectValue, ///< For named values.
+    URT_ReflectValue, ///< For named values
     
     URT_ReflectNumParameters,
     BRT_ReflectParameter,
+    URT_ReflectReturn,
     URT_ReflectNumMembers,
     BRT_ReflectMember,
     URT_ReflectNumBases,
     BRT_ReflectBase,
 
-    /// \name Modifiers
-    /// @{
+
     BRT_ModifyAccess,  ///< Second operand indicates access level.
     BRT_ModifyVirtual, ///< Second operand is \c true to indicate pure virtual.
     URT_ModifyConstexpr
-    /// @}
   };
 }
 

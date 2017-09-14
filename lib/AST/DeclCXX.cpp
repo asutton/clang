@@ -2570,6 +2570,24 @@ CXXInjectionDecl *CXXInjectionDecl::CreateDeserialized(ASTContext &C,
   return new (C, ID) CXXInjectionDecl(nullptr, SourceLocation(), nullptr);
 }
 
+CXXInjectedParmDecl::CXXInjectedParmDecl(ASTContext &Ctx, DeclContext *DC, 
+                                         SourceLocation Loc, Expr *Ref) 
+  : ParmVarDecl(CXXInjectedParm, Ctx, DC, Loc, Ref->getExprLoc(), 
+                nullptr, Ctx.DependentTy, 
+                Ctx.getTrivialTypeSourceInfo(Ctx.DependentTy), SC_None, 
+                nullptr),
+      Reflection(Ref) {}
+
+CXXInjectedParmDecl *CXXInjectedParmDecl::Create(ASTContext &C, 
+                                                 DeclContext *DC,
+                                                 SourceLocation Loc, Expr* E) {
+  return new (C, DC) CXXInjectedParmDecl(C, DC, Loc, E);
+}
+
+CXXInjectedParmDecl *CXXInjectedParmDecl::CreateDeserialized(ASTContext &C, 
+                                                             unsigned ID) {
+  return new (C, ID) CXXInjectedParmDecl(C, nullptr, SourceLocation(), nullptr);
+}
 
 const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
                                            AccessSpecifier AS) {

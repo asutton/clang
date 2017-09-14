@@ -1703,6 +1703,7 @@ ExprResult Sema::BuildBlockForLambdaConversion(SourceLocation CurrentLocation,
   // Create the block literal expression.
   Expr *BuildBlock = new (Context) BlockExpr(Block, Conv->getConversionType());
   ExprCleanupObjects.push_back(Block);
+
   Cleanup.setExprNeedsCleanups(true);
 
   return BuildBlock;
