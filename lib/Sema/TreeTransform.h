@@ -13212,7 +13212,7 @@ TreeTransform<Derived>::TransformLocalFunctionDecl(FunctionDecl *D) {
   // FIXME: Make sure that we aren't overriding an existing declaration.
   Owner->addDecl(R);
 
-  TransformFunctionDefinition(D, R);
+  getDerived().TransformFunctionDefinition(D, R);
   
   return R;
 }
@@ -13299,7 +13299,7 @@ TreeTransform<Derived>::TransformLocalCXXRecordDecl(CXXRecordDecl *D) {
   Owner->addDecl(R);
 
   if (D->hasDefinition()) {
-    R->startDefinition();
+    getSema().StartDefinition(R);
 
     // FIXME: Transform base class specifiers.
 
@@ -13317,7 +13317,7 @@ TreeTransform<Derived>::TransformLocalCXXRecordDecl(CXXRecordDecl *D) {
       getDerived().TransformLocalDecl(Member->getLocation(), Member);
     }
 
-    R->completeDefinition();
+    getSema().CompleteDefinition(R);
   }
  
   return R;
@@ -13386,7 +13386,7 @@ TreeTransform<Derived>::TransformLocalCXXMethodDecl(CXXMethodDecl *D,
   // FIXME: Make sure that we aren't overriding an existing declaration.
   CurClass->addDecl(R);
 
-  TransformFunctionDefinition(D, R);
+  getDerived().TransformFunctionDefinition(D, R);
 
   return R;
 }

@@ -306,6 +306,9 @@ Sema::~Sema() {
   // Destroys data sharing attributes stack for OpenMP
   DestroyDataSharingAttributesStack();
 
+  // Destroys any allocated injectors.
+  DestroyInjectors();
+
   assert(DelayedTypos.empty() && "Uncorrected typos!");
 }
 

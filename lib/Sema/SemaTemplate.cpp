@@ -1453,7 +1453,7 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
   NewTemplate->setLexicalDeclContext(CurContext);
 
   if (TUK == TUK_Definition)
-    NewClass->startDefinition();
+    StartDefinition(NewClass);
 
   if (Attr)
     ProcessDeclAttributeList(S, NewClass, Attr);
@@ -7502,7 +7502,7 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
 
   // We may be starting the definition of this specialization.
   if (TUK == TUK_Definition)
-    Specialization->startDefinition();
+    StartDefinition(Specialization);
 
   if (TUK == TUK_Friend) {
     FriendDecl *Friend = FriendDecl::Create(Context, CurContext,

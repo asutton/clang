@@ -13789,7 +13789,7 @@ CreateNewDecl:
       Prototype->setFragment(true);
 
       Class->addHiddenDecl(Prototype);
-      Class->startDefinition();
+      StartDefinition(Class);
 
       CurContext->addDecl(Class);
 
@@ -13899,7 +13899,7 @@ CreateNewDecl:
     SetMemberAccessSpecifier(New, PrevDecl, AS);
 
   if (TUK == TUK_Definition)
-    New->startDefinition();
+    StartDefinition(New);
 
   if (Attr)
     ProcessDeclAttributeList(S, New, Attr);
@@ -13949,11 +13949,28 @@ CreateNewDecl:
   if (Invalid && getLangOpts().CPlusPlus) {
     if (New->isBeingDefined())
       if (auto RD = dyn_cast<RecordDecl>(New))
-        RD->completeDefinition();
+        CompleteDefinition(RD);
     return nullptr;
   } else {
     return New;
   }
+}
+
+void Sema::StartDefinition(TagDecl *D) {
+  if (isa<CXXRecordDecl>(D))
+    EnterPendingMemberTransformationScope(cast<CXXRecordDecl>(D));
+  D->startDefinition();
+}
+
+void Sema::CompleteDefinition(RecordDecl *D) {
+  D->completeDefinition();
+  if (isa<CXXRecordDecl>(D))
+    LeavePendingMemberTransformationScope(cast<CXXRecordDecl>(D));
+}
+
+void Sema::CompleteDefinition(CXXRecordDecl *D, CXXFinalOverriderMap *Map) {
+  D->completeDefinition(Map);
+  LeavePendingMemberTransformationScope(D);
 }
 
 void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {
@@ -14028,7 +14045,7 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
   if (Tag->isBeingDefined()) {
     assert(Tag->isInvalidDecl() && "We should already have completed it");
     if (RecordDecl *RD = dyn_cast<RecordDecl>(Tag))
-      RD->completeDefinition();
+      CompleteDefinition(RD);
   }
 
   if (isa<CXXRecordDecl>(Tag)) {
@@ -14105,7 +14122,7 @@ void Sema::ActOnTagDefinitionError(Scope *S, Decl *TagD) {
   // Make sure we "complete" the definition even it is invalid.
   if (Tag->isBeingDefined()) {
     if (RecordDecl *RD = dyn_cast<RecordDecl>(Tag))
-      RD->completeDefinition();
+      CompleteDefinition(RD);
   }
 
   // We're undoing ActOnTagStartDefinition here, not
@@ -15034,7 +15051,7 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
                 Record->setInvalidDecl();
               }
             }
-            CXXRecord->completeDefinition(&FinalOverriders);
+            CompleteDefinition(CXXRecord, &FinalOverriders);
             Completed = true;
           }
         }
@@ -15042,7 +15059,7 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
     }
 
     if (!Completed)
-      Record->completeDefinition();
+      CompleteDefinition(Record);
 
     // We may have deferred checking for a deleted destructor. Check now.
     if (CXXRecordDecl *CXXRecord = dyn_cast<CXXRecordDecl>(Record)) {

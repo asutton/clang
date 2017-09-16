@@ -2019,7 +2019,10 @@ void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD,
   Definition->setImplicit(true);
   Definition->setFragment(true);
   CurContext->addHiddenDecl(Definition);
+  
+  // FIXME: Is this ever actually completed?
   Definition->startDefinition();
+  
   assert(Definition->isMetaclassDefinition() && "Broken metaclass definition");
 
   // Build an implicit template parameter 'prototype'. This is essentially

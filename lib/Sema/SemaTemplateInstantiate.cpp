@@ -2066,7 +2066,7 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   InstantiateAttrs(TemplateArgs, Pattern, Instantiation);
 
   // Start the definition of this instantiation.
-  Instantiation->startDefinition();
+  StartDefinition(Instantiation);
 
   // The instantiation is visible here, even if it was first declared in an
   // unimported module.

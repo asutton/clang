@@ -194,7 +194,7 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc,
       Context, TTK_Class, CurContext, Loc, Loc, nullptr, nullptr);
   Class->setImplicit(true);
   Class->setFragment(true);
-  Class->startDefinition();
+  StartDefinition(Class);
   QualType ClassTy = Context.getRecordType(Class);
   TypeSourceInfo *ClassTSI = Context.getTrivialTypeSourceInfo(ClassTy);
 
@@ -288,7 +288,7 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc,
 
   Class->addDecl(Ctor);
 
-  Class->completeDefinition();
+  CompleteDefinition(Class);
 
   // Build an expression that that initializes the fragment object.
   Expr *Init;
@@ -605,7 +605,7 @@ static bool InvalidInjection(Sema& S, SourceLocation POI, int SK,
 /// declarations that are inserted into the AST. The transformation is a simple
 /// mapping that replaces one set of names with another. In this regard, it
 /// is very much like template instantiation.
-class SourceCodeInjector : public TreeTransform<SourceCodeInjector> {
+class clang::SourceCodeInjector : public TreeTransform<SourceCodeInjector> {
   using BaseType = TreeTransform<SourceCodeInjector>;
 
   // The parent context of declarations being injected. When injecting a
@@ -792,6 +792,20 @@ public:
     return Lookup.front();
   }
 
+  // Transform the definition, unless it's member function definition. Then
+  // defer that until the end of the class.
+  void TransformFunctionDefinition(FunctionDecl *D, FunctionDecl *R) {
+    if (isa<CXXRecordDecl>(R->getDeclContext()))
+      getSema().AddPendingMemberTransformation(this, D, R);
+    else
+      BaseType::TransformFunctionDefinition(D, R);
+  }
+
+  /// Transform a definition that was previously pending.
+  void TransformPendingDefinition(FunctionDecl *D, FunctionDecl *R) {
+      BaseType::TransformFunctionDefinition(D, R);    
+  }
+
   Decl* RewriteAsStaticMember(Decl *D) {
     if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(D))
       return RewriteAsStaticMemberFunction(Method);
@@ -893,6 +907,16 @@ public:
   }
 };
 
+SourceCodeInjector &Sema::MakeInjector(DeclContext *Src, DeclContext *Dst) {
+  SourceCodeInjector *Injector = new SourceCodeInjector(*this, Src, Dst);
+  Injectors.push_back(Injector);
+  return *Injector;
+}
+
+void Sema::DestroyInjectors() {
+  for (SourceCodeInjector *I : Injectors)
+    delete I;
+}
 
 /// Returns the transformed statement S. 
 bool Sema::InjectBlockStatements(SourceLocation POI, InjectionInfo &II) {
@@ -1062,7 +1086,7 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
   // nested content, not the fragment declaration.
   //
   // FIXME: Do modification traits apply to fragments? Probably not?
-  SourceCodeInjector Injector(SemaRef, InjectionDC, CurrentDC);
+  SourceCodeInjector &Injector = SemaRef.MakeInjector(InjectionDC, CurrentDC);
   Injector.AddSubstitution(Injection, Injectee);
   Injector.AddReplacements(Injection->getDeclContext(), Class, Captures);
 
@@ -1109,7 +1133,7 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   // Configure the injection. Within the injected declaration, references
   // to the enclosing context are replaced with references to the destination
   // context.
-  SourceCodeInjector Injector(SemaRef, SourceDC, CurrentDC);
+  SourceCodeInjector &Injector = SemaRef.MakeInjector(SourceDC, CurrentDC);
   Injector.AddSubstitution(Decl::castFromDeclContext(InjectionDC), Injectee);
 
   // Unpack the modification traits so we can apply them after generating
@@ -1289,7 +1313,7 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
   // FIXME: The point of instantiation/injection is incorrect.
   InstantiatingTemplate Inst(*this, Final->getLocation());
   ContextRAII SavedContext(*this, Final);
-  SourceCodeInjector Injector(*this, Def, nullptr);
+  SourceCodeInjector& Injector = MakeInjector(Def, nullptr);
 
   // When injecting replace references to the metaclass definition with
   // references to the final class.
@@ -1320,4 +1344,38 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
   
   if (Final->isInvalidDecl())
     return;
+}
+
+void Sema::EnterPendingMemberTransformationScope(RecordDecl *D) {
+  PendingMemberTransformationList List;
+  List.Class = D;
+  PendingMemberTransformations.push_back(std::move(List));
+}
+
+void Sema::LeavePendingMemberTransformationScope(RecordDecl *D) {
+  assert(!PendingMemberTransformations.empty() && 
+         "imbalanced transformation stack");
+
+  PendingMemberTransformationList& Top = PendingMemberTransformations.back();
+  assert(Top.Class == D && "transformation list for wrong class");
+  
+  for (PendingMemberTransformation& X : Top.PendingMembers) {
+    SourceCodeInjector *Injector = X.Injector;
+    if (FunctionDecl *OldFn = dyn_cast<FunctionDecl>(X.Original)) {
+      FunctionDecl *NewFn = dyn_cast<FunctionDecl>(X.Generated);
+      Injector->TransformPendingDefinition(OldFn, NewFn);
+    } else {
+      assert(false && "unknown pending declaration");
+    }
+  }
+
+  PendingMemberTransformations.pop_back();
+}
+
+void Sema::AddPendingMemberTransformation(SourceCodeInjector *Injector, 
+                                          Decl *D, Decl *R) {
+  assert(!PendingMemberTransformations.empty() && "empty transformation stack");
+
+  PendingMemberTransformationList& Top = PendingMemberTransformations.back();
+  Top.PendingMembers.push_back({Injector, D, R});
 }
