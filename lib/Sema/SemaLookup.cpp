@@ -717,6 +717,13 @@ static bool CanDeclareSpecialMemberFunction(const CXXRecordDecl *Class) {
   if (!Class->getDefinition() || Class->isDependentContext())
     return false;
 
+  // The class cannot be a fragment.
+  //
+  // FIXME: The check above should be sufficient; we're essentially in a
+  // dependent context, except that it's not a template.
+  if (isa<CXXFragmentDecl>(Class->getDeclContext()))
+    return false;
+
   // We can't be in the middle of defining the class.
   return !Class->isBeingDefined();
 }
