@@ -20,6 +20,7 @@
 #include "clang/AST/DeclVisitor.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/Sema/Initialization.h"
+#include "clang/Sema/Template.h"
 #include "clang/Sema/SemaInternal.h"
 
 using namespace clang;
@@ -690,6 +691,59 @@ public:
     }
     return TSI;
   }
+
+  // FIXME: This is probably the right way to do this. HOWEVER, it's leading
+  // to a substitution bug.
+  //
+  // In all reality, this is probably because I've chosen to write injection
+  // outside of the usual declaration substitution machinery. In order for
+  // this to work correctly, we need to ensure that SubstXXX finds locally
+  // transformed declarations -- which it is not doing. That probably means
+  // rewriting the entire injection facility.
+
+  #if 0
+  // Try to expand parameter packs during injection.
+  bool TryExpandParameterPacks(SourceLocation EllipsisLoc,
+                               SourceRange PatternRange,
+                               ArrayRef<UnexpandedParameterPack> Unexpanded,
+                               bool &ShouldExpand, bool &RetainExpansion,
+                               Optional<unsigned> &NumExpansions) {
+    for (auto I = Unexpanded.begin(), End = Unexpanded.end(); I != End; ++I) {
+      // We should try to expand parameter packs if any of the unexpanded
+      // packs refer to an injected parameter sequence.
+      if (NamedDecl *ND = I->first.get<NamedDecl *>()) {
+        if (ParmVarDecl *Parm = dyn_cast<ParmVarDecl>(ND)) {
+          if (const auto *T = Parm->getType()->getAs<InjectedParmType>()) {
+
+            // FIXME: Do we need to instantiate the type in order to
+            // determine the number of expansion.
+            llvm::outs() << "HERE: " << T->isDependentType() << '\n';
+            Parm->dump();
+
+            // Transform the injected parameter type first. If it's dependent,
+            // then we can't expand and TransformExprs() simply create a new
+            // expansion pattern (good).
+            QualType PatternType = TransformType(QualType(T, 0));
+            if (PatternType->isDependentType()) {
+              ShouldExpand = false;
+              return false;
+            }
+
+            T = PatternType->getAs<InjectedParmType>();
+
+            llvm::outs() << "EXPAND TO " << T->getParameters().size() << '\n';
+
+            // Indicate that we should expand with N parameters.
+            ShouldExpand = true;
+            RetainExpansion = false; // Probably
+            NumExpansions = T->getParameters().size();
+          }
+        }
+      }
+    }
+    return false;
+  }
+  #endif
 
   Decl *TransformDecl(Decl *D) {
     return TransformDecl(D->getLocation(), D);

@@ -73,6 +73,13 @@ namespace {
     bool VisitDeclRefExpr(DeclRefExpr *E) {
       if (E->getDecl()->isParameterPack())
         Unexpanded.push_back(std::make_pair(E->getDecl(), E->getLocation()));
+
+      #if 0
+      // A reference to variable with injected parameter type is a kind of
+      // unexpanded parameter pack.
+      if (isa<InjectedParmType>(E->getType()))
+        Unexpanded.push_back(std::make_pair(E->getDecl(), E->getLocation()));
+      #endif
       
       return true;
     }
@@ -508,7 +515,7 @@ ExprResult Sema::CheckPackExpansion(Expr *Pattern, SourceLocation EllipsisLoc,
                                     Optional<unsigned> NumExpansions) {
   if (!Pattern)
     return ExprError();
-  
+
   // C++0x [temp.variadic]p5:
   //   The pattern of a pack expansion shall name one or more
   //   parameter packs that are not expanded by a nested pack

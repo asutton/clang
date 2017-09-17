@@ -929,7 +929,8 @@ namespace {
     ParmVarDecl *TransformFunctionTypeParam(ParmVarDecl *OldParm,
                                             int indexAdjustment,
                                             Optional<unsigned> NumExpansions,
-                                            bool ExpectParameterPack);
+                                            bool ExpectParameterPack,
+                                            bool TransformLocal = false);
 
     /// \brief Transforms a template type parameter type by performing
     /// substitution of the corresponding template type argument.
@@ -1459,7 +1460,8 @@ ParmVarDecl *
 TemplateInstantiator::TransformFunctionTypeParam(ParmVarDecl *OldParm,
                                                  int indexAdjustment,
                                                Optional<unsigned> NumExpansions,
-                                                 bool ExpectParameterPack) {
+                                                 bool ExpectParameterPack,
+                                                 bool TransformLocal) {
   return SemaRef.SubstParmVarDecl(OldParm, TemplateArgs, indexAdjustment,
                                   NumExpansions, ExpectParameterPack);
 }

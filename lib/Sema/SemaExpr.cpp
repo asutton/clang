@@ -1770,6 +1770,12 @@ Sema::BuildDeclRefExpr(ValueDecl *D, QualType Ty, ExprValueKind VK,
                             NameInfo, Ty, VK, FoundD);
   }
 
+  if (isa<InjectedParmType>(Ty)) {
+    // An expression referencing a set of injected parameters is a kind of
+    // parameter pack. 
+    E->setContainsUnexpandedParameterPack();
+  }
+
   MarkDeclRefReferenced(E);
 
   if (getLangOpts().ObjCWeak && isa<VarDecl>(D) &&

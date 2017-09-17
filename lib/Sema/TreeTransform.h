@@ -696,7 +696,8 @@ public:
       const QualType *ParamTypes,
       const FunctionProtoType::ExtParameterInfo *ParamInfos,
       SmallVectorImpl<QualType> &PTypes, SmallVectorImpl<ParmVarDecl *> *PVars,
-      Sema::ExtParameterInfoBuilder &PInfos);
+      Sema::ExtParameterInfoBuilder &PInfos,
+      bool TransformLocal = false);
 
   /// \brief Transforms a single function-type parameter.  Return null
   /// on error.
@@ -706,7 +707,8 @@ public:
   ParmVarDecl *TransformFunctionTypeParam(ParmVarDecl *OldParm,
                                           int indexAdjustment,
                                           Optional<unsigned> NumExpansions,
-                                          bool ExpectParameterPack);
+                                          bool ExpectParameterPack,
+                                          bool TransformLocal = false);
 
   QualType TransformReferenceType(TypeLocBuilder &TLB, ReferenceTypeLoc TL);
 
@@ -3534,6 +3536,64 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
     if (PackExpansionExpr *Expansion = dyn_cast<PackExpansionExpr>(Inputs[I])) {
       Expr *Pattern = Expansion->getPattern();
 
+      // FIXME: This is probably not quite right. We should really return
+      // an unexpanded parameter pack so that we can expand expressions like
+      //
+      //    f(do_sutff(parms)...)
+      //
+      // Currently, that doesn't work.
+      //
+      // Trying to make that work pretty much entails a complete rewrite
+      // of the injection facilities, except basing them on existing template
+      // instantiation mechanism (and local instantiations instead of
+      // transformed declarations.
+      QualType PatternType = Pattern->getType();
+      if (const InjectedParmType *IPT = dyn_cast<InjectedParmType>(PatternType)) {
+        
+        // Transform the injected parameter type first. If it's dependent,
+        // then we'll return a new pack expansion with an adjusted reference
+        // to the (possibly) new parameter. If not, we can simply unpack
+        // the parameters, and build references to them.
+        QualType PatternType = TransformType(QualType(IPT, 0));
+
+        if (PatternType->isDependentType()) {
+          ExprResult NewPattern = TransformExpr(Pattern);
+          if (NewPattern.isInvalid())
+            return true;
+          Expr *E = new (getSema().Context) PackExpansionExpr(PatternType,
+                                                              NewPattern.get(),
+                                                    Expansion->getEllipsisLoc(),
+                                                           /*NumExpansions=*/0);
+          Outputs.push_back(E);
+          *ArgChanged = true;
+          return false;
+        }
+
+        // The pattern is not dependent and holds references to the parameters
+        // to which it expanded. Build references to those expressions.
+        IPT = PatternType->getAs<InjectedParmType>();
+        ArrayRef<ParmVarDecl *> Parms = IPT->getParameters();
+
+        for (ParmVarDecl *Old : Parms) {
+          Decl *D = getDerived().TransformDecl(Old->getLocation(), Old);
+          if (!D)
+            return false;
+          ParmVarDecl *New = cast<ParmVarDecl>(D);
+          ExprResult Ref = getSema().BuildDeclRefExpr(New, New->getType(), 
+                                                      VK_LValue,
+                                                      Pattern->getExprLoc());
+          if (Ref.isInvalid())
+            return false;
+
+          getSema().MarkDeclRefReferenced(cast<DeclRefExpr>(Ref.get()));
+
+          Outputs.push_back(Ref.get());
+        }
+  
+        *ArgChanged = true;
+        return false;
+      }
+
       SmallVector<UnexpandedParameterPack, 2> Unexpanded;
       getSema().collectUnexpandedParameterPacks(Pattern, Unexpanded);
       assert(!Unexpanded.empty() && "Pack expansion without parameter packs?");
@@ -4963,7 +5023,7 @@ QualType TreeTransform<Derived>::TransformExtVectorType(TypeLocBuilder &TLB,
 template <typename Derived>
 ParmVarDecl *TreeTransform<Derived>::TransformFunctionTypeParam(
     ParmVarDecl *OldParm, int indexAdjustment, Optional<unsigned> NumExpansions,
-    bool ExpectParameterPack) {
+    bool ExpectParameterPack, bool TransformLocal) {
   TypeSourceInfo *OldDI = OldParm->getTypeSourceInfo();
   TypeSourceInfo *NewDI = nullptr;
 
@@ -5012,6 +5072,10 @@ ParmVarDecl *TreeTransform<Derived>::TransformFunctionTypeParam(
                                              /* DefArg */ nullptr);
   newParm->setScopeInfo(OldParm->getFunctionScopeDepth(),
                         OldParm->getFunctionScopeIndex() + indexAdjustment);
+
+  if (TransformLocal)
+    transformedLocalDecl(OldParm, newParm);
+  
   return newParm;
 }
 
@@ -5022,7 +5086,8 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
     const FunctionProtoType::ExtParameterInfo *ParamInfos,
     SmallVectorImpl<QualType> &OutParamTypes,
     SmallVectorImpl<ParmVarDecl *> *PVars,
-    Sema::ExtParameterInfoBuilder &PInfos) {
+    Sema::ExtParameterInfoBuilder &PInfos,
+    bool TransformLocal) {
   int indexAdjustment = 0;
 
   unsigned NumParams = Params.size();
@@ -5068,7 +5133,8 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
               = getDerived().TransformFunctionTypeParam(OldParm,
                                                         indexAdjustment++,
                                                         OrigNumExpansions,
-                                                /*ExpectParameterPack=*/false);
+                                                /*ExpectParameterPack=*/false,
+                                             /*TransformLocal=*/TransformLocal);
             if (!NewParm)
               return true;
 
@@ -5087,7 +5153,8 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
               = getDerived().TransformFunctionTypeParam(OldParm,
                                                         indexAdjustment++,
                                                         OrigNumExpansions,
-                                                /*ExpectParameterPack=*/false);
+                                                /*ExpectParameterPack=*/false,
+                                             /*TransformLocal=*/TransformLocal);
             if (!NewParm)
               return true;
 
@@ -5114,10 +5181,13 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
         NewParm = getDerived().TransformFunctionTypeParam(OldParm,
                                                           indexAdjustment,
                                                           NumExpansions,
-                                                  /*ExpectParameterPack=*/true);
+                                                  /*ExpectParameterPack=*/true,
+                                             /*TransformLocal=*/TransformLocal);
       } else {
         NewParm = getDerived().TransformFunctionTypeParam(
-            OldParm, indexAdjustment, None, /*ExpectParameterPack=*/ false);
+            OldParm, indexAdjustment, None, 
+            /*ExpectParameterPack=*/ false,
+            /*TransformLocal=*/ TransformLocal);
 
       }
 
@@ -5344,21 +5414,6 @@ QualType TreeTransform<Derived>::TransformFunctionProtoType(
             ParamTypes, &ParamDecls, ExtParamInfos))
       return QualType();
   }
-
-  // FIXME: Remove this?
-  //
-  // // Rebuild the parameter list, accounting for ex
-  // SmallVector<QualType, 4> NewParmTypes;
-  // for (QualType Q : ParamTypes) {
-  //   if (const InjectedParmType *IPT = Q->getAs<InjectedParmType>()) {
-  //     Expr *Ref = IPT->getReflection();
-  //     if (!Ref->isTypeDependent() && !Ref->isValueDependent())
-  //       for (QualType X : IPT->getExpandedTypes())
-  //         NewParmTypes.push_back(X);
-  //   } else
-  //     NewParmTypes.push_back(Q);
-  // }
-  // ParamTypes = NewParmTypes;
 
   FunctionProtoType::ExtProtoInfo EPI = T->getExtProtoInfo();
 
@@ -13580,7 +13635,7 @@ TreeTransform<Derived>::TransformFunctionParameters(FunctionDecl *D,
   if (getDerived().TransformFunctionTypeParams(
           R->getLocation(), D->parameters(), nullptr,
           FnType->getExtParameterInfosOrNull(), ParamTypes, &Params, 
-          ParmInfo))
+          ParmInfo, /*TransformLocal=*/true))
     return;
 
   R->setParams(Params);
