@@ -1053,6 +1053,7 @@ static StorageTrait getStorage(VarDecl *D) {
 struct BasicTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
+  unsigned Rest : 28;
 };
 
 static BasicTraits getBasicTraits(Decl *D) {
@@ -1072,6 +1073,7 @@ struct VariableTraits {
   bool Constexpr : 1;
   bool Defined : 1;
   bool Inline : 1; ///< Valid only when defined.
+  unsigned Rest : 23; 
 };
 
 static VariableTraits getVariableTraits(VarDecl *D) {
@@ -1090,6 +1092,7 @@ struct FieldTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
   bool Mutable : 1;
+  unsigned Rest : 27; 
 };
 
 /// Get the traits for a non-static member of a class or union.
@@ -1112,6 +1115,7 @@ struct FunctionTraits {
   bool Defined : 1;
   bool Inline : 1;  ///< Valid only when defined.
   bool Deleted : 1; ///< Valid only when defined.
+  unsigned Rest : 23;
 };
 
 static bool getNothrow(ASTContext &C, FunctionDecl *D) {
@@ -1161,6 +1165,7 @@ struct MethodTraits {
   bool MoveCtor : 1;
   bool CopyAssign : 1;
   bool MoveAssign : 1;
+  unsigned Rest : 9;
 };
 
 static MethodTraits getConstructorTraits(ASTContext &C, CXXConstructorDecl *D) {
@@ -1239,6 +1244,7 @@ static MethodTraits getMethodTraits(ASTContext &C, CXXMethodDecl *D) {
 struct ValueTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
+  unsigned Rest : 28;
 };
 
 static ValueTraits getValueTraits(EnumConstantDecl *D) {
@@ -1252,6 +1258,7 @@ struct NamespaceTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
   bool Inline : 1;
+  unsigned Rest : 27;
 };
 
 static NamespaceTraits getNamespaceTraits(NamespaceDecl *D) {
@@ -1271,6 +1278,7 @@ struct ClassTraits {
   bool Abstract : 1;
   bool Final : 1;
   bool Empty : 1;
+  unsigned Rest : 23;
 };
 
 static ClassTraits getClassTraits(CXXRecordDecl *D) {
@@ -1290,8 +1298,9 @@ static ClassTraits getClassTraits(CXXRecordDecl *D) {
 struct EnumTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
-  bool Scoped;
-  bool Complete;
+  bool Scoped : 1;
+  bool Complete : 1;
+  unsigned Rest : 26;
 };
 
 static EnumTraits getEnumTraits(EnumDecl *D) {
@@ -1306,7 +1315,8 @@ static EnumTraits getEnumTraits(EnumDecl *D) {
 struct BaseTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
-  bool Virtual;
+  bool Virtual : 1;
+  unsigned Rest : 27;
 };
 
 static BaseTraits getBaseTraits(CXXBaseSpecifier *B) {
