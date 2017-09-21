@@ -1070,9 +1070,9 @@ struct VariableTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
   StorageTrait Storage : 2;
-  bool Constexpr : 1;
-  bool Defined : 1;
-  bool Inline : 1; ///< Valid only when defined.
+  unsigned Constexpr : 1;
+  unsigned Defined : 1;
+  unsigned Inline : 1; ///< Valid only when defined.
   unsigned Rest : 23; 
 };
 
@@ -1091,7 +1091,7 @@ static VariableTraits getVariableTraits(VarDecl *D) {
 struct FieldTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
-  bool Mutable : 1;
+  unsigned Mutable : 1;
   unsigned Rest : 27; 
 };
 
@@ -1110,11 +1110,11 @@ static FieldTraits getFieldTraits(FieldDecl *D) {
 struct FunctionTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
-  bool Constexpr : 1;
-  bool Nothrow : 1; ///< Called \c noexcept in C++.
-  bool Defined : 1;
-  bool Inline : 1;  ///< Valid only when defined.
-  bool Deleted : 1; ///< Valid only when defined.
+  unsigned Constexpr : 1;
+  unsigned Nothrow : 1; ///< Called \c noexcept in C++.
+  unsigned Defined : 1;
+  unsigned Inline : 1;  ///< Valid only when defined.
+  unsigned Deleted : 1; ///< Valid only when defined.
   unsigned Rest : 23;
 };
 
@@ -1148,23 +1148,23 @@ struct MethodTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
   MethodKind Kind : 2;
-  bool Constexpr : 1;
-  bool Explicit : 1;
-  bool Virtual : 1;
-  bool Pure : 1;
-  bool Final : 1;
-  bool Override : 1;
-  bool Nothrow : 1; ///< Called \c noexcept in C++.
-  bool Defined : 1;
-  bool Inline : 1;
-  bool Deleted : 1;
-  bool Defaulted : 1;
-  bool Trivial : 1;
-  bool DefaultCtor : 1;
-  bool CopyCtor : 1;
-  bool MoveCtor : 1;
-  bool CopyAssign : 1;
-  bool MoveAssign : 1;
+  unsigned Constexpr : 1;
+  unsigned Explicit : 1;
+  unsigned Virtual : 1;
+  unsigned Pure : 1;
+  unsigned Final : 1;
+  unsigned Override : 1;
+  unsigned Nothrow : 1; ///< Called \c noexcept in C++.
+  unsigned Defined : 1;
+  unsigned Inline : 1;
+  unsigned Deleted : 1;
+  unsigned Defaulted : 1;
+  unsigned Trivial : 1;
+  unsigned DefaultCtor : 1;
+  unsigned CopyCtor : 1;
+  unsigned MoveCtor : 1;
+  unsigned CopyAssign : 1;
+  unsigned MoveAssign : 1;
   unsigned Rest : 9;
 };
 
@@ -1257,7 +1257,7 @@ static ValueTraits getValueTraits(EnumConstantDecl *D) {
 struct NamespaceTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
-  bool Inline : 1;
+  unsigned Inline : 1;
   unsigned Rest : 27;
 };
 
@@ -1273,11 +1273,11 @@ static NamespaceTraits getNamespaceTraits(NamespaceDecl *D) {
 struct ClassTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
-  bool Complete : 1;
-  bool Polymoprhic : 1;
-  bool Abstract : 1;
-  bool Final : 1;
-  bool Empty : 1;
+  unsigned Complete : 1;
+  unsigned Polymoprhic : 1;
+  unsigned Abstract : 1;
+  unsigned Final : 1;
+  unsigned Empty : 1;
   unsigned Rest : 23;
 };
 
@@ -1298,8 +1298,8 @@ static ClassTraits getClassTraits(CXXRecordDecl *D) {
 struct EnumTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
-  bool Scoped : 1;
-  bool Complete : 1;
+  unsigned Scoped : 1;
+  unsigned Complete : 1;
   unsigned Rest : 26;
 };
 
@@ -1315,7 +1315,7 @@ static EnumTraits getEnumTraits(EnumDecl *D) {
 struct BaseTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
-  bool Virtual : 1;
+  unsigned Virtual : 1;
   unsigned Rest : 27;
 };
 
@@ -1329,7 +1329,8 @@ static BaseTraits getBaseTraits(CXXBaseSpecifier *B) {
 /// Convert a bit-field structure into a uint32.
 template <typename Traits>
 static inline std::uint32_t LaunderTraits(Traits S) {
-  static_assert(sizeof(std::uint32_t) == sizeof(Traits), "Size mismatch");
+  static_assert(sizeof(std::uint32_t) == sizeof(Traits), 
+                "size mismatch");
   unsigned ret = 0;
   std::memcpy(&ret, &S, sizeof(S));
   return ret;
