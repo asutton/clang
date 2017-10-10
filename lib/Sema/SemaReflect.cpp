@@ -578,6 +578,7 @@ static char const *GetReflectionClass(Decl *D) {
   default:
     break;
   }
+  D->dump();
   llvm_unreachable("Unhandled declaration in reflection");
 }
 
@@ -593,6 +594,8 @@ ExprResult Sema::BuildDeclReflection(SourceLocation Loc, Decl *D) {
   // Use BuildTypeReflection for type declarations.
   if (TagDecl *TD = dyn_cast<TagDecl>(D))
     return BuildTypeReflection(Loc, Context.getTagDeclType(TD));
+  if (TypedefNameDecl *TD = dyn_cast<TypedefNameDecl>(D))
+    return BuildTypeReflection(Loc, TD->getUnderlyingType());
 
   // Get the template name for the instantiation.
   char const *Name = GetReflectionClass(D);
@@ -679,13 +682,8 @@ static char const *GetReflectionClass(QualType T) {
 // TODO: There's a lot of duplication between this and the BuildDeclReflection
 // function above. Surely we can simplify.
 ExprResult Sema::BuildTypeReflection(SourceLocation Loc, QualType QT) {
-  // See through elaborated and deduced types.
-  if (const ElaboratedType *Elab = QT->getAs<ElaboratedType>()) {
-    QT = Elab->getNamedType();
-  } else if (const AutoType *Auto = QT->getAs<AutoType>()) {
-    assert(Auto->isDeduced() && "Reflection of non-deduced type");
-    QT = Auto->getDeducedType();
-  }
+  // Only operate on the canonical type. See through sugar and aliases.
+  QT = Context.getCanonicalType(QT);
 
   // Get the wrapper type.
   char const *Name = GetReflectionClass(QT);
