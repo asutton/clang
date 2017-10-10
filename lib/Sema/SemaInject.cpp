@@ -28,10 +28,12 @@ using namespace sema;
 
 static bool InjectFragment(Sema &SemaRef, SourceLocation POI, 
                            QualType ReflectionTy, const APValue &ReflectionVal, 
-                           Decl *Injection, SmallVectorImpl<Decl *> &Decls);
+                           Decl *Injectee, Decl *Injection, 
+                           SmallVectorImpl<Decl *> &Decls);
 static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI, 
                             QualType ReflectionTy, const APValue &ReflectionVal, 
-                            Decl *Injection, SmallVectorImpl<Decl *> &Decls);
+                            Decl *Injectee, Decl *Injection, 
+                            SmallVectorImpl<Decl *> &Decls);
 
 // Find variables to capture in the given scope. 
 static void FindCapturesInScope(Sema &SemaRef, Scope *S, 
@@ -340,6 +342,25 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) {
   return new (Context) CXXInjectionStmt(Loc, Reflection);
 }
 
+static Decl *
+GetDeclFromReflection(Sema &SemaRef, Expr *Reflection)
+{
+  SourceLocation Loc = Reflection->getExprLoc();
+  QualType Ty = Reflection->getType();
+  Sema::ReflectedConstruct Construct = SemaRef.EvaluateReflection(Ty, Loc);
+  Decl *Injection = nullptr;
+  if (Type *T = Construct.getAsType()) {
+    if (CXXRecordDecl *Class = T->getAsCXXRecordDecl())
+      Injection = Class;
+  } else
+    Injection = Construct.getAsDeclaration();
+  if (!Injection) {
+    SemaRef.Diag(Loc, diag::err_reflection_not_a_decl);
+    return nullptr;
+  }
+  return Injection;
+}
+
 /// An injection declaration injects its fragment members at this point
 /// in the program. 
 Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc, 
@@ -356,19 +377,13 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc,
                                           CK_LValueToRValue, Reflection, 
                                           nullptr, VK_RValue);
 
-  // Get the declaration or fragment to be injected. 
-  QualType Ty = Reflection->getType();
-  Sema::ReflectedConstruct Construct = EvaluateReflection(Ty, Loc);
-  Decl *Injection = nullptr;
-  if (Type *T = Construct.getAsType()) {
-    if (CXXRecordDecl *Class = T->getAsCXXRecordDecl())
-      Injection = Class;
-  } else
-    Injection = Construct.getAsDeclaration();
-  if (!Injection) {
-    Diag(Loc, diag::err_reflection_not_a_decl);
+  // Get the declaration or fragment to be injected.
+  Decl *Injection = GetDeclFromReflection(*this, Reflection);
+  if (!Injection)
     return DeclGroupPtrTy();
-  }
+
+  // The Injectee is the current context.
+  Decl *Injectee = Decl::castFromDeclContext(CurContext);
 
   // Evaluate the injection.
   SmallVector<PartialDiagnosticAt, 8> Notes;
@@ -386,13 +401,14 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc,
 
   // Apply the corresponding operation. And accumulate the resulting
   // declarations.
-  SmallVector<Decl *, 8> Decls;
+  QualType Ty = Reflection->getType();
   CXXRecordDecl *Class = Ty->getAsCXXRecordDecl();
+  SmallVector<Decl *, 8> Decls;
   if (Class->isFragment()) {
-    if (!InjectFragment(*this, Loc, Ty, Result.Val, Injection, Decls))
+    if (!InjectFragment(*this, Loc, Ty, Result.Val, Injectee, Injection, Decls))
       return DeclGroupPtrTy();
   } else {
-    if (!CopyDeclaration(*this, Loc, Ty, Result.Val, Injection, Decls))
+    if (!CopyDeclaration(*this, Loc, Ty, Result.Val, Injectee, Injection, Decls))
       return DeclGroupPtrTy();
   }
 
@@ -405,6 +421,80 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc,
     return DeclGroupPtrTy::make(DeclGroupRef(DG));
   }
 }
+
+/// An injection declaration injects its fragment members at this point
+/// in the program. 
+Sema::DeclGroupPtrTy Sema::ActOnCXXExtensionDecl(SourceLocation Loc, 
+                                                 Expr *Target,
+                                                 Expr *Reflection) { 
+  if (Reflection->isTypeDependent() || Reflection->isValueDependent() ||
+      Target->isTypeDependent() || Target->isValueDependent()) {
+    Decl *D = CXXExtensionDecl::Create(Context, CurContext, Loc, Target, Reflection);
+    CurContext->addDecl(D);
+    return DeclGroupPtrTy::make(DeclGroupRef(D));
+  }
+
+  // Force an lvalue-to-rvalue conversion.
+  if (Target->isGLValue())
+    Target = ImplicitCastExpr::Create(Context, Target->getType(), 
+                                        CK_LValueToRValue, Target, 
+                                        nullptr, VK_RValue);
+  if (Reflection->isGLValue())
+    Reflection = ImplicitCastExpr::Create(Context, Reflection->getType(), 
+                                          CK_LValueToRValue, Reflection, 
+                                          nullptr, VK_RValue);
+
+  // Get the declaration or fragment to be injected.
+  Decl *Injectee = GetDeclFromReflection(*this, Target);
+  if (!Injectee)
+    return DeclGroupPtrTy();
+
+  // Get the declaration or fragment to be injected.
+  Decl *Injection = GetDeclFromReflection(*this, Reflection);
+  if (!Injection)
+    return DeclGroupPtrTy();
+
+  // FIXME: Do we need to evaluate the reflection? Probably not, we just
+  // want to get the declaration so we can inject into it.
+
+  // Evaluate the reflection expression. This may contain captured values or 
+  // local modifications to be applied during injection.
+  SmallVector<PartialDiagnosticAt, 8> Notes;
+  Expr::EvalResult Result;
+  Result.Diag = &Notes;
+  if (!Reflection->EvaluateAsRValue(Result, Context)) {
+    // FIXME: This is not the right error.
+    Diag(Reflection->getExprLoc(), diag::err_not_a_reflection);
+    if (!Notes.empty()) {
+      for (const PartialDiagnosticAt &Note : Notes)
+        Diag(Note.first, Note.second);
+    }
+    return DeclGroupPtrTy();
+  }
+
+  // Apply the corresponding operation. And accumulate the resulting
+  // declarations.
+  QualType Ty = Reflection->getType();
+  CXXRecordDecl *Class = Ty->getAsCXXRecordDecl();
+  SmallVector<Decl *, 8> Decls;
+  if (Class->isFragment()) {
+    if (!InjectFragment(*this, Loc, Ty, Result.Val, Injectee, Injection, Decls))
+      return DeclGroupPtrTy();
+  } else {
+    if (!CopyDeclaration(*this, Loc, Ty, Result.Val, Injectee, Injection, Decls))
+      return DeclGroupPtrTy();
+  }
+
+  if (Decls.empty()) {
+    return DeclGroupPtrTy();
+  } else if (Decls.size() == 1) {
+    return DeclGroupPtrTy::make(DeclGroupRef(Decls.front()));
+  } else {
+    DeclGroup *DG = DeclGroup::Create(Context, Decls.data(), Decls.size());
+    return DeclGroupPtrTy::make(DeclGroupRef(DG));
+  }
+}
+
 
 static ClassTemplateSpecializationDecl *ReferencedReflectionClass(Sema &SemaRef, 
                                                                   Expr *E) {
@@ -1115,16 +1205,14 @@ static bool CheckInjectionKind(Sema &SemaRef, SourceLocation POI,
 
 /// Inject a fragment into the current context.
 bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
-                    const APValue &ReflectionVal, Decl *Injection,
-                    SmallVectorImpl<Decl *> &Decls) {
+                    const APValue &ReflectionVal, Decl *Injectee,
+                    Decl *Injection, SmallVectorImpl<Decl *> &Decls) {
   assert(isa<CXXRecordDecl>(Injection) || isa<NamespaceDecl>(Injection));
+  DeclContext *InjecteeDC = Decl::castToDeclContext(Injectee);
   DeclContext *InjectionDC = Decl::castToDeclContext(Injection);
-  DeclContext *CurrentDC = SemaRef.CurContext;
   
-  if (!CheckInjectionContexts(SemaRef, POI, InjectionDC, CurrentDC))
+  if (!CheckInjectionContexts(SemaRef, POI, InjectionDC, InjecteeDC))
     return false;
-
-  Decl *Injectee = Decl::castFromDeclContext(CurrentDC);
 
   // Extract the captured values for replacement.
   unsigned NumCaptures = ReflectionVal.getStructNumFields();
@@ -1140,9 +1228,13 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
   // nested content, not the fragment declaration.
   //
   // FIXME: Do modification traits apply to fragments? Probably not?
-  SourceCodeInjector &Injector = SemaRef.MakeInjector(InjectionDC, CurrentDC);
+  SourceCodeInjector &Injector = SemaRef.MakeInjector(InjectionDC, InjecteeDC);
   Injector.AddSubstitution(Injection, Injectee);
   Injector.AddReplacements(Injection->getDeclContext(), Class, Captures);
+
+  // Set up the transformation context.
+  Sema::ContextRAII Switch(SemaRef, InjecteeDC);
+  Sema::PendingMemberTransformationRAII Pending(SemaRef, InjecteeDC);
 
   for (Decl *D : InjectionDC->decls()) {
     Decl *R = Injector.InjectDecl(D);
@@ -1151,7 +1243,7 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
       continue;
     }
     Decls.push_back(R);
-    
+
     // FIXME: This is probably not right. The notion of "top-level" corresponds
     // roughly to LLVM's global definitions, not strictly TU-scoped entities.
     if (isa<TranslationUnitDecl>(Injection))
@@ -1168,17 +1260,16 @@ static bool isClassMemberDecl(const Decl* D) {
 /// Clone a declaration into the current context.
 static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI, 
                             QualType ReflectionTy, const APValue &ReflectionVal, 
-                            Decl *Injection, SmallVectorImpl<Decl *> &Decls) {
+                            Decl *Injectee, Decl *Injection, 
+                            SmallVectorImpl<Decl *> &Decls) {
   DeclContext *InjectionDC = Injection->getDeclContext();
-  DeclContext *CurrentDC = SemaRef.CurContext;
+  DeclContext *InjecteeDC = Decl::castToDeclContext(Injectee);
 
-  if (!CheckInjectionContexts(SemaRef, POI, InjectionDC, CurrentDC))
+  if (!CheckInjectionContexts(SemaRef, POI, InjectionDC, InjecteeDC))
     return false;
 
-  if (!CheckInjectionKind(SemaRef, POI, Injection, CurrentDC))
+  if (!CheckInjectionKind(SemaRef, POI, Injection, InjecteeDC))
     return false;
-
-  Decl *Injectee = Decl::castFromDeclContext(CurrentDC);
 
   // The source DC is either the injection itself or null. This means that
   // any non-members of the injection will be looked up/handled differently.
@@ -1187,7 +1278,7 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   // Configure the injection. Within the injected declaration, references
   // to the enclosing context are replaced with references to the destination
   // context.
-  SourceCodeInjector &Injector = SemaRef.MakeInjector(SourceDC, CurrentDC);
+  SourceCodeInjector &Injector = SemaRef.MakeInjector(SourceDC, InjecteeDC);
   Injector.AddSubstitution(Decl::castFromDeclContext(InjectionDC), Injectee);
 
   // Unpack the modification traits so we can apply them after generating
@@ -1212,6 +1303,10 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
 
   assert(Storage != Automatic && "Can't make declarations automatic");
   assert(Storage != ThreadLocal && "Thread local storage not implemented");
+
+  // Set up the transformation context.
+  Sema::ContextRAII Switch(SemaRef, InjecteeDC);
+  Sema::PendingMemberTransformationRAII Pending(SemaRef, InjecteeDC);
 
   // Build the declaration. If there was a request to make field static, we'll
   // need to build a new declaration.
@@ -1312,15 +1407,18 @@ ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
     return false;
   }
 
+  /// The injectee is the current context.
+  Decl *Injectee = Decl::castFromDeclContext(SemaRef.CurContext);
+
   // Apply the injection operation.
   QualType Ty = II.ReflectionType;
   const APValue &Val = II.ReflectionValue;
   SmallVector<Decl *, 8> Decls;
   CXXRecordDecl *Class = Ty->getAsCXXRecordDecl();
   if (Class->isFragment())
-    return InjectFragment(SemaRef, POI, Ty, Val, Injection, Decls);
+    return InjectFragment(SemaRef, POI, Ty, Val, Injectee, Injection, Decls);
   else
-    return CopyDeclaration(SemaRef, POI, Ty, Val, Injection, Decls);
+    return CopyDeclaration(SemaRef, POI, Ty, Val, Injectee, Injection, Decls);
 }
 
 /// Inject a sequence of source code fragments or modification requests
@@ -1433,3 +1531,16 @@ void Sema::AddPendingMemberTransformation(SourceCodeInjector *Injector,
   PendingMemberTransformationList& Top = PendingMemberTransformations.back();
   Top.PendingMembers.push_back({Injector, D, R});
 }
+
+Sema::PendingMemberTransformationRAII::PendingMemberTransformationRAII(Sema &S, 
+                                                                 DeclContext *D)
+    : SemaRef(S), Class(dyn_cast<CXXRecordDecl>(D)) {
+  if (Class)
+    SemaRef.EnterPendingMemberTransformationScope(Class);    
+}
+
+Sema::PendingMemberTransformationRAII::~PendingMemberTransformationRAII() {
+  if (Class)
+    SemaRef.LeavePendingMemberTransformationScope(Class);
+}
+

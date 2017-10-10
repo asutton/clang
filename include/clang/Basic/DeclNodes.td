@@ -100,4 +100,5 @@ def Empty : Decl;
 def Constexpr : Decl;
 def CXXFragment : Decl, DeclContext;
 def CXXInjection : Decl;
+def CXXExtension : Decl;
 

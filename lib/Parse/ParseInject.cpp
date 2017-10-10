@@ -294,9 +294,58 @@ Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
   return Actions.ActOnCXXInjectionDecl(Loc, Reflection.get());
 }
 
-// TODO: This is a bit weird... It's a declaration that modifies an existing
-// declaration, but not the immediate context. The AST should preserve the
-// entity, although this does nothing.
+/// \brief Parse a C++ extension declaration.
+///
+///   extension-declaration:
+///     '__extend' '(' reflection ')' reflection ';'
+///     '__extend' '(' reflection ')' fragment ';'
+///
+/// Returns the group of declarations parsed.
 Parser::DeclGroupPtrTy Parser::ParseCXXExtensionDeclaration() {
-  llvm_unreachable("not implemented");
+  assert(Tok.is(tok::kw___extend) && "expected __extend");
+  SourceLocation Loc = ConsumeToken();
+
+  // Match the '(reflection)' clause.
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.consumeOpen()) {
+    Diag(Tok, diag::err_expected) << tok::l_paren;
+    return nullptr;
+  }
+  ExprResult Injectee = ParseConstantExpression();
+  if (Injectee.isInvalid())
+    return DeclGroupPtrTy();
+  if (T.consumeClose()) {
+    Diag(Tok, diag::err_expected) << tok::l_paren;
+    return nullptr;
+  }
+
+  // Get a reflection as the operand of the 
+  ExprResult Reflection;
+  switch (Tok.getKind()) {
+    case tok::kw_namespace:
+    case tok::kw_struct:
+    case tok::kw_class:
+    case tok::kw_union:
+    case tok::kw_enum:
+    case tok::l_brace: {
+      SmallVector<Expr *, 8> Captures;
+      Decl *Fragment = ParseCXXFragment(Captures);
+      if (!Fragment)
+        return DeclGroupPtrTy();
+      Reflection = Actions.ActOnCXXFragmentExpr(Loc, Captures, Fragment);
+      break;
+    }
+    
+    default: {
+      Reflection = ParseConstantExpression();
+      break;
+    }
+  }
+  if (Reflection.isInvalid())
+    return DeclGroupPtrTy();
+
+  // FIXME: Save the semicolon?
+  ExpectAndConsumeSemi(diag::err_expected_semi_after_fragment);
+
+  return Actions.ActOnCXXExtensionDecl(Loc, Injectee.get(), Reflection.get());
 }

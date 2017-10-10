@@ -469,6 +469,7 @@ public:
   Decl* TransformLocalTemplateTemplateParmDecl(TemplateTemplateParmDecl *D);
 
   Decl *TransformLocalCXXInjectionDecl(CXXInjectionDecl *D);
+  Decl *TransformLocalCXXExtensionDecl(CXXExtensionDecl *D);
   int TransformLocalCXXInjectedParmDecl(CXXInjectedParmDecl *D,
                                         SmallVectorImpl<ParmVarDecl *> &Params);
 
@@ -13124,6 +13125,8 @@ TreeTransform<Derived>::TransformLocalDecl(SourceLocation Loc, Decl *D) {
     return getDerived().TransformLocalNamespaceDecl(cast<NamespaceDecl>(D));
   case Decl::CXXInjection:
     return getDerived().TransformLocalCXXInjectionDecl(cast<CXXInjectionDecl>(D));
+  case Decl::CXXExtension:
+    return getDerived().TransformLocalCXXExtensionDecl(cast<CXXExtensionDecl>(D));
   }
 
   D->dump();
@@ -13592,6 +13595,30 @@ TreeTransform<Derived>::TransformLocalCXXInjectionDecl(CXXInjectionDecl *D) {
   // as it is created. Just return the first declaration if there is one.
   Sema::DeclGroupPtrTy Result = 
       getSema().ActOnCXXInjectionDecl(D->getLocation(), Reflection.get());
+  if (!Result)
+    return nullptr;
+  DeclGroupRef DG = Result.get();
+  if (DG.isNull())
+    return nullptr;
+  else
+    return *DG.begin();
+}
+
+template<typename Derived>
+Decl *
+TreeTransform<Derived>::TransformLocalCXXExtensionDecl(CXXExtensionDecl *D) {  
+  ExprResult Injectee = getDerived().TransformExpr(D->getInjectee());
+  if (Injectee.isInvalid())
+    return nullptr;
+
+  ExprResult Reflection = getDerived().TransformExpr(D->getReflection());
+  if (Reflection.isInvalid())
+    return nullptr;
+
+  Sema::DeclGroupPtrTy Result = 
+      getSema().ActOnCXXExtensionDecl(D->getLocation(), 
+                                      Injectee.get(), 
+                                      Reflection.get());
   if (!Result)
     return nullptr;
   DeclGroupRef DG = Result.get();

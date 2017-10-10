@@ -286,7 +286,7 @@ Retry:
   case tok::kw___extend: { // [Meta] extension declaration
     SourceLocation DeclStart = Tok.getLocation(), 
                    DeclEnd = Tok.getLocation();
-    DeclGroupPtrTy Decls = ParseCXXInjectionDeclaration();
+    DeclGroupPtrTy Decls = ParseCXXExtensionDeclaration();
     return Actions.ActOnDeclStmt(Decls, DeclStart, DeclEnd);
   }
 

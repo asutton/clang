@@ -8542,10 +8542,9 @@ public:
 
   StmtResult ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);
   StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);
-
   DeclGroupPtrTy ActOnCXXInjectionDecl(SourceLocation Loc, Expr *Reflection);
-  DeclGroupPtrTy BuildCXXInjectionDecl(SourceLocation Loc, Expr *Reflection);
-
+  DeclGroupPtrTy ActOnCXXExtensionDecl(SourceLocation Loc, Expr *Injectee,
+                                       Expr *Reflection);
   bool ActOnCXXInjectedParameter(SourceLocation UsingLoc, Expr *Reflection,
                                  IdentifierInfo *II,
                         SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);
@@ -8602,6 +8601,15 @@ public:
   void EnterPendingMemberTransformationScope(RecordDecl *D);
   void LeavePendingMemberTransformationScope(RecordDecl *D);
   void AddPendingMemberTransformation(SourceCodeInjector *Inection, Decl *D, Decl *R);
+
+  struct PendingMemberTransformationRAII
+  {
+    PendingMemberTransformationRAII(Sema &S, DeclContext *DC);
+    ~PendingMemberTransformationRAII();
+
+    Sema &SemaRef;
+    CXXRecordDecl *Class;
+  };
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

@@ -1899,6 +1899,11 @@ DEF_TRAVERSE_DECL(CXXInjectionDecl, {
   TRY_TO(TraverseStmt(D->getReflection()));
 });
 
+DEF_TRAVERSE_DECL(CXXExtensionDecl, {
+  TRY_TO(TraverseStmt(D->getInjectee()));
+  TRY_TO(TraverseStmt(D->getReflection()));
+});
+
 DEF_TRAVERSE_DECL(CXXInjectedParmDecl, {
   TRY_TO(TraverseStmt(D->getReflection()));
 });

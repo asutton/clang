@@ -3935,8 +3935,7 @@ public:
   }
 };
 
-/// Represents the projection of a declaration or declarations or fragment 
-/// into a parent context. 
+/// Represents declaration of a fragment into the current context.
 ///
 /// Example:
 ///
@@ -3947,14 +3946,14 @@ public:
 /// The fragment containing 'a' is injected into the enclosing class.
 ///
 /// FIXME: Is it possible for the declaration context to be a statement?
-class CXXInjectionDecl : public Decl, public DeclContext {
+class CXXInjectionDecl : public Decl {
   virtual void anchor();
 
   /// The injection source; a reflection.
   Expr *Reflection;
 
   CXXInjectionDecl(DeclContext *DC, SourceLocation Loc, Expr *Ref)
-    : Decl(CXXInjection, DC, Loc), DeclContext(CXXInjection), Reflection(Ref) {}
+    : Decl(CXXInjection, DC, Loc), Reflection(Ref) {}
 public:
   static CXXInjectionDecl *Create(ASTContext &CXT, DeclContext *DC,
                                   SourceLocation IntroLoc, Expr *Ref);
@@ -3966,15 +3965,50 @@ public:
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == CXXInjection; }
-  static DeclContext *castToDeclContext(const CXXInjectionDecl *D) {
-    return static_cast<DeclContext *>(const_cast<CXXInjectionDecl*>(D));
-  }
-  static CXXInjectionDecl *castFromDeclContext(const DeclContext *DC) {
-    return static_cast<CXXInjectionDecl *>(const_cast<DeclContext*>(DC));
-  }
+};
+
+/// Represents extension of a declaration context by a fragment.
+///
+/// Example:
+///
+///     struct S {
+///       __inject class { int a; }
+///     };
+///
+/// The fragment containing 'a' is injected into the enclosing class.
+///
+/// FIXME: Is it possible for the declaration context to be a statement?
+class CXXExtensionDecl : public Decl {
+  virtual void anchor();
+
+  /// The injection target; a reflection.
+  Expr *Injectee;
+
+  /// The injection source; a reflection.
+  Expr *Reflection;
+
+  CXXExtensionDecl(DeclContext *DC, SourceLocation Loc, Expr *Inj, Expr *Ref)
+    : Decl(CXXExtension, DC, Loc), Injectee(Inj), Reflection(Ref) {}
+public:
+  static CXXExtensionDecl *Create(ASTContext &CXT, DeclContext *DC,
+                                  SourceLocation IntroLoc, Expr *Inj, 
+                                  Expr *Ref);
+
+  static CXXExtensionDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  /// \brief The injectee.
+  Expr *getInjectee() const { return Injectee; }
+
+  /// \brief The reflection.
+  Expr *getReflection() const { return Reflection; }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXExtension; }
 };
 
 /// Represents the injection of parameters into a function parameter list.
+///
+/// FIXME: I don't think this is being used any more.
 class CXXInjectedParmDecl : public ParmVarDecl {
   /// The injection source; a reflection.
   Expr *Reflection;

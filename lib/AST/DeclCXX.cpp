@@ -2570,6 +2570,20 @@ CXXInjectionDecl *CXXInjectionDecl::CreateDeserialized(ASTContext &C,
   return new (C, ID) CXXInjectionDecl(nullptr, SourceLocation(), nullptr);
 }
 
+void CXXExtensionDecl::anchor() {}
+
+CXXExtensionDecl *CXXExtensionDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                                           SourceLocation IntroLoc, Expr *I,
+                                           Expr* R) {
+  return new (Cxt, DC) CXXExtensionDecl(DC, IntroLoc, I, R);
+}
+
+CXXExtensionDecl *CXXExtensionDecl::CreateDeserialized(ASTContext &C, 
+                                                       unsigned ID) {
+  return new (C, ID) CXXExtensionDecl(nullptr, SourceLocation(), nullptr, 
+                                      nullptr);
+}
+
 CXXInjectedParmDecl::CXXInjectedParmDecl(ASTContext &Ctx, DeclContext *DC, 
                                          SourceLocation Loc, Expr *Ref) 
   : ParmVarDecl(CXXInjectedParm, Ctx, DC, Loc, Ref->getExprLoc(), 
