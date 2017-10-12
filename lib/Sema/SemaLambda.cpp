@@ -260,11 +260,6 @@ CXXRecordDecl *Sema::createLambdaClosureType(SourceRange IntroducerRange,
                                                      CaptureDefault);
   DC->addDecl(Class);
 
-  // FIXME: startDefinition() is NEVER called on the closure type. I'm not
-  // sure why, but it's throwing the pending member transformation stack
-  // out of whack.
-  EnterPendingMemberTransformationScope(Class);
-
   return Class;
 }
 

@@ -2029,8 +2029,7 @@ void Sema::ActOnMetaclassStartDefinition(Scope *S, Decl *MD,
   Definition->setFragment(true);
   CurContext->addHiddenDecl(Definition);
   
-  // FIXME: Is this ever actually completed?
-  Definition->startDefinition();
+  StartDefinition(Definition);
   
   assert(Definition->isMetaclassDefinition() && "Broken metaclass definition");
 

@@ -102,16 +102,16 @@ public:
   int f() { return a + b; }
 };
 
-constexpr foo fn() {
-  foo x{1, 2};
-  foo y;
-  return foo{x.a + y.a, x.b + y.b};
-  return y;
-}
+// constexpr foo fn() {
+//   foo x{1, 2};
+//   foo y;
+//   return foo{x.a + y.a, x.b + y.b};
+//   return y;
+// }
 
-constexpr foo f1{6, 5};
+// constexpr foo f1{6, 5};
 
-// static_assert(fn() == f1);
+// // static_assert(fn() == f1);
 
 
 int main() {

@@ -13957,15 +13957,23 @@ CreateNewDecl:
 }
 
 void Sema::StartDefinition(TagDecl *D) {
-  if (isa<CXXRecordDecl>(D))
-    EnterPendingMemberTransformationScope(cast<CXXRecordDecl>(D));
+  if (isa<CXXRecordDecl>(D)) {
+    DeclContext *DC = D->getDeclContext();
+    if (isa<CXXFragmentDecl>(DC) || isa<MetaclassDecl>(DC)) {
+      EnterPendingMemberTransformationScope(cast<CXXRecordDecl>(D));
+    }
+  }
   D->startDefinition();
 }
 
 void Sema::CompleteDefinition(RecordDecl *D) {
   D->completeDefinition();
-  if (isa<CXXRecordDecl>(D))
-    LeavePendingMemberTransformationScope(cast<CXXRecordDecl>(D));
+  if (isa<CXXRecordDecl>(D)) {
+    DeclContext *DC = D->getDeclContext();
+    if (isa<CXXFragmentDecl>(DC) || isa<MetaclassDecl>(DC)) {
+      LeavePendingMemberTransformationScope(cast<CXXRecordDecl>(D));
+    }
+  }
 }
 
 void Sema::CompleteDefinition(CXXRecordDecl *D, CXXFinalOverriderMap *Map) {
@@ -14077,9 +14085,17 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
       // Make the final class available in its declaring scope.
       PushOnScopeChains(Final, getCurScope()->getParent(), false);
 
-      // Apply the metaclass.
+      // Apply the metaclass. Re-enter a member xform context. We've already 
+      // finished the metaclass, but haven't injected anything.
+      //
+      // FIXME: This seems out of order. It might be nice to perform injections
+      // prior to completion, but I seem to remember that there were some
+      // issues doing this. I don't remember what...
       SmallVector<Decl *, 32> InjectedFields;
-      ApplyMetaclass(Meta, Class, Final, InjectedFields);
+      {
+        PendingMemberTransformationRAII Pending(*this, Final);
+        ApplyMetaclass(Meta, Class, Final, InjectedFields);
+      }
 
       // Perform a final analysis on the members of the resulting class.
       S->setEntity(Final);

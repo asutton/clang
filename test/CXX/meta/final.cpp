@@ -6,3 +6,6 @@ $class final {
   }
 }
 
+int main() {
+  
+}
