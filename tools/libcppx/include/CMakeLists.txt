@@ -17,8 +17,12 @@ set(LIBCPPX_HEADER_PATTERN
 
 # Copy the headers to the build tree if we're building Clang.
 if(LIBCPPX_BUILDING_CLANG)
-  file(COPY cppx DESTINATION ${CMAKE_BINARY_DIR}/include
+  # Install these headers in the build version of the resource dir
+  set(output_dir ${LLVM_LIBRARY_OUTPUT_INTDIR}/clang/${CLANG_VERSION}/include)
+
+  file(COPY cppx DESTINATION ${output_dir}
     FILES_MATCHING ${LIBCPPX_HEADER_PATTERN})
+  
   # Force reconfiguration when headers are modified so that the updated headers
   # are copied to the build tree.
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
