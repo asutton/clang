@@ -1,3 +1,6 @@
+// RUN: %clang -std=c++1z -Xclang -freflection %s 
+
+#include <stddef.h>
 
 #include <cppx/meta>
 #include <cppx/compiler>

@@ -1,4 +1,4 @@
-// RUN: echo
+// RUN: %clang -std=c++1z -Xclang -freflection %s 
 
 constexpr {
   -> do { } // expected-error{{injecting statements into global scope}}

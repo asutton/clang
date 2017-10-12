@@ -1,3 +1,5 @@
+// RUN: %clang -std=c++1z -Xclang -freflection %s 
+
 $class safe_union : final, comparable_value { // no derivation
  constexpr {
  auto objects = safe_union.variables(); // take a copy of the class’s objects

@@ -1,4 +1,4 @@
-// RUN: echo
+// RUN: %clang -std=c++1z -Xclang -freflection %s 
 
 #include <cppx/meta>
 #include <cppx/compiler>

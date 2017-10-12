@@ -1,3 +1,4 @@
+// RUN: %clang -std=c++1z -Xclang -freflection %s 
 
 $class plain_struct : basic_value {
  constexpr {

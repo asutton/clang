@@ -1,3 +1,6 @@
+// RUN: echo
+
+
 $class bitfield : final, comparable_value { // no derivation
  constexpr {
  auto objects = bitfield.variables(); // take a copy of the class’s objects
