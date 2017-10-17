@@ -9051,7 +9051,7 @@ def err_invalid_injection : Error<
 def err_capture_non_static : Error<
   "injection captures a non-static member %select{function|variable}0">;
 def err_injecting_local_into_invalid_scope : Error<
-  "cannot inject a local variable into %select{namespace|class} scope">;
+  "cannot inject a local variable into %select{namespace|class}0 scope">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {
