@@ -46,7 +46,7 @@ $class basic_value {
       if constexpr (m.is_class_type())
         continue;
       
-      -> m;
+      __generate m;
     }
   }
 
@@ -108,7 +108,7 @@ int main() {
 
   foo f1;
   foo f2 = f1;
-  // (void)f1.a; // error: private
-  (void)f1.b; // Ok
-  // (void)f1.f() // error: private
+//   // (void)f1.a; // error: private
+//   (void)f1.b; // Ok
+//   // (void)f1.f() // error: private
 }

@@ -28,7 +28,7 @@ $class interface {
   constexpr {
     for... (auto f : $prototype.member_functions()) {
       f.make_pure_virtual();
-      -> f;
+      __generate f;
     }
   } // end constexpr;
 } 
