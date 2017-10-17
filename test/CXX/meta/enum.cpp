@@ -15,7 +15,7 @@ $class basic_enum {
 
     // Determine the underlying type.
     auto type = get<0>($prototype.member_variables()).type();
-    -> class { 
+    __generate class { 
       using underlying_type = typename(type); 
     };
 
@@ -29,7 +29,7 @@ $class basic_enum {
 
     int value = 0;
     for... (auto m : $prototype.member_variables()) {
-      -> class {
+      __generate class {
         static constexpr typename(type) idexpr(m) = value;
       };
       ++value;
