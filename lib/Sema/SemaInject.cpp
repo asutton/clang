@@ -1465,7 +1465,7 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
   // FIXME: The point of instantiation/injection is incorrect.
   InstantiatingTemplate Inst(*this, Final->getLocation());
   ContextRAII SavedContext(*this, Final);
-  SourceCodeInjector& Injector = MakeInjector(Def, nullptr);
+  SourceCodeInjector& Injector = MakeInjector(Def, Final);
 
   // When injecting replace references to the metaclass definition with
   // references to the final class.
