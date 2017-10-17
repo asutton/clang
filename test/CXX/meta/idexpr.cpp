@@ -6,15 +6,15 @@
 $class test { 
   constexpr {
     for... (auto m : $prototype.member_variables()) {
-      -> m;
+      __generate m;
     }
 
     for... (auto m : $prototype.member_variables()) {
-      -> class {
+      __generate class {
         typename(m) idexpr("get_", m)() const {
           return idexpr(m);
         }
-      }
+      };
     }
   } // constexpr
 
@@ -22,8 +22,8 @@ $class test {
 
 test foo {
   int n;
-  // char c;
-  // float f;
+  char c;
+  float f;
 };
 
 
