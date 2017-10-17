@@ -6336,10 +6336,12 @@ NamedDecl *Sema::ActOnVariableDeclarator(
                  ? diag::warn_cxx98_compat_static_data_member_in_union
                  : diag::ext_static_data_member_in_union) << Name;
         // We conservatively disallow static data members in anonymous structs.
-        else if (!RD->getDeclName() && !RD->isFragment())
+        else if (!RD->getDeclName() && 
+                 !isa<CXXFragmentDecl>(RD->getDeclContext())) {
           Diag(D.getIdentifierLoc(),
                diag::err_static_data_member_not_allowed_in_anon_struct)
             << Name << RD->isUnion();
+        }
       }
     }
 
