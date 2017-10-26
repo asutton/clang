@@ -3,11 +3,6 @@
 #include <cppx/meta>
 #include <cppx/compiler>
 
-struct S {
-  S() = default;
-  int x;
-};
-
 using namespace cppx::meta;
 $class basic_value {
   // Check members first.

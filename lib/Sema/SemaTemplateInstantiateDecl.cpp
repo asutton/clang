@@ -905,7 +905,16 @@ Decl *TemplateDeclInstantiator::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
 }
 
 Decl *TemplateDeclInstantiator::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
-  llvm_unreachable("not implemented");
+  ExprResult E = SemaRef.SubstExpr(D->getReflection(), TemplateArgs);
+  Sema::DeclGroupPtrTy Result = 
+      SemaRef.ActOnCXXInjectionDecl(D->getLocation(), E.get());
+  if (!Result)
+    return nullptr;
+  DeclGroupRef DG = Result.get();
+  if (DG.isNull())
+    return nullptr;
+  else
+    return *DG.begin();
 }
 
 Decl *TemplateDeclInstantiator::VisitCXXExtensionDecl(CXXExtensionDecl *D) {

@@ -1306,7 +1306,19 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
 
   // Set up the transformation context.
   Sema::ContextRAII Switch(SemaRef, InjecteeDC);
-  Sema::PendingMemberTransformationRAII Pending(SemaRef, InjecteeDC);
+
+  CXXRecordDecl *Class = nullptr;
+  if (isa<CXXRecordDecl>(Injectee))
+    // The injection site is a class and the injection is a member. We need
+    // to establish the pending member transformation context for the receiving
+    // class.
+    Class = cast<CXXRecordDecl>(Injectee);
+  else if (isa<CXXRecordDecl>(Injection))
+    // The injection itself is a class that may have members whose definitions
+    // will be transformed after completion. Establish the transformation
+    // context for the injection itself.
+    Class = cast<CXXRecordDecl>(Injection);
+  Sema::PendingMemberTransformationRAII Pending(SemaRef, Class);
 
   // Build the declaration. If there was a request to make field static, we'll
   // need to build a new declaration.

@@ -28,9 +28,10 @@ $class safe_union  {
 
     __generate class {
        alignas(align) unsigned char data[size]; // with a data buffer
-       int active; // and a discriminant
     };
   }
+
+ int active; // and a discriminant
 
   safe_union() { active = 0; } // default constructor
   

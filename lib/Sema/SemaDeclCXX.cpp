@@ -1730,7 +1730,8 @@ static bool CheckConstexprDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
       continue;
 
     case Decl::Constexpr:
-      // Constexpr declarations are allowed.
+    case Decl::CXXInjection:
+    case Decl::CXXExtension:
       continue;
 
     default:

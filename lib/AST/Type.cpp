@@ -2151,15 +2151,28 @@ bool QualType::isNonWeakInMRRWithObjCWeak(const ASTContext &Context) const {
          getObjCLifetime() != Qualifiers::OCL_Weak;
 }
 
+static bool isFragmentType(const Type* T) {
+  if (CXXRecordDecl *Class = T->getAsCXXRecordDecl())
+    return isa<CXXFragmentDecl>(Class->getDeclContext());
+  else
+    return false;
+}
+
 bool Type::isLiteralType(const ASTContext &Ctx) const {
+  // Fragments act as literal types even though they're dependent contexts.
+  // Their value is not actually dependent, just the name used internally.
+  if (isFragmentType(this))
+    return true;
+
   if (isDependentType())
     return false;
 
   // C++1y [basic.types]p10:
   //   A type is a literal type if it is:
   //   -- cv void; or
-  if (Ctx.getLangOpts().CPlusPlus14 && isVoidType())
+  if (Ctx.getLangOpts().CPlusPlus14 && isVoidType()) {
     return true;
+  }
 
   // C++11 [basic.types]p10:
   //   A type is a literal type if it is:
@@ -2198,8 +2211,7 @@ bool Type::isLiteralType(const ASTContext &Ctx) const {
     //    -- all non-static data members and base classes of literal types
     //
     // We resolve DR1361 by ignoring the second bullet.
-    if (const CXXRecordDecl *ClassDecl =
-        dyn_cast<CXXRecordDecl>(RT->getDecl()))
+    if (const CXXRecordDecl *ClassDecl = dyn_cast<CXXRecordDecl>(RT->getDecl()))
       return ClassDecl->isLiteral();
 
     return true;
