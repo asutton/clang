@@ -3076,7 +3076,7 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
     TemplateArgumentList TempArgs(TemplateArgumentList::OnStack, Args);
     MultiLevelTemplateArgumentList MultiArgs(TempArgs);
 
-    // We need a local instantiation scope for this.
+    // We need a local instantiation scope with rewriting.
     LocalInstantiationScope Locals(*this);
     InstantiatingTemplate Inst(*this, B->getLocStart(), S, Args,
                                B->getSourceRange());

@@ -485,6 +485,8 @@ namespace  {
     void VisitAccessSpecDecl(const AccessSpecDecl *D);
     void VisitFriendDecl(const FriendDecl *D);
     void VisitConstexprDecl(const ConstexprDecl *D);
+    void VisitCXXInjectionDecl(const CXXInjectionDecl *D);
+    void VisitCXXExtensionDecl(const CXXExtensionDecl *D);
 
     // ObjC Decls
     void VisitObjCIvarDecl(const ObjCIvarDecl *D);
@@ -508,6 +510,7 @@ namespace  {
     void VisitGotoStmt(const GotoStmt *Node);
     void VisitCXXCatchStmt(const CXXCatchStmt *Node);
     void VisitCapturedStmt(const CapturedStmt *Node);
+    void VisitCXXTupleExpansionStmt(const CXXTupleExpansionStmt *Node);
 
     // OpenMP
     void VisitOMPExecutableDirective(const OMPExecutableDirective *Node);
@@ -1278,6 +1281,11 @@ void ASTDumper::VisitCapturedDecl(const CapturedDecl *D) {
   dumpStmt(D->getBody());
 }
 
+void ASTDumper::VisitCXXTupleExpansionStmt(const CXXTupleExpansionStmt *Node) {
+  for (Stmt *S : Node->getInstantiatedStatements())
+    dumpStmt(S);
+}
+
 //===----------------------------------------------------------------------===//
 // OpenMP Declarations
 //===----------------------------------------------------------------------===//
@@ -1585,6 +1593,14 @@ void ASTDumper::VisitFriendDecl(const FriendDecl *D) {
 void ASTDumper::VisitConstexprDecl(const ConstexprDecl *D) {
   if (Stmt *Body = D->getBody())
     dumpStmt(Body);
+}
+
+void ASTDumper::VisitCXXInjectionDecl(const CXXInjectionDecl *D) {
+  dumpStmt(D->getReflection());
+}
+
+void ASTDumper::VisitCXXExtensionDecl(const CXXExtensionDecl *D) {
+  dumpStmt(D->getReflection());
 }
 
 //===----------------------------------------------------------------------===//

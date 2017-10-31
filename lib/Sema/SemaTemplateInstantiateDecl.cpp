@@ -705,7 +705,6 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D) {
 Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D,
                                              bool InstantiatingVarTemplate,
                                              ArrayRef<BindingDecl*> *Bindings) {
-
   // Do substitution on the type of the declaration
   TypeSourceInfo *DI = SemaRef.SubstType(
       D->getTypeSourceInfo(), TemplateArgs, D->getTypeSpecStartLoc(),
@@ -906,6 +905,8 @@ Decl *TemplateDeclInstantiator::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
 
 Decl *TemplateDeclInstantiator::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
   ExprResult E = SemaRef.SubstExpr(D->getReflection(), TemplateArgs);
+  if (E.isInvalid())
+    return nullptr;
   Sema::DeclGroupPtrTy Result = 
       SemaRef.ActOnCXXInjectionDecl(D->getLocation(), E.get());
   if (!Result)
@@ -4897,7 +4898,7 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
       isa<TemplateTypeParmDecl>(D) || isa<TemplateTemplateParmDecl>(D) ||
       (ParentDC->isFunctionOrMethod() && ParentDC->isDependentContext()) ||
       (isa<CXXRecordDecl>(D) && cast<CXXRecordDecl>(D)->isLambda())) {
-    // D is a local of some kind. Look into the map of local
+    // D is obviously a local of some kind. Look into the map of local
     // declarations to their instantiations.
     if (CurrentInstantiationScope) {
       if (auto Found = CurrentInstantiationScope->findInstantiationOf(D)) {
@@ -4955,6 +4956,22 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
 
     CurrentInstantiationScope->InstantiatedLocal(D, Inst);
     return cast<LabelDecl>(Inst);
+  }
+
+  // For certain instantiations (e.g., for loop instantiations, and code
+  // injection), we could have local instantiations that are not obviously
+  // local. For example, if we have this in a non-dependent context:
+  //
+  //    for... (auto x : tup) 
+  //      (void)x;
+  //
+  // Then the resolution of x in (void)x would not satisfy the criteria
+  // for local lookup above: it's local, but not in a dependent context.
+  if (CurrentInstantiationScope) {
+    if (auto Found = CurrentInstantiationScope->lookupInstantiationOf(D)) {
+      if (Decl *FD = Found->dyn_cast<Decl *>())
+        return cast<NamedDecl>(FD);
+    }
   }
 
   // For variable template specializations, update those that are still

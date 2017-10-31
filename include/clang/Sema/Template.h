@@ -247,7 +247,7 @@ namespace clang {
     /// \brief Whether to combine this scope with the outer scope, such that
     /// lookup will search our outer scope.
     bool CombineWithOuterScope;
-    
+
     /// \brief If non-NULL, the template parameter pack that has been
     /// partially substituted per C++0x [temp.arg.explicit]p9.
     NamedDecl *PartiallySubstitutedPack;
@@ -354,6 +354,11 @@ namespace clang {
     /// returns NULL.
     llvm::PointerUnion<Decl *, DeclArgumentPack *> *
     findInstantiationOf(const Decl *D);
+
+    /// \brief Like above, but returns a nullptr if there is no local
+    /// declaration.
+    llvm::PointerUnion<Decl *, DeclArgumentPack *> *
+    lookupInstantiationOf(const Decl *D);
 
     void InstantiatedLocal(const Decl *D, Decl *Inst);
     void InstantiatedLocalPackArg(const Decl *D, ParmVarDecl *Inst);

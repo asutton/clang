@@ -2779,40 +2779,6 @@ Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
   return Instantiator.TransformStmt(S);
 }
 
-namespace {
-/// The loop body instantiator is like the template instantatior in
-/// that it produces new trees by substituting template arguments. Unlike
-/// the TemplateInstantiator, this does not form declarations in a dependent
-/// context to an instantiated context. It simply rebuilds the tree,
-/// performing local substitutions and lookups as needed.
-class LoopBodyInstantiator : public TreeTransform<LoopBodyInstantiator> {
-  const MultiLevelTemplateArgumentList &TemplateArgs;
-  SourceLocation Loc;
-
-public:
-  typedef TreeTransform<LoopBodyInstantiator> inherited;
-
-  LoopBodyInstantiator(Sema &SemaRef,
-                       const MultiLevelTemplateArgumentList &TemplateArgs,
-                       SourceLocation Loc)
-      : inherited(SemaRef), TemplateArgs(TemplateArgs), Loc(Loc) {}
-
-  // The loop body instantiator always rebuilds trees.
-  bool AlwaysRebuild() { return true; }
-
-  /// \brief Transform the definition of the given declaration by
-  /// instantiating it.
-  Decl *TransformDefinition(SourceLocation Loc, Decl *D) {
-    Decl *Inst = getSema().SubstDecl(D, getSema().CurContext, TemplateArgs);
-    if (!Inst)
-      return nullptr;
-    getSema().CurrentInstantiationScope->InstantiatedLocal(D, Inst);
-    transformedLocalDecl(D, Inst);
-    return Inst;
-  }
-};
-} // namespace
-
 /// Substitution into a loop body is different than substitution in other
 /// contexts. In particular, we are not actually instantiating a template.
 /// We're just rebuilding a tree and rewiring expressions that refer to
@@ -2820,7 +2786,10 @@ public:
 StmtResult
 Sema::SubstForTupleBody(Stmt *S,
                         const MultiLevelTemplateArgumentList &TemplateArgs) {
-  LoopBodyInstantiator Instantiator(*this, TemplateArgs, SourceLocation());
+  TemplateInstantiator Instantiator(*this, 
+                                    TemplateArgs, 
+                                    SourceLocation(), 
+                                    DeclarationName());
   return Instantiator.TransformStmt(S);
 }
 
@@ -2914,9 +2883,8 @@ static const Decl *getCanonicalParmVarDecl(const Decl *D) {
   return D;
 }
 
-
 llvm::PointerUnion<Decl *, LocalInstantiationScope::DeclArgumentPack *> *
-LocalInstantiationScope::findInstantiationOf(const Decl *D) {
+LocalInstantiationScope::lookupInstantiationOf(const Decl *D) {
   D = getCanonicalParmVarDecl(D);
   for (LocalInstantiationScope *Current = this; Current;
        Current = Current->Outer) {
@@ -2940,6 +2908,14 @@ LocalInstantiationScope::findInstantiationOf(const Decl *D) {
     if (!Current->CombineWithOuterScope)
       break;
   }
+  return nullptr;
+}
+
+llvm::PointerUnion<Decl *, LocalInstantiationScope::DeclArgumentPack *> *
+LocalInstantiationScope::findInstantiationOf(const Decl *D) {
+  // Search for a local instantiation.
+  if (auto *Result = lookupInstantiationOf(D))
+    return Result;
 
   // If we're performing a partial substitution during template argument
   // deduction, we may not have values for template parameters yet.
@@ -2967,6 +2943,7 @@ LocalInstantiationScope::findInstantiationOf(const Decl *D) {
 void LocalInstantiationScope::InstantiatedLocal(const Decl *D, Decl *Inst) {
   D = getCanonicalParmVarDecl(D);
   llvm::PointerUnion<Decl *, DeclArgumentPack *> &Stored = LocalDecls[D];
+
   if (Stored.isNull()) {
 #ifndef NDEBUG
     // It should not be present in any surrounding scope either.

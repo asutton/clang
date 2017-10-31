@@ -414,11 +414,6 @@ public:
   
   /// \brief Transform the given declaration, which is referenced from a type
   /// or expression.
-  ///
-  /// Unless the declaration is injectable, the default acts as the identity 
-  /// function on declarations, unless the transformer has had to transform the 
-  /// declaration itself. Subclasses may override this function to provide 
-  /// alternate behavior.
   Decl *TransformDecl(SourceLocation Loc, Decl *D) {
     llvm::DenseMap<Decl *, Decl *>::iterator Known
       = TransformedLocalDecls.find(D);
@@ -13129,7 +13124,6 @@ TreeTransform<Derived>::TransformLocalDecl(SourceLocation Loc, Decl *D) {
     return getDerived().TransformLocalCXXExtensionDecl(cast<CXXExtensionDecl>(D));
   }
 
-  D->dump();
   llvm_unreachable("Injecting unknown declaration");
 }
 
