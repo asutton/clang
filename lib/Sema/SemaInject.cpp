@@ -143,6 +143,133 @@ Decl *Sema::ActOnFinishCXXFragment(Scope *S, Decl *Fragment, Decl *Content) {
   return FD;
 }
 
+// FIXME: This algorithm is not entirely correct. Consider:
+//
+//    auto x = __fragment namespace {
+//      template<typename T> void foo(T) { }
+//    };
+//
+// The declaration of foo contains a dependent type, but the dependency
+// is local to that declaration and not the context in which the fragment
+// appears. The fragment is not dependent.
+//
+// When a type or expression is dependent, we need to determine if the
+// the name that causes the dependency is declared inside or outside of
+// the fragment.
+static bool ContainsDependentMembers(Sema &SemaRef, const DeclContext *DC);
+
+// FIXME: See the note above. If T is a dependent type, we need to check
+// the scope of its dependency.
+static bool
+IsDependentType(Sema &SemaRef, QualType T) {
+  return T->isDependentType();
+}
+
+// FIXME: See the note above. If E is a dependent expression, we need to check
+// the scope of its dependency.
+static bool
+IsDependentExpr(Sema &SemaRef, const Expr *E) {
+  return E->isTypeDependent() || E->isValueDependent();  
+}
+
+static bool
+IsDependentStmt(Sema &SemaRef, const Stmt *S) {
+  // An expression is dependent if it is type or value dependent.
+  if (const Expr *E = dyn_cast<Expr>(S))
+    return IsDependentExpr(SemaRef, E);
+
+  // Check sub-statements.
+  auto Kids = S->children();
+  return std::any_of(Kids.begin(), Kids.end(), [&SemaRef](const Stmt *X) {
+    return IsDependentStmt(SemaRef, X);
+  });
+}
+
+static bool
+IsDependentDecl(Sema &SemaRef, const ValueDecl *VD) {
+  // The member is dependent if its type is dependent.
+  if (IsDependentType(SemaRef, VD->getType()))
+    return true;
+
+  if (const VarDecl *Var = dyn_cast<VarDecl>(VD)) {
+    // A variable is dependent if its initializer is dependent.
+    if (const Expr *Init = Var->getInit())
+      if (IsDependentExpr(SemaRef, Init))
+        return true;
+  } else if (const EnumConstantDecl *Enum = dyn_cast<EnumConstantDecl>(VD)) {
+    // An enumerator is dependent if it has a dependent initializer.
+    if (const Expr *Init = Enum->getInitExpr())
+      if (IsDependentExpr(SemaRef, Init))
+        return true;
+  } else if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(VD)) {
+    // A function is dependent any of its parameters are dependent.
+    for (const ParmVarDecl *P : Fn->parameters())
+      if (IsDependentDecl(SemaRef, P))
+        return true;
+
+    // Of if not that, if any of its statements contains a dependent expression.
+    if (Stmt *Body = Fn->getBody()) {
+      if (IsDependentStmt(SemaRef, Body))
+        return true;
+    }
+  }
+  
+  // There are no dependent members.
+  return false;
+}
+
+static bool
+IsDependentDecl(Sema &SemaRef, const TypeDecl *TD) {
+  if (const CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(TD)) {
+    // For the purpose of this algorithm, ignore the injected class name.
+    if (Class->isInjectedClassName())
+      return false;
+    
+    // A class is dependent if any of its base classes are dependent.
+    for (const CXXBaseSpecifier &Base : Class->bases())
+      if (IsDependentType(SemaRef, Base.getType()))
+        return true;
+  }
+
+  if (const TagDecl *Tag = dyn_cast<TagDecl>(TD)) {
+    // A tag declaration is dependent if it contains any dependent members.
+    if (ContainsDependentMembers(SemaRef, (DeclContext*)Tag))
+      return true;
+  } else if (const TypedefNameDecl *Alias = dyn_cast<TypedefNameDecl>(TD)) {
+    // An alias is dependent if it's underlying type is dependent.
+    if (IsDependentType(SemaRef, Alias->getUnderlyingType()))
+      return true;
+  }
+
+  return false;
+}
+
+static bool
+ContainsDependentMembers(Sema &SemaRef, const DeclContext *DC) {
+  for (const Decl* D : DC->decls()) {
+    if (const ValueDecl *VD = dyn_cast<ValueDecl>(D))
+      if (IsDependentDecl(SemaRef, VD))
+        return true;
+
+    if (const TypeDecl *TD = dyn_cast<TypeDecl>(D))
+      if (IsDependentDecl(SemaRef, TD))
+        return true;
+
+    // A namespace is dependent if any of its members is dependent.
+    if (const NamespaceDecl *NS = dyn_cast<NamespaceDecl>(D))
+      return ContainsDependentMembers(SemaRef, NS);
+
+  }
+  return false;
+}
+
+static bool
+IsFragmentDependent(Sema &SemaRef, const CXXFragmentDecl *FD)
+{
+  const DeclContext *DC = Decl::castToDeclContext(FD->getContent());
+  return ContainsDependentMembers(SemaRef, DC);
+}
+
 /// Builds a new fragment expression.
 ExprResult Sema::ActOnCXXFragmentExpr(SourceLocation Loc, 
                                       SmallVectorImpl<Expr *> &Captures, 
@@ -178,7 +305,15 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc,
                                       SmallVectorImpl<Expr *> &Captures, 
                                       Decl *Fragment) {
   CXXFragmentDecl *FD = cast<CXXFragmentDecl>(Fragment);
-  
+
+  // If the fragment is dependent, then return a dependently typed expression.
+  //
+  // FIXME: Do we need to differentiate between a value-dependent fragment
+  // and a type-dependent fragment?
+  if (IsFragmentDependent(*this, FD))
+    return new (Context) CXXFragmentExpr(Context, Loc, Context.DependentTy, 
+                                         Captures, FD, nullptr);
+
   // Build the expression used to the reflection of fragment.
   //
   // TODO: We should be able to compute the type without generating an
@@ -312,9 +447,7 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc,
   }
 
   // Finally, build the fragment expression.
-  CXXFragmentExpr *Result = new (Context) CXXFragmentExpr(Context, Loc, ClassTy, 
-                                                          Captures, FD, Init);
-  return Result;
+  return new (Context) CXXFragmentExpr(Context, Loc, ClassTy, Captures, FD, Init);
 }
 
 /// Returns an injection statement.

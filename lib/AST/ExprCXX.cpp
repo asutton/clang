@@ -1481,11 +1481,12 @@ CXXDependentIdExpr::CXXDependentIdExpr(DeclarationNameInfo DNI, QualType T)
     NameInfo(DNI) {}
 
 
+// FIXME: Can a fragment be value dependent?
 CXXFragmentExpr::CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc, 
                                  QualType T, ArrayRef<Expr *> Caps, 
                                  CXXFragmentDecl *Frag, Expr *E)
   : Expr(CXXFragmentExprClass, T, VK_RValue, OK_Ordinary, 
-         AnyTypeDependentExprs(Caps), 
+         T->isDependentType() || AnyTypeDependentExprs(Caps), 
          AnyValueDependentExprs(Caps), 
          AnyInstantiationDependentExprs(Caps), 
          false), 

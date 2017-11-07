@@ -7444,15 +7444,17 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
   }
 
   // Clone the underlying declaration.
-  Sema::ContextRAII Switch(getSema(), NewFragment);
-  Decl *OldContent = OldFragment->getContent();
-  Decl *NewContent = getDerived().TransformLocalDecl(OldContent);
-  if (!NewContent)
-    return ExprError();
+  {
+    Sema::ContextRAII Switch(getSema(), NewFragment);
+    Decl *OldContent = OldFragment->getContent();
+    Decl *NewContent = getDerived().TransformLocalDecl(OldContent);
+    if (!NewContent)
+      return ExprError();
 
-  F = getSema().ActOnFinishCXXFragment(nullptr, NewFragment, NewContent);
-  if (!F)
-    return ExprError();
+    F = getSema().ActOnFinishCXXFragment(nullptr, NewFragment, NewContent);
+    if (!F)
+      return ExprError();
+  }
 
   return getDerived().RebuildCXXFragmentExpr(Loc, Captures, F);
 }
