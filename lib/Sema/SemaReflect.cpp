@@ -2355,6 +2355,10 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
     QualType FunctionTy = Context.getFunctionType(Context.VoidTy, None, EPI);
     TypeSourceInfo *FunctionTyInfo =
         Context.getTrivialTypeSourceInfo(FunctionTy);
+    
+    // FIXME: Why is the owner the current context? We should probably adjust
+    // this to the constexpr-decl later on. Maybe the owner should be the
+    // nearest file context, since this is essentially a non-member function.
     FunctionDecl *Function =
         FunctionDecl::Create(Context, CurContext, ConstexprLoc, NameInfo,
                              FunctionTy, FunctionTyInfo, SC_None,
@@ -2442,20 +2446,21 @@ void Sema::ActOnStartConstexprDecl(Scope *S, Decl *D) {
 /// The statements within the body are evaluated here.
 void Sema::ActOnFinishConstexprDecl(Scope *S, Decl *D, Stmt *Body) {
   ConstexprDecl *CD = cast<ConstexprDecl>(D);
-
-  bool Evaluated;
   if (CD->hasFunctionRepresentation()) {
     FunctionDecl *Fn = CD->getFunctionDecl();
     ActOnFinishFunctionBody(Fn, Body);
-    Evaluated = EvaluateConstexprDecl(CD, Fn);
+
+    // Only evaluate in dependent contexts.
+    if (!CurContext->isDependentContext())
+      EvaluateConstexprDecl(CD, Fn);
   } else {
     LambdaExpr *Lambda =
         cast<LambdaExpr>(ActOnLambdaExpr(CD->getLocation(), Body, S).get());
-    Evaluated = EvaluateConstexprDecl(CD, Lambda);
+
+    // Only evaluate in dependent contexts.
+    if (!CurContext->isDependentContext())
+      EvaluateConstexprDecl(CD, Lambda);
   }
-  // TODO: Emit a diagnostic if Evaluated is false? Or did we already
-  // diagnose the error?
-  (void)Evaluated;
 }
 
 /// Called when an error occurs while parsing the constexpr-declaration body.

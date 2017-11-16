@@ -926,7 +926,40 @@ Decl *TemplateDeclInstantiator::VisitMetaclassDecl(MetaclassDecl *D) {
 }
 
 Decl *TemplateDeclInstantiator::VisitConstexprDecl(ConstexprDecl *D) {
-  llvm_unreachable("not implemented");
+  
+  if (FunctionDecl *Fn = D->getFunctionDecl()) {
+    // Instantiate the nested function.
+    //
+    // FIXME: The point of instantiation is probably wrong.
+    FunctionDecl *NewFn = cast<FunctionDecl>(SemaRef.SubstDecl(Fn, Owner,
+                                                               TemplateArgs));
+    if (NewFn->isInvalidDecl())
+      return nullptr;
+
+    // FIXME: We probably need to manage the function's definition a little
+    // better. Note that we can't use InstantiateFunctionDefinition; that
+    // assumes that the NewFn will have a template pattern.
+    StmtResult NewBody = SemaRef.SubstStmt(Fn->getBody(), TemplateArgs);
+    if (NewBody.isInvalid())
+      return nullptr;
+    NewFn->setBody(NewBody.get());
+
+    // Build the constexpr declaration.
+    ConstexprDecl *CD = ConstexprDecl::Create(SemaRef.Context, Owner, 
+                                              Fn->getLocation(), NewFn);
+    Owner->addDecl(CD); // FIXME: OWner or CurContext?
+
+    // And evaluate it if needed.
+    if (!NewFn->isDependentContext())
+      SemaRef.EvaluateConstexprDecl(CD, NewFn);
+    
+    return CD;
+  } else if (CXXRecordDecl *Class = D->getClosureDecl()) {
+    llvm_unreachable("local constexpr-decl instantiation not implemented");
+  } else {
+    llvm_unreachable("invalid metaprogram");
+  }
+
 }
 
 Decl *TemplateDeclInstantiator::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
@@ -3822,7 +3855,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   // explicit specialization.
   TemplateSpecializationKind TSK = Function->getTemplateSpecializationKind();
   if (TSK == TSK_ExplicitSpecialization &&
-      !Function->getClassScopeSpecializationPattern())
+      !Function->getClassScopeSpecializationPattern()) 
     return;
 
   // Find the function body that we'll be substituting.
@@ -3865,8 +3898,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   }
 
   // Postpone late parsed template instantiations.
-  if (PatternDecl->isLateTemplateParsed() &&
-      !LateTemplateParser) {
+  if (PatternDecl->isLateTemplateParsed() && !LateTemplateParser) {
     PendingInstantiations.push_back(
       std::make_pair(Function, PointOfInstantiation));
     return;

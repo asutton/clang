@@ -92,6 +92,29 @@ struct S3 {
 };
 
 
+// Test with templates.
+
+template<typename T>
+constexpr auto f2() {
+  return __fragment class {
+    T a;
+    T b;
+  };
+}
+
+struct S4 {
+  constexpr {
+    __generate f2<int>();
+  }
+};
+
+template<typename T>
+struct S5 {
+  constexpr {
+    __generate f2<T>();
+  }
+};
+
 int main() { 
   compiler.debug($S1);
   compiler.debug($S2);
@@ -103,4 +126,9 @@ int main() {
   S3 x;
   assert(x.get_external() == 12);
   assert(x.get_local() == 42);
+
+  compiler.debug($S4);
+  compiler.debug($S5<int>); //  Not instantiated, won't show def. Should it?
+  S5<char> s5;
+  compiler.debug($S5<char>); // Fully instantiated.
 }
