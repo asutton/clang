@@ -2224,7 +2224,7 @@ static StmtResult RebuildForRangeWithDereference(Sema &SemaRef, Scope *S,
 ///           If \c true, \p Size is set to the number of elements in the tuple.
 static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
                          llvm::APSInt &Size) {
-  NamespaceDecl *Std = SemaRef.getStdNamespace();
+  NamespaceDecl *Std = SemaRef.getOrCreateStdNamespace();
   IdentifierInfo *SizeName = &SemaRef.PP.getIdentifierTable().get("tuple_size");
   LookupResult SizeLookup(SemaRef, SizeName, Loc, Sema::LookupAnyName);
   SemaRef.LookupQualifiedName(SizeLookup, Std);

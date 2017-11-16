@@ -13959,28 +13959,15 @@ CreateNewDecl:
 }
 
 void Sema::StartDefinition(TagDecl *D) {
-  if (isa<CXXRecordDecl>(D)) {
-    DeclContext *DC = D->getDeclContext();
-    if (isa<CXXFragmentDecl>(DC) || isa<MetaclassDecl>(DC)) {
-      EnterPendingMemberTransformationScope(cast<CXXRecordDecl>(D));
-    }
-  }
   D->startDefinition();
 }
 
 void Sema::CompleteDefinition(RecordDecl *D) {
   D->completeDefinition();
-  if (isa<CXXRecordDecl>(D)) {
-    DeclContext *DC = D->getDeclContext();
-    if (isa<CXXFragmentDecl>(DC) || isa<MetaclassDecl>(DC)) {
-      LeavePendingMemberTransformationScope(cast<CXXRecordDecl>(D));
-    }
-  }
 }
 
 void Sema::CompleteDefinition(CXXRecordDecl *D, CXXFinalOverriderMap *Map) {
   D->completeDefinition(Map);
-  LeavePendingMemberTransformationScope(D);
 }
 
 void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {
@@ -14094,10 +14081,7 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
       // prior to completion, but I seem to remember that there were some
       // issues doing this. I don't remember what...
       SmallVector<Decl *, 32> InjectedFields;
-      {
-        PendingMemberTransformationRAII Pending(*this, Final);
-        ApplyMetaclass(Meta, Class, Final, InjectedFields);
-      }
+      ApplyMetaclass(Meta, Class, Final, InjectedFields);
 
       // Perform a final analysis on the members of the resulting class.
       S->setEntity(Final);

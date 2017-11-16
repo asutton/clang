@@ -959,9 +959,6 @@ public:
   // Transform the definition, unless it's member function definition. Then
   // defer that until the end of the class.
   void TransformFunctionDefinition(FunctionDecl *D, FunctionDecl *R) {
-    if (isa<CXXRecordDecl>(R->getDeclContext()))
-      getSema().AddPendingMemberTransformation(this, D, R);
-    else
       BaseType::TransformFunctionDefinition(D, R);
   }
 
@@ -1222,7 +1219,6 @@ static bool CheckInjectionKind(Sema &SemaRef, SourceLocation POI,
   return true;
 }
 
-
 /// Inject a fragment into the current context.
 bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
                     const APValue &ReflectionVal, Decl *Injectee,
@@ -1273,58 +1269,13 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
     
     // llvm::outs() << "AFTER\n";
     // R->dump();
-    
-    // Inform the consumer, if needed.
-    // if (InjecteeDC->isFileContext())
-    //   SemaRef.Consumer.HandleTopLevelDecl(DeclGroupRef(R));
   }
 
-  llvm::outs() << "*************************************\n";
-  llvm::outs() << "FINAL\n";
-  Injectee->dump();
+  // llvm::outs() << "*************************************\n";
+  // llvm::outs() << "FINAL\n";
+  // Injectee->dump();
 
   return true;
-
-
-  #if 0
-
-  // Inject the members of the fragment. Note that the source DC is the
-  // nested content, not the fragment declaration.
-  //
-  // FIXME: Do modification traits apply to fragments? Probably not?
-  SourceCodeInjector &Injector = SemaRef.MakeInjector(InjectionDC, InjecteeDC);
-  Injector.AddSubstitution(Injection, Injectee);
-  Injector.AddReplacements(Injection->getDeclContext(), Class, Captures);
-
-  // Set up the transformation context.
-  Sema::ContextRAII Switch(SemaRef, InjecteeDC);
-  Sema::PendingMemberTransformationRAII Pending(SemaRef, InjecteeDC);
-
-  llvm::outs() << "=============================================\n";
-  llvm::outs() << "INECTION\n";
-  Injection->dump();
-  Decl::castFromDeclContext(Injection->getDeclContext())->dump();
-
-
-  for (Decl *D : InjectionDC->decls()) {
-    llvm::outs() << "BEFORE\n";
-    D->dump();
-    Decl *R = Injector.InjectDecl(D);
-    if (!R) {
-      Injectee->setInvalidDecl(true);
-      continue;
-    }
-    Decls.push_back(R);
-    llvm::outs() << "AFTER\n";
-    D->dump();
-    
-    // Inform the consumer, if needed.
-    if (InjecteeDC->isFileContext())
-      SemaRef.Consumer.HandleTopLevelDecl(DeclGroupRef(R));
-  }
-
-  return Injectee->isInvalidDecl();
-#endif
 }
 
 static bool isClassMemberDecl(const Decl* D) {
@@ -1392,7 +1343,6 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
     // will be transformed after completion. Establish the transformation
     // context for the injection itself.
     Class = cast<CXXRecordDecl>(Injection);
-  Sema::PendingMemberTransformationRAII Pending(SemaRef, Class);
 
   // Build the declaration. If there was a request to make field static, we'll
   // need to build a new declaration.
@@ -1584,51 +1534,5 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
   if (Final->isInvalidDecl())
     return;
 #endif
-}
-
-void Sema::EnterPendingMemberTransformationScope(RecordDecl *D) {
-  PendingMemberTransformationList List;
-  List.Class = D;
-  PendingMemberTransformations.push_back(std::move(List));
-}
-
-void Sema::LeavePendingMemberTransformationScope(RecordDecl *D) {
-  assert(!PendingMemberTransformations.empty() && 
-         "imbalanced transformation stack");
-
-  PendingMemberTransformationList& Top = PendingMemberTransformations.back();
-  assert(Top.Class == D && "transformation list for wrong class");
-  
-  for (PendingMemberTransformation& X : Top.PendingMembers) {
-    SourceCodeInjector *Injector = X.Injector;
-    if (FunctionDecl *OldFn = dyn_cast<FunctionDecl>(X.Original)) {
-      FunctionDecl *NewFn = dyn_cast<FunctionDecl>(X.Generated);
-      Injector->TransformPendingDefinition(OldFn, NewFn);
-    } else {
-      assert(false && "unknown pending declaration");
-    }
-  }
-
-  PendingMemberTransformations.pop_back();
-}
-
-void Sema::AddPendingMemberTransformation(SourceCodeInjector *Injector, 
-                                          Decl *D, Decl *R) {
-  assert(!PendingMemberTransformations.empty() && "empty transformation stack");
-
-  PendingMemberTransformationList& Top = PendingMemberTransformations.back();
-  Top.PendingMembers.push_back({Injector, D, R});
-}
-
-Sema::PendingMemberTransformationRAII::PendingMemberTransformationRAII(Sema &S, 
-                                                                 DeclContext *D)
-    : SemaRef(S), Class(dyn_cast<CXXRecordDecl>(D)) {
-  if (Class)
-    SemaRef.EnterPendingMemberTransformationScope(Class);    
-}
-
-Sema::PendingMemberTransformationRAII::~PendingMemberTransformationRAII() {
-  if (Class)
-    SemaRef.LeavePendingMemberTransformationScope(Class);
 }
 

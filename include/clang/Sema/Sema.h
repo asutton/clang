@@ -8641,36 +8641,6 @@ public:
   SourceCodeInjector &MakeInjector(DeclContext *Src, DeclContext *Dst);
   void DestroyInjectors();
 
-  /// \brief A member function or variable declaration whose definition
-  /// cannot be transformed until its enclosing class is completed. 
-  struct PendingMemberTransformation {
-    SourceCodeInjector *Injector;
-    Decl *Original;
-    Decl *Generated;
-  };
-
-  /// A list of pending member transformations.
-  struct PendingMemberTransformationList {
-    RecordDecl *Class;
-    std::deque<PendingMemberTransformation> PendingMembers;
-  };
-
-  /// Maintains a stack of pending member transformations. These are applied
-  /// when a class is completed.
-  SmallVector<PendingMemberTransformationList, 4> PendingMemberTransformations;
-
-  void EnterPendingMemberTransformationScope(RecordDecl *D);
-  void LeavePendingMemberTransformationScope(RecordDecl *D);
-  void AddPendingMemberTransformation(SourceCodeInjector *Inection, Decl *D, Decl *R);
-
-  struct PendingMemberTransformationRAII
-  {
-    PendingMemberTransformationRAII(Sema &S, DeclContext *DC);
-    ~PendingMemberTransformationRAII();
-
-    Sema &SemaRef;
-    CXXRecordDecl *Class;
-  };
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
