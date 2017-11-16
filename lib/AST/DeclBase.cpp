@@ -944,6 +944,16 @@ Decl *DeclContext::getNonClosureAncestor() {
   return ::getNonClosureContext(this);
 }
 
+bool Decl::isInFragment() const {
+  const DeclContext *DC = getDeclContext();
+  while (DC) {
+    if (isa<CXXFragmentDecl>(DC))
+      return true;
+    DC = DC->getParent();
+  }
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // DeclContext Implementation
 //===----------------------------------------------------------------------===//

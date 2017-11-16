@@ -557,6 +557,7 @@ namespace  {
     void VisitSizeOfPackExpr(const SizeOfPackExpr *Node);
     void
     VisitCXXDependentScopeMemberExpr(const CXXDependentScopeMemberExpr *Node);
+    void VisitCXXFragmentExpr(const CXXFragmentExpr *Node);
 
     // ObjC
     void VisitObjCAtCatchStmt(const ObjCAtCatchStmt *Node);
@@ -2253,6 +2254,13 @@ void ASTDumper::VisitCXXDependentScopeMemberExpr(
   VisitExpr(Node);
   OS << " " << (Node->isArrow() ? "->" : ".") << Node->getMember();
 }
+
+void 
+ASTDumper::VisitCXXFragmentExpr(const CXXFragmentExpr *Node) {
+  VisitExpr(Node);
+  dumpDecl(Node->getFragment());
+}
+
 
 //===----------------------------------------------------------------------===//
 // Obj-C Expressions

@@ -3924,9 +3924,9 @@ public:
   template<typename T>
   T* getAs() const { return dyn_cast<T>(Content); }
 
-
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == CXXFragment; }
+
   static DeclContext *castToDeclContext(const CXXFragmentDecl *D) {
     return static_cast<DeclContext *>(const_cast<CXXFragmentDecl*>(D));
   }

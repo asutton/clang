@@ -364,16 +364,17 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
   Inst.Loop = S;
 }
 
+// Source code injection.
 Sema::InstantiatingTemplate::InstantiatingTemplate(
-    Sema &SemaRef, SourceLocation PointOfInstantiation)
+    Sema &SemaRef, SourceLocation PointOfInstantiation, InjectionContext *Cxt)
     : InstantiatingTemplate(
           SemaRef, 
           CodeSynthesisContext::SourceCodeInjection,
           PointOfInstantiation, SourceRange(), nullptr, nullptr,
           ArrayRef<TemplateArgument>()) {
-  // FIXME: What information do we need to associate with the transformation?
-  // CodeSynthesisContext& Inst = 
-  //   SemaRef.CodeSynthesisContexts.back();
+  CodeSynthesisContext& Inst = 
+    SemaRef.CodeSynthesisContexts.back();
+  Inst.Injection = Cxt;    
 }
 
 void Sema::pushCodeSynthesisContext(CodeSynthesisContext Ctx) {
@@ -1016,6 +1017,10 @@ Decl *TemplateInstantiator::TransformDecl(SourceLocation Loc, Decl *D) {
     // Fall through to find the instantiated declaration for this template
     // template parameter.
   }
+
+  // The declaration may have be replaced by injection.
+  if (Decl *R = FindSubstitutedDecl(D))
+    return R;
 
   return SemaRef.FindInstantiatedDecl(Loc, cast<NamedDecl>(D), TemplateArgs);
 }
@@ -2555,7 +2560,8 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
   assert(
       (TSK == TSK_ExplicitInstantiationDefinition ||
        TSK == TSK_ExplicitInstantiationDeclaration ||
-       (TSK == TSK_ImplicitInstantiation && Instantiation->isLocalClass())) &&
+       (TSK == TSK_ImplicitInstantiation && Instantiation->isLocalClass()) ||
+       (TSK == TSK_ImplicitInstantiation && Instantiation->isInFragment())) &&
       "Unexpected template specialization kind!");
   for (auto *D : Instantiation->decls()) {
     bool SuppressNew = false;

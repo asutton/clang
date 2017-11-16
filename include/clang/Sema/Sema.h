@@ -277,6 +277,61 @@ enum ReflectionKind {
   RK_Base = 3 
 };
 
+
+/// \brief A compile-time value along with its type.
+struct TypedValue
+{
+  TypedValue(QualType T, const APValue& V)
+    : Type(T), Value(V)
+  { }
+
+  QualType Type;
+  APValue Value;
+};
+
+/// \brief An injection context. This is declared to establish a set of
+/// substitutions during an injection.
+class InjectionContext
+{
+public:
+  InjectionContext(Sema &SemaRef);
+  ~InjectionContext();
+
+  /// \brief Adds a substitution from one declaration to another.
+  void AddDeclSubstitution(Decl *Orig, Decl *New);
+
+  /// \brief Adds a substitution from a fragment placeholder to its
+  /// (type) constant value.
+  void AddPlaceholderSubstitution(Decl *Orig, QualType T, const APValue &V);
+
+  /// \brief Adds substitutions for each placeholder in the fragment. 
+  /// The types and values are sourced from the fields of the reflection 
+  /// class and the captured values.
+  void AddPlaceholderSubstitutions(DeclContext *Fragment,
+                                   CXXRecordDecl *Reflection,
+                                   ArrayRef<APValue> Captures);
+
+  /// Returns a replacement for D if a substitution has been registered.
+  Decl *GetDeclReplacement(Decl *D);
+
+  /// Returns a replacement expression if E refers to a placeholder.
+  Expr *GetPlaceholderReplacement(DeclRefExpr *E);
+
+  Sema &SemaRef;
+
+  /// \brief The previous injection context.
+  InjectionContext *Prev;
+
+  /// \brief A mapping from declarations in an injection to those in the
+  /// destination context.
+  llvm::DenseMap<Decl *, Decl *> DeclSubsts;
+
+  /// \brief A mapping of fragment placeholders to their typed compile-time
+  /// values. This is used by TreeTransformer to replace references with
+  /// constant expressions.
+  llvm::DenseMap<Decl *, TypedValue> PlaceholderSubsts;
+};
+
 /// Sema - This implements semantic analysis and AST building for C.
 class Sema {
   Sema(const Sema &) = delete;
@@ -7021,11 +7076,6 @@ public:
       DeclaringSpecialMember,
 
       /// We are injecting source code.
-      ///
-      /// FIXME: This is a little unusual because, unlike ever other context,
-      /// this can apply to multiple members of a fragment as well as a single
-      /// reflected injection. Perhaps we should be creating a new context for
-      /// each injected (top level) declaration.
       SourceCodeInjection,
     } Kind;
 
@@ -7073,6 +7123,11 @@ public:
     /// substitution or checking of explicit or deduced template arguments.
     sema::TemplateDeductionInfo *DeductionInfo;
 
+    /// \brief Refers to an injection context.
+    ///
+    /// FIXME: Make this part of one kind of union or another.
+    InjectionContext *Injection;
+
     /// \brief The source range that covers the construct that cause
     /// the instantiation, e.g., the template-id that causes a class
     /// template instantiation.
@@ -7080,7 +7135,8 @@ public:
 
     CodeSynthesisContext()
       : Kind(TemplateInstantiation), Entity(nullptr), Template(nullptr),
-        TemplateArgs(nullptr), NumTemplateArgs(0), DeductionInfo(nullptr) {}
+        TemplateArgs(nullptr), NumTemplateArgs(0), DeductionInfo(nullptr),
+        Injection(nullptr) {}
 
     /// \brief Determines whether this template is an actual instantiation
     /// that should be counted toward the maximum instantiation depth.
@@ -7286,8 +7342,10 @@ public:
 
     /// \brief Note that we injecting source code.
     ///
-    /// FIXME: This is *not* template instantiation.
-    InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation);
+    /// FIXME: This is *not* template instantiation. We should really have
+    /// a mirror of this class called InjectingEntity.
+    InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
+                          InjectionContext *Cxt);
 
     /// \brief Note that we have finished instantiating this template.
     void Clear();
@@ -7418,6 +7476,9 @@ public:
   /// \brief The current instantiation scope used to store local
   /// variables.
   LocalInstantiationScope *CurrentInstantiationScope;
+
+  /// \brief The current injection context. Defined in SemaInject.cpp.
+  InjectionContext *CurrentInjectionContext;
 
   /// \brief Tracks whether we are in a context where typo correction is
   /// disabled.

@@ -445,7 +445,6 @@ DeclarationNameInfo Sema::BuildIdExprName(SourceLocation OpLoc,
     }
     T = Context.getCanonicalType(T);
 
-
     SourceLocation ExprLoc = E->getLocStart();
 
     // Evaluate the sub-expression (depending on type) in order to compute

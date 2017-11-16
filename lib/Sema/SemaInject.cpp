@@ -26,6 +26,69 @@
 using namespace clang;
 using namespace sema;
 
+InjectionContext::InjectionContext(Sema &SemaRef)
+    : SemaRef(SemaRef), Prev(SemaRef.CurrentInjectionContext) {
+  SemaRef.CurrentInjectionContext = this;
+}
+
+InjectionContext::~InjectionContext() {
+  SemaRef.CurrentInjectionContext = Prev;
+}
+
+void InjectionContext::AddDeclSubstitution(Decl *Orig, Decl *New) {
+  assert(DeclSubsts.count(Orig) == 0 && "Overwriting substitution");
+  DeclSubsts.try_emplace(Orig, New);
+}
+
+void InjectionContext::AddPlaceholderSubstitution(Decl *Orig, 
+                                                  QualType T, 
+                                                  const APValue &V) { 
+  assert(isa<VarDecl>(Orig) && "Expected a variable declaration");
+  assert(PlaceholderSubsts.count(Orig) == 0 && "Overwriting substitution");
+  PlaceholderSubsts.try_emplace(Orig, T, V);
+}
+
+void InjectionContext::AddPlaceholderSubstitutions(DeclContext *Fragment,
+                                                   CXXRecordDecl *Reflection,
+                                                   ArrayRef<APValue> Captures) {
+  assert(isa<CXXFragmentDecl>(Fragment) && "Context is not a fragment");
+  auto FieldIter = Reflection->field_begin();
+  auto PlaceIter = Fragment->decls_begin();
+  for (std::size_t I = 0; I < Captures.size(); ++I) {
+    Decl *Var = *PlaceIter++;
+    QualType Ty = (*FieldIter++)->getType();
+    const APValue &Val = Captures[I];
+    AddPlaceholderSubstitution(Var, Ty, Val);
+  }
+}
+
+Decl *InjectionContext::GetDeclReplacement(Decl *D) {
+  auto Iter = DeclSubsts.find(D);
+  if (Iter != DeclSubsts.end())
+    return Iter->second;
+  else
+    return nullptr;
+}
+
+Expr *InjectionContext::GetPlaceholderReplacement(DeclRefExpr *E) {
+  auto Iter = PlaceholderSubsts.find(E->getDecl());
+  if (Iter != PlaceholderSubsts.end()) {
+    // Build a new constant expression as the replacement. The source
+    // expression is opaque since the actual declaration isn't part of
+    // the output AST (but we might want it as context later -- makes
+    // pretty printing more elegant).
+    const TypedValue &TV = Iter->second;
+    Expr *O = new (SemaRef.Context) OpaqueValueExpr(E->getLocation(), 
+                                                    TV.Type, VK_RValue, 
+                                                    OK_Ordinary, E);
+    return new (SemaRef.Context) CXXConstantExpr(O, TV.Value);
+  } else {
+    return nullptr;
+  }
+}
+
+
+// FIXME: Make these members of Sema.
 static bool InjectFragment(Sema &SemaRef, SourceLocation POI, 
                            QualType ReflectionTy, const APValue &ReflectionVal, 
                            Decl *Injectee, Decl *Injection, 
@@ -143,133 +206,6 @@ Decl *Sema::ActOnFinishCXXFragment(Scope *S, Decl *Fragment, Decl *Content) {
   return FD;
 }
 
-// FIXME: This algorithm is not entirely correct. Consider:
-//
-//    auto x = __fragment namespace {
-//      template<typename T> void foo(T) { }
-//    };
-//
-// The declaration of foo contains a dependent type, but the dependency
-// is local to that declaration and not the context in which the fragment
-// appears. The fragment is not dependent.
-//
-// When a type or expression is dependent, we need to determine if the
-// the name that causes the dependency is declared inside or outside of
-// the fragment.
-static bool ContainsDependentMembers(Sema &SemaRef, const DeclContext *DC);
-
-// FIXME: See the note above. If T is a dependent type, we need to check
-// the scope of its dependency.
-static bool
-IsDependentType(Sema &SemaRef, QualType T) {
-  return T->isDependentType();
-}
-
-// FIXME: See the note above. If E is a dependent expression, we need to check
-// the scope of its dependency.
-static bool
-IsDependentExpr(Sema &SemaRef, const Expr *E) {
-  return E->isTypeDependent() || E->isValueDependent();  
-}
-
-static bool
-IsDependentStmt(Sema &SemaRef, const Stmt *S) {
-  // An expression is dependent if it is type or value dependent.
-  if (const Expr *E = dyn_cast<Expr>(S))
-    return IsDependentExpr(SemaRef, E);
-
-  // Check sub-statements.
-  auto Kids = S->children();
-  return std::any_of(Kids.begin(), Kids.end(), [&SemaRef](const Stmt *X) {
-    return IsDependentStmt(SemaRef, X);
-  });
-}
-
-static bool
-IsDependentDecl(Sema &SemaRef, const ValueDecl *VD) {
-  // The member is dependent if its type is dependent.
-  if (IsDependentType(SemaRef, VD->getType()))
-    return true;
-
-  if (const VarDecl *Var = dyn_cast<VarDecl>(VD)) {
-    // A variable is dependent if its initializer is dependent.
-    if (const Expr *Init = Var->getInit())
-      if (IsDependentExpr(SemaRef, Init))
-        return true;
-  } else if (const EnumConstantDecl *Enum = dyn_cast<EnumConstantDecl>(VD)) {
-    // An enumerator is dependent if it has a dependent initializer.
-    if (const Expr *Init = Enum->getInitExpr())
-      if (IsDependentExpr(SemaRef, Init))
-        return true;
-  } else if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(VD)) {
-    // A function is dependent any of its parameters are dependent.
-    for (const ParmVarDecl *P : Fn->parameters())
-      if (IsDependentDecl(SemaRef, P))
-        return true;
-
-    // Of if not that, if any of its statements contains a dependent expression.
-    if (Stmt *Body = Fn->getBody()) {
-      if (IsDependentStmt(SemaRef, Body))
-        return true;
-    }
-  }
-  
-  // There are no dependent members.
-  return false;
-}
-
-static bool
-IsDependentDecl(Sema &SemaRef, const TypeDecl *TD) {
-  if (const CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(TD)) {
-    // For the purpose of this algorithm, ignore the injected class name.
-    if (Class->isInjectedClassName())
-      return false;
-    
-    // A class is dependent if any of its base classes are dependent.
-    for (const CXXBaseSpecifier &Base : Class->bases())
-      if (IsDependentType(SemaRef, Base.getType()))
-        return true;
-  }
-
-  if (const TagDecl *Tag = dyn_cast<TagDecl>(TD)) {
-    // A tag declaration is dependent if it contains any dependent members.
-    if (ContainsDependentMembers(SemaRef, (DeclContext*)Tag))
-      return true;
-  } else if (const TypedefNameDecl *Alias = dyn_cast<TypedefNameDecl>(TD)) {
-    // An alias is dependent if it's underlying type is dependent.
-    if (IsDependentType(SemaRef, Alias->getUnderlyingType()))
-      return true;
-  }
-
-  return false;
-}
-
-static bool
-ContainsDependentMembers(Sema &SemaRef, const DeclContext *DC) {
-  for (const Decl* D : DC->decls()) {
-    if (const ValueDecl *VD = dyn_cast<ValueDecl>(D))
-      if (IsDependentDecl(SemaRef, VD))
-        return true;
-
-    if (const TypeDecl *TD = dyn_cast<TypeDecl>(D))
-      if (IsDependentDecl(SemaRef, TD))
-        return true;
-
-    // A namespace is dependent if any of its members is dependent.
-    if (const NamespaceDecl *NS = dyn_cast<NamespaceDecl>(D))
-      return ContainsDependentMembers(SemaRef, NS);
-
-  }
-  return false;
-}
-
-static bool
-IsFragmentDependent(Sema &SemaRef, const CXXFragmentDecl *FD)
-{
-  const DeclContext *DC = Decl::castToDeclContext(FD->getContent());
-  return ContainsDependentMembers(SemaRef, DC);
-}
-
 /// Builds a new fragment expression.
 ExprResult Sema::ActOnCXXFragmentExpr(SourceLocation Loc, 
                                       SmallVectorImpl<Expr *> &Captures, 
@@ -306,13 +242,17 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc,
                                       Decl *Fragment) {
   CXXFragmentDecl *FD = cast<CXXFragmentDecl>(Fragment);
 
-  // If the fragment is dependent, then return a dependently typed expression.
+
+  // If the fragment appears in a context that depends on template parameters,
+  // then the expression is dependent.
   //
-  // FIXME: Do we need to differentiate between a value-dependent fragment
-  // and a type-dependent fragment?
-  if (IsFragmentDependent(*this, FD))
+  // FIXME: This is just an approximation of the right answer. In truth, the
+  // expression is dependent if the fragment depends on any template parameter
+  // in this or any enclosing context.
+  if (CurContext->isDependentContext()) {
     return new (Context) CXXFragmentExpr(Context, Loc, Context.DependentTy, 
                                          Captures, FD, nullptr);
+  }
 
   // Build the expression used to the reflection of fragment.
   //
@@ -892,7 +832,7 @@ public:
 
       // Register the reference replacement.
       TypedValue TV { Ty, Val };
-      PlaceholderValues[Placeholder] = TV;
+      PlaceholderValues.try_emplace(Placeholder, TV);
 
       ++PlaceIter;
       ++FieldIter;
@@ -914,59 +854,6 @@ public:
     }
     return TSI;
   }
-
-  // FIXME: This is probably the right way to do this. HOWEVER, it's leading
-  // to a substitution bug.
-  //
-  // In all reality, this is probably because I've chosen to write injection
-  // outside of the usual declaration substitution machinery. In order for
-  // this to work correctly, we need to ensure that SubstXXX finds locally
-  // transformed declarations -- which it is not doing. That probably means
-  // rewriting the entire injection facility.
-
-  #if 0
-  // Try to expand parameter packs during injection.
-  bool TryExpandParameterPacks(SourceLocation EllipsisLoc,
-                               SourceRange PatternRange,
-                               ArrayRef<UnexpandedParameterPack> Unexpanded,
-                               bool &ShouldExpand, bool &RetainExpansion,
-                               Optional<unsigned> &NumExpansions) {
-    for (auto I = Unexpanded.begin(), End = Unexpanded.end(); I != End; ++I) {
-      // We should try to expand parameter packs if any of the unexpanded
-      // packs refer to an injected parameter sequence.
-      if (NamedDecl *ND = I->first.get<NamedDecl *>()) {
-        if (ParmVarDecl *Parm = dyn_cast<ParmVarDecl>(ND)) {
-          if (const auto *T = Parm->getType()->getAs<InjectedParmType>()) {
-
-            // FIXME: Do we need to instantiate the type in order to
-            // determine the number of expansion.
-            llvm::outs() << "HERE: " << T->isDependentType() << '\n';
-            Parm->dump();
-
-            // Transform the injected parameter type first. If it's dependent,
-            // then we can't expand and TransformExprs() simply create a new
-            // expansion pattern (good).
-            QualType PatternType = TransformType(QualType(T, 0));
-            if (PatternType->isDependentType()) {
-              ShouldExpand = false;
-              return false;
-            }
-
-            T = PatternType->getAs<InjectedParmType>();
-
-            llvm::outs() << "EXPAND TO " << T->getParameters().size() << '\n';
-
-            // Indicate that we should expand with N parameters.
-            ShouldExpand = true;
-            RetainExpansion = false; // Probably
-            NumExpansions = T->getParameters().size();
-          }
-        }
-      }
-    }
-    return false;
-  }
-  #endif
 
   Decl *TransformDecl(Decl *D) {
     return TransformDecl(D->getLocation(), D);
@@ -1201,7 +1088,7 @@ bool Sema::InjectBlockStatements(SourceLocation POI, InjectionInfo &II) {
     return InvalidInjection(*this, POI, 0, CurContext);
 
   // Note that we are instantiating a template.
-  InstantiatingTemplate Inst(*this, POI);
+  // InstantiatingTemplate Inst(*this, POI);
 
   /*
   SourceCodeInjector Injector(*this, S->getInjectionContext());
@@ -1268,7 +1155,7 @@ bool Sema::InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II) {
     return InvalidInjection(*this, POI, 2, CurContext);
 
   // Note that we are instantiating a template.
-  InstantiatingTemplate Inst(*this, POI);
+  // InstantiatingTemplate Inst(*this, POI);
 
   /*
   NamespaceDecl *Source = D->getNamespaceFragment();
@@ -1356,6 +1243,50 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
   }
 
   CXXRecordDecl *Class = ReflectionTy->getAsCXXRecordDecl();
+  CXXFragmentDecl *Fragment = cast<CXXFragmentDecl>(Injection->getDeclContext());
+
+  InjectionContext InjectionCxt(SemaRef);
+  Sema::InstantiatingTemplate Inst(SemaRef, POI, &InjectionCxt);
+  InjectionCxt.AddDeclSubstitution(Injection, Injectee);
+  InjectionCxt.AddPlaceholderSubstitutions(Fragment, Class, Captures);
+
+  // llvm::outs() << "=============================================\n";
+  // llvm::outs() << "INJECTING\n";
+  // Fragment->dump();
+
+  for (Decl *D : InjectionDC->decls()) {
+    // Don't inject injected class names.
+    if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D))
+      if (Class->isInjectedClassName())
+        continue;
+
+    // llvm::outs() << "BEFORE\n";
+    // D->dump();
+    
+    MultiLevelTemplateArgumentList Args;
+    Decl *R = SemaRef.SubstDecl(D, InjecteeDC, Args);
+    if (!R) {
+      Injectee->setInvalidDecl(true);
+      continue;
+    }
+    Decls.push_back(R);
+    
+    // llvm::outs() << "AFTER\n";
+    // R->dump();
+    
+    // Inform the consumer, if needed.
+    // if (InjecteeDC->isFileContext())
+    //   SemaRef.Consumer.HandleTopLevelDecl(DeclGroupRef(R));
+  }
+
+  llvm::outs() << "*************************************\n";
+  llvm::outs() << "FINAL\n";
+  Injectee->dump();
+
+  return true;
+
+
+  #if 0
 
   // Inject the members of the fragment. Note that the source DC is the
   // nested content, not the fragment declaration.
@@ -1369,21 +1300,31 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
   Sema::ContextRAII Switch(SemaRef, InjecteeDC);
   Sema::PendingMemberTransformationRAII Pending(SemaRef, InjecteeDC);
 
+  llvm::outs() << "=============================================\n";
+  llvm::outs() << "INECTION\n";
+  Injection->dump();
+  Decl::castFromDeclContext(Injection->getDeclContext())->dump();
+
+
   for (Decl *D : InjectionDC->decls()) {
+    llvm::outs() << "BEFORE\n";
+    D->dump();
     Decl *R = Injector.InjectDecl(D);
     if (!R) {
       Injectee->setInvalidDecl(true);
       continue;
     }
     Decls.push_back(R);
-
-    // FIXME: This is probably not right. The notion of "top-level" corresponds
-    // roughly to LLVM's global definitions, not strictly TU-scoped entities.
-    if (isa<TranslationUnitDecl>(Injection))
+    llvm::outs() << "AFTER\n";
+    D->dump();
+    
+    // Inform the consumer, if needed.
+    if (InjecteeDC->isFileContext())
       SemaRef.Consumer.HandleTopLevelDecl(DeclGroupRef(R));
   }
 
   return Injectee->isInvalidDecl();
+#endif
 }
 
 static bool isClassMemberDecl(const Decl* D) {
@@ -1593,6 +1534,7 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
                           CXXRecordDecl *Final,
                           SmallVectorImpl<Decl *> &Fields) {
   
+#if 0
   CXXRecordDecl *Def = Meta->getDefinition();
 
   // Recursively inject base classes.
@@ -1641,6 +1583,7 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
   
   if (Final->isInvalidDecl())
     return;
+#endif
 }
 
 void Sema::EnterPendingMemberTransformationScope(RecordDecl *D) {

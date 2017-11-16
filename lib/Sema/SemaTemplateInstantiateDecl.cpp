@@ -525,7 +525,30 @@ TemplateDeclInstantiator::VisitLabelDecl(LabelDecl *D) {
 
 Decl *
 TemplateDeclInstantiator::VisitNamespaceDecl(NamespaceDecl *D) {
-  llvm_unreachable("Namespaces cannot be instantiated");
+  assert(isa<CXXFragmentDecl>(D->getDeclContext()) && 
+         "Non-fragment namespaces cannot be instantiated");
+  assert(SemaRef.CurrentInstantiationScope &&
+         "No local instantiation scope for namespace fragment");
+
+  NamespaceDecl *NS = NamespaceDecl::Create(SemaRef.Context, Owner,
+                                            D->isInline(),
+                                            D->getLocation(),
+                                            D->getLocation(),
+                                            D->getIdentifier(),
+                                            nullptr);
+
+  for (Decl *Orig : D->decls()) {
+    Decl *New = SemaRef.SubstDecl(Orig, NS, TemplateArgs);
+    if (!New) {
+      NS->setInvalidDecl(true);
+      continue;
+    }
+
+    // Every member in a fragment is a local.
+    SemaRef.CurrentInstantiationScope->InstantiatedLocal(Orig, New);
+  }
+
+  return NS;
 }
 
 Decl *
@@ -705,6 +728,7 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D) {
 Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D,
                                              bool InstantiatingVarTemplate,
                                              ArrayRef<BindingDecl*> *Bindings) {
+
   // Do substitution on the type of the declaration
   TypeSourceInfo *DI = SemaRef.SubstType(
       D->getTypeSourceInfo(), TemplateArgs, D->getTypeSpecStartLoc(),
@@ -728,10 +752,16 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D,
     Var = DecompositionDecl::Create(SemaRef.Context, DC, D->getInnerLocStart(),
                                     D->getLocation(), DI->getType(), DI,
                                     D->getStorageClass(), *Bindings);
-  else
-    Var = VarDecl::Create(SemaRef.Context, DC, D->getInnerLocStart(),
-                          D->getLocation(), D->getIdentifier(), DI->getType(),
-                          DI, D->getStorageClass());
+  else {
+    // Substitute through the name; it could be an idexpr.
+    DeclarationNameInfo DNI(D->getDeclName(), D->getLocation());
+    DNI = SemaRef.SubstDeclarationNameInfo(DNI, TemplateArgs);
+    if (!DNI.getName())
+      return nullptr;
+    
+    Var = VarDecl::Create(SemaRef.Context, DC, D->getInnerLocStart(), DNI,
+                          DI->getType(), DI, D->getStorageClass());
+  }
 
   // In ARC, infer 'retaining' for variables of retainable type.
   if (SemaRef.getLangOpts().ObjCAutoRefCount && 
@@ -1548,7 +1578,7 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
   if (D->isAnonymousStructOrUnion())
     Record->setAnonymousStructOrUnion(true);
 
-  if (D->isLocalClass())
+  if (D->isLocalClass() || D->isInFragment())
     SemaRef.CurrentInstantiationScope->InstantiatedLocal(D, Record);
 
   // Forward the mangling number from the template to the instantiated decl.
@@ -1567,9 +1597,11 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
 
   Owner->addDecl(Record);
 
+  // In some cases, explicitly instantiate the definition.
+  //
   // DR1484 clarifies that the members of a local class are instantiated as part
   // of the instantiation of their enclosing entity.
-  if (D->isCompleteDefinition() && D->isLocalClass()) {
+  if ((D->isCompleteDefinition() && D->isLocalClass()) || D->isInFragment()) {
     Sema::LocalEagerInstantiationScope LocalInstantiations(SemaRef);
 
     SemaRef.InstantiateClass(D->getLocation(), Record, D, TemplateArgs,

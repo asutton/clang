@@ -34,6 +34,7 @@
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaDiagnostic.h"
 #include "clang/Sema/SemaInternal.h"
+#include "clang/Sema/Template.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <algorithm>
@@ -407,6 +408,17 @@ public:
                       SmallVectorImpl<Expr *> &Outputs,
                       bool *ArgChanged = nullptr);
 
+  /// \brief During injection, a declaration referring to an injected entity
+  /// may be substituted for its context. In that case, return the substituted
+  /// declaration. Otherwise, returns null.
+  Decl *FindSubstitutedDecl(Decl *D) {
+    if (InjectionContext *Injection = getSema().CurrentInjectionContext) {
+      if (Decl *R = Injection->GetDeclReplacement(D))
+        return R;
+    }
+    return nullptr;
+  }
+
   /// \brief Transform the given declaration.
   Decl *TransformDecl(Decl *D) {
     return getDerived().TransformDecl(D->getLocation(), D);
@@ -415,6 +427,9 @@ public:
   /// \brief Transform the given declaration, which is referenced from a type
   /// or expression.
   Decl *TransformDecl(SourceLocation Loc, Decl *D) {
+    if (Decl *R = FindSubstitutedDecl(D))
+      return R;
+
     llvm::DenseMap<Decl *, Decl *>::iterator Known
       = TransformedLocalDecls.find(D);
     if (Known != TransformedLocalDecls.end())
@@ -7434,23 +7449,26 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
   CXXFragmentDecl *NewFragment = cast<CXXFragmentDecl>(F);
   CXXFragmentDecl *OldFragment = cast<CXXFragmentDecl>(E->getFragment());
 
-  // Create a mapping from old placeholders to new.
+  // Register captured parameters as local instantiations. Note that
+  // instantiations local to the fragment are distinct from those in
+  // the current context.
+  LocalInstantiationScope Scope(getSema());
   auto OldIter = OldFragment->decls_begin();
   auto NewIter = NewFragment->decls_begin();
-  while (NewIter != NewFragment->decls_end()) {
-    transformedLocalDecl(*OldIter, *NewIter);
-    ++OldIter;
-    ++NewIter;
-  }
+  while (NewIter != NewFragment->decls_end())
+    Scope.InstantiatedLocal(*OldIter++, *NewIter++);
 
   // Clone the underlying declaration.
   {
-    Sema::ContextRAII Switch(getSema(), NewFragment);
-    Decl *OldContent = OldFragment->getContent();
-    Decl *NewContent = getDerived().TransformLocalDecl(OldContent);
+    // Arguments used to instantiate the fragment are those used to
+    // instantiate the current context.
+    NamedDecl *Owner = dyn_cast<NamedDecl>(getSema().CurContext);
+    MultiLevelTemplateArgumentList Args =
+        getSema().getTemplateInstantiationArgs(Owner);
+    Decl *NewContent = 
+        getSema().SubstDecl(OldFragment->getContent(), NewFragment, Args);
     if (!NewContent)
       return ExprError();
-
     F = getSema().ActOnFinishCXXFragment(nullptr, NewFragment, NewContent);
     if (!F)
       return ExprError();
@@ -9164,6 +9182,13 @@ TreeTransform<Derived>::TransformPredefinedExpr(PredefinedExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformDeclRefExpr(DeclRefExpr *E) {
+  // When injecting code, E may refer to a placeholder. In that case, replace
+  // it with a constant expression. If not, fall through.
+  if (InjectionContext *Injection = getSema().CurrentInjectionContext) {
+    if (Expr *R = Injection->GetPlaceholderReplacement(E))
+      return R;
+  }
+
   NestedNameSpecifierLoc QualifierLoc;
   if (E->getQualifierLoc()) {
     QualifierLoc

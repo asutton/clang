@@ -557,6 +557,12 @@ public:
 
   void setReferenced(bool R = true) { Referenced = R; }
 
+  // \brief True if the declaration is a direct or indirect member of
+  // a fragment.
+  bool isInFragment() const;
+
+  // FIXME: I don't believe that these are being used any more.
+
   /// \brief Whether this declaration is is injectable. Only members of a 
   /// fragment are injectable.
   bool isInjectable() const { return Injectable; }
