@@ -1278,9 +1278,51 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
   return true;
 }
 
-static bool isClassMemberDecl(const Decl* D) {
-  return isa<FieldDecl>(D) || isa<CXXMethodDecl>(D);
+static Decl *RewriteAsStaticMemberVariable(Sema &SemaRef, 
+                                           FieldDecl *D, 
+                                           DeclContext *Owner) {
+  MultiLevelTemplateArgumentList Args; // Empty arguments for substitution.
+
+  DeclarationNameInfo DNI(D->getDeclName(), D->getLocation());
+  DNI = SemaRef.SubstDeclarationNameInfo(DNI, Args);
+  if (!DNI.getName())
+    return nullptr;
+
+  TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(D->getType());
+  TSI = SemaRef.SubstType(TSI, Args, D->getLocation(), DNI.getName());
+  if (!TSI)
+    return nullptr;
+  
+  VarDecl *R = VarDecl::Create(SemaRef.Context, Owner, D->getLocation(), DNI,
+                               TSI->getType(), TSI, SC_Static);
+  R->setAccess(D->getAccess());
+  Owner->addDecl(R);
+
+  // Transform the initializer and associated properties of the definition.
+  //
+  // FIXME: I'm pretty sure that initializer semantics are not being
+  // translated incorrectly.
+  if (Expr *OldInit = D->getInClassInitializer()) {
+    SemaRef.PushExpressionEvaluationContext(
+      Sema::ExpressionEvaluationContext::ConstantEvaluated, D);
+
+    ExprResult Init;
+    {
+      Sema::ContextRAII SwitchContext(SemaRef, R->getDeclContext());
+      Init = SemaRef.SubstInitializer(OldInit, Args, false);
+    }
+    if (!Init.isInvalid()) {
+      if (Init.get())
+        SemaRef.AddInitializerToDecl(R, Init.get(), false);
+      else
+        SemaRef.ActOnUninitializedDecl(R);
+    } else
+      R->setInvalidDecl();
+  }
+
+  return R;
 }
+
 
 /// Clone a declaration into the current context.
 static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI, 
@@ -1296,15 +1338,16 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   if (!CheckInjectionKind(SemaRef, POI, Injection, InjecteeDC))
     return false;
 
-  // The source DC is either the injection itself or null. This means that
-  // any non-members of the injection will be looked up/handled differently.
-  DeclContext *SourceDC = dyn_cast<DeclContext>(Injection);
-  
-  // Configure the injection. Within the injected declaration, references
-  // to the enclosing context are replaced with references to the destination
-  // context.
-  SourceCodeInjector &Injector = SemaRef.MakeInjector(SourceDC, InjecteeDC);
-  Injector.AddSubstitution(Decl::castFromDeclContext(InjectionDC), Injectee);
+  // Set up the injection context. There are no placeholders for copying.
+  InjectionContext InjectionCxt(SemaRef);
+  Sema::InstantiatingTemplate Inst(SemaRef, POI, &InjectionCxt);
+  InjectionCxt.AddDeclSubstitution(Injection, Injectee);
+
+  // // Configure the injection. Within the injected declaration, references
+  // // to the enclosing context are replaced with references to the destination
+  // // context.
+  // SourceCodeInjector &Injector = SemaRef.MakeInjector(SourceDC, InjecteeDC);
+  // Injector.AddSubstitution(Decl::castFromDeclContext(InjectionDC), Injectee);
 
   // Unpack the modification traits so we can apply them after generating
   // the declaration.
@@ -1329,9 +1372,6 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   assert(Storage != Automatic && "Can't make declarations automatic");
   assert(Storage != ThreadLocal && "Thread local storage not implemented");
 
-  // Set up the transformation context.
-  Sema::ContextRAII Switch(SemaRef, InjecteeDC);
-
   CXXRecordDecl *Class = nullptr;
   if (isa<CXXRecordDecl>(Injectee))
     // The injection site is a class and the injection is a member. We need
@@ -1346,15 +1386,24 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
 
   // Build the declaration. If there was a request to make field static, we'll
   // need to build a new declaration.
+  // llvm::outs() << "BEFORE\n";
+  // Injection->dump();
   Decl* Result;
-  if (isClassMemberDecl(Injection) && Storage == Static)
-    Result = Injector.RewriteAsStaticMember(Injection);
-  else
-    Result = Injector.InjectDecl(Injection);
+  if (isa<FieldDecl>(Injection) && Storage == Static) {
+    Result = RewriteAsStaticMemberVariable(SemaRef, 
+                                           cast<FieldDecl>(Injection), 
+                                           InjecteeDC);
+  } else {
+    MultiLevelTemplateArgumentList Args;
+    Result = SemaRef.SubstDecl(Injection, InjecteeDC, Args);
+  }
   if (!Result) {
     Injectee->setInvalidDecl(true);
     return false;
   }
+  // llvm::outs() << "AFTER: " << Result->getDeclContext() << '\n';
+  // Result->dump();
+  // Decl::castFromDeclContext(Result->getDeclContext())->dump();
 
   // Update access specifiers.
   if (Access) {

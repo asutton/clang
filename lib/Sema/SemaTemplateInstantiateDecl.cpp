@@ -4025,7 +4025,11 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
     ActOnFinishFunctionBody(Function, Body.get(),
                             /*IsInstantiation=*/true);
 
-    PerformDependentDiagnostics(PatternDecl, TemplateArgs);
+    // FIXME: The patter is non-dependent only during injection. It might
+    // be nice if we kept a flag (or extra info) determining if a declaration
+    // was injected.
+    if (PatternDecl->isDependentContext())
+      PerformDependentDiagnostics(PatternDecl, TemplateArgs);
 
     if (auto *Listener = getASTMutationListener())
       Listener->FunctionDefinitionInstantiated(Function);
