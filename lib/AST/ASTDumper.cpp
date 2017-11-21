@@ -1283,8 +1283,11 @@ void ASTDumper::VisitCapturedDecl(const CapturedDecl *D) {
 }
 
 void ASTDumper::VisitCXXTupleExpansionStmt(const CXXTupleExpansionStmt *Node) {
-  for (Stmt *S : Node->getInstantiatedStatements())
-    dumpStmt(S);
+  // NOTE: It's possible that the number of statements has been set,
+  // but the instantiated statements not added.
+  if (Stmt **Iter = Node->begin_instantiated_statements())
+    for (; Iter != Node->end_instantiated_statements(); ++Iter)
+      dumpStmt(*Iter);
 }
 
 //===----------------------------------------------------------------------===//

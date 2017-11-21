@@ -257,14 +257,18 @@ public:
   CXXExpansionStmt(StmtClass SC, EmptyShell Empty) : Stmt(SC, Empty) {}
 
   /// \brief Returns the statement containing the range declaration.
-  Stmt *getRange() const { return SubExprs[RANGE]; }
+  Stmt *getRangeVarStmt() const { return SubExprs[RANGE]; }
+
+  /// \brief The range variable.
+  const VarDecl *getRangeVariable() const;  
+  VarDecl *getRangeVariable();
 
   /// \brief Returns the dependent loop variable declaration.
   DeclStmt *getLoopVarStmt() const { return cast<DeclStmt>(SubExprs[LOOP]); }
 
   /// \brief Get the loop variable.
-  VarDecl *getLoopVariable();
   const VarDecl *getLoopVariable() const;
+  VarDecl *getLoopVariable();
 
   /// \brief Returns the parsed body of the loop.
   const Stmt *getBody() const { return SubExprs[BODY]; }

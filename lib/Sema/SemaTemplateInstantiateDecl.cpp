@@ -939,7 +939,11 @@ Decl *TemplateDeclInstantiator::VisitConstexprDecl(ConstexprDecl *D) {
     // FIXME: We probably need to manage the function's definition a little
     // better. Note that we can't use InstantiateFunctionDefinition; that
     // assumes that the NewFn will have a template pattern.
-    StmtResult NewBody = SemaRef.SubstStmt(Fn->getBody(), TemplateArgs);
+    StmtResult NewBody;
+    {
+      Sema::ContextRAII Switch(SemaRef, NewFn);
+      NewBody = SemaRef.SubstStmt(Fn->getBody(), TemplateArgs);
+    }
     if (NewBody.isInvalid())
       return nullptr;
     NewFn->setBody(NewBody.get());

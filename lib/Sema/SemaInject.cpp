@@ -1397,7 +1397,7 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
     MultiLevelTemplateArgumentList Args;
     Result = SemaRef.SubstDecl(Injection, InjecteeDC, Args);
   }
-  if (!Result) {
+  if (!Result || Result->isInvalidDecl()) {
     Injectee->setInvalidDecl(true);
     return false;
   }

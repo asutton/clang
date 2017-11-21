@@ -99,6 +99,12 @@ CXXExpansionStmt::CXXExpansionStmt(StmtClass SC, DeclStmt *Range,
   SubExprs[BODY] = Body;
 }
 
+VarDecl *CXXExpansionStmt::getRangeVariable() {
+  Decl *RV = cast<DeclStmt>(getRangeVarStmt())->getSingleDecl();
+  assert(RV && "No range variable in CXXExpansionStmt");
+  return cast<VarDecl>(RV);
+}
+
 VarDecl *CXXExpansionStmt::getLoopVariable() {
   Decl *LV = cast<DeclStmt>(getLoopVarStmt())->getSingleDecl();
   assert(LV && "No loop variable in CXXExpansionStmt");

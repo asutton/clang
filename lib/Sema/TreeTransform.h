@@ -429,7 +429,6 @@ public:
   Decl *TransformDecl(SourceLocation Loc, Decl *D) {
     if (Decl *R = FindSubstitutedDecl(D))
       return R;
-
     llvm::DenseMap<Decl *, Decl *>::iterator Known
       = TransformedLocalDecls.find(D);
     if (Known != TransformedLocalDecls.end())

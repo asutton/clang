@@ -2730,6 +2730,16 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
                                     RangeDecl.get(), LoopDS, RParenLoc, Kind);
 }
 
+static int NewTemplateParameterDepth(DeclContext *DC) {
+  while (DC) {
+    Decl *D = Decl::castFromDeclContext(DC);
+    if (TemplateDecl *Template = D->getDescribedTemplate())
+      return Template->getTemplateParameters()->getDepth() + 1;
+    DC = DC->getParent();
+  }
+  return 0;
+}
+
 /// Given an initial decomposition of the expansion syntax, enough information
 /// that supports the parsing of the loop body.
 StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
@@ -2771,15 +2781,25 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
       return StmtError();
 
     // Declare a new template parameter '__N' for which we will be substituting
-    // concrete values later.
+    // concrete values later. Effectively, we're creating a parameterized
+    // compound statement, like this:
     //
-    // FIXME: Correctly compute the template parameter depth.
+    //    template<size_t __N> {
+    //      auto loop_var = get<N>(__tuple)
+    //      ...
+    //    }
+    //
+    // FIXME: This probably going to break if you put a generic lambda in
+    // the loop body. The depth of those template parameters should be one
+    // more than the depth of this parameter, and we aren't registering this
+    // depth level with the scope stack.
+    int Depth = NewTemplateParameterDepth(CurContext);
     IdentifierInfo *ParmName = &PP.getIdentifierTable().get("__N");
     const QualType ParmTy = Context.getSizeType();
     TypeSourceInfo *ParmTI = Context.getTrivialTypeSourceInfo(ParmTy, ColonLoc);
     NonTypeTemplateParmDecl *Parm = NonTypeTemplateParmDecl::Create(
-        Context, Context.getTranslationUnitDecl(), ColonLoc, ColonLoc,
-        /*Depth=*/0, /*Position=*/0, ParmName, ParmTy, false, ParmTI);
+        Context, Context.getTranslationUnitDecl(), ColonLoc, ColonLoc, Depth, 
+        /*Position=*/0, ParmName, ParmTy, false, ParmTI);
     NamedDecl *Parms[] = {Parm};
     ParmList = TemplateParameterList::Create(Context, ColonLoc, ColonLoc, Parms,
                                              ColonLoc, nullptr);
@@ -3076,8 +3096,31 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
     TemplateArgumentList TempArgs(TemplateArgumentList::OnStack, Args);
     MultiLevelTemplateArgumentList MultiArgs(TempArgs);
 
-    // We need a local instantiation scope with rewriting.
-    LocalInstantiationScope Locals(*this);
+    // We need a local instantiation scope with rewriting. This local
+    // instantiation scope should be considered to be part of the parent
+    // scope.
+    LocalInstantiationScope Locals(*this, true);
+
+    // Map the loop variable to itself in this context so that references
+    // to the tuple variable are correctly resolved. Consider:
+    //
+    //    template<typename T>
+    //    void f() {
+    //      for... (auto x : non_dependent_expr)
+    //        // do stuff
+    //
+    // The loop is instantiated just after parsing, and the loop variable
+    // initializer refers to the non-instantiated range variable. However,
+    // the template instantiator believes that the declaration should be
+    // instantiated because that's a local in a dependent context and should
+    // be replaced.
+    //
+    // If the tuple expression is dependent, then there will eventually be
+    // two entries for the range variable: one created when instantiating
+    // the local in the function's scope, and the one here. This shouldn't
+    // have any effect on lookup.
+    Locals.InstantiatedLocal(S->getRangeVariable(), S->getRangeVariable());
+
     InstantiatingTemplate Inst(*this, B->getLocStart(), S, Args,
                                B->getSourceRange());
     StmtResult Instantiation = SubstForTupleBody(Body, MultiArgs);
