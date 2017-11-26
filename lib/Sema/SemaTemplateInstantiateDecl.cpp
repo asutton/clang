@@ -3179,7 +3179,16 @@ Decl *TemplateDeclInstantiator::VisitFriendTemplateDecl(FriendTemplateDecl *D) {
   return nullptr;
 }
 
+// NOTE: These normally don't appear in functions, but they can appear inside
+// fragments, which means we should handle them.
+Decl *TemplateDeclInstantiator::VisitEmptyDecl(EmptyDecl *D) {
+  Decl *R = EmptyDecl::Create(SemaRef.Context, Owner, D->getLocation());
+  Owner->addDecl(R);
+  return R;
+}
+
 Decl *TemplateDeclInstantiator::VisitDecl(Decl *D) {
+  SemaRef.Diag(D->getLocation(), diag::err_compiler_error) << "HUH?\n";
   llvm_unreachable("Unexpected decl");
 }
 
