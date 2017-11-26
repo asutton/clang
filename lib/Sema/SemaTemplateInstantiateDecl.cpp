@@ -544,7 +544,7 @@ TemplateDeclInstantiator::VisitNamespaceDecl(NamespaceDecl *D) {
       continue;
     }
 
-    // Every member in a fragment is a local.
+    // Every member in a fragment is local to the instantiation.
     SemaRef.CurrentInstantiationScope->InstantiatedLocal(Orig, New);
   }
 
@@ -4192,7 +4192,8 @@ void Sema::BuildVariableInstantiation(
   }
 
   if (!OldVar->isOutOfLine()) {
-    if (NewVar->getDeclContext()->isFunctionOrMethod())
+    if (NewVar->getDeclContext()->isFunctionOrMethod() || 
+        OldVar->isInFragment()) 
       CurrentInstantiationScope->InstantiatedLocal(OldVar, NewVar);
   }
 
@@ -4221,6 +4222,12 @@ void Sema::BuildVariableInstantiation(
       NewVar->getDeclContext()->isFunctionOrMethod() &&
       OldVar->getType()->isDependentType())
     DiagnoseUnusedDecl(NewVar);
+
+  // If we injected a global variable, tell the consumer.
+  if (CurrentInjectionContext && NewVar->getDeclContext()->isFileContext()) {
+    DeclGroupRef DG(NewVar);
+    Consumer.HandleTopLevelDecl(DG); 
+  }
 }
 
 /// \brief Instantiate the initializer of a variable.

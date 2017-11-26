@@ -1241,6 +1241,10 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
   CXXRecordDecl *Class = ReflectionTy->getAsCXXRecordDecl();
   CXXFragmentDecl *Fragment = cast<CXXFragmentDecl>(Injection->getDeclContext());
 
+  // Set up a bunch of context for the injection. The local instantiation
+  // scope stores (for the duration of injection) the new members created
+  // by expanding the injection into the current context.
+  LocalInstantiationScope Locals(SemaRef);
   InjectionContext InjectionCxt(SemaRef);
   Sema::InstantiatingTemplate Inst(SemaRef, POI, &InjectionCxt);
   InjectionCxt.AddDeclSubstitution(Injection, Injectee);
@@ -1261,10 +1265,11 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
     
     MultiLevelTemplateArgumentList Args;
     Decl *R = SemaRef.SubstDecl(D, InjecteeDC, Args);
-    if (!R) {
+    if (!R || R->isInvalidDecl()) {
       Injectee->setInvalidDecl(true);
       continue;
     }
+
     Decls.push_back(R);
     
     // llvm::outs() << "AFTER\n";
@@ -1339,6 +1344,8 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
     return false;
 
   // Set up the injection context. There are no placeholders for copying.
+  // Note that we also don't need a local instantiation scope at this
+  // level. However, nested substitutions may require one.
   InjectionContext InjectionCxt(SemaRef);
   Sema::InstantiatingTemplate Inst(SemaRef, POI, &InjectionCxt);
   InjectionCxt.AddDeclSubstitution(Injection, Injectee);
