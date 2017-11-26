@@ -1,134 +1,87 @@
-// RUN: %clang -std=c++1z -Xclang -freflection %s 
-
 #include <cppx/meta>
-#include <cppx/compiler>
+
+constexpr {
+  int n = 42;
+  
+  auto x = __fragment namespace N1 {
+    int a = n;
+    int b = n + 2;
+    int c = n / 4;
+
+    int f() { return 0; }
+  };
+
+  // Writes N1 members into the enclosing namespace.
+  __generate x;
+
+  // Writes the following members into the enclosing namespace.
+  __generate namespace N2 {
+    int q = 32;
+  };
+}
+
+// Make sure we actually get definitions of these things.
+int test_a = a;
+int test_f = f();
+int test_q = q;
+
+template<typename T>
+constexpr void gen1() {
+  __generate namespace N3 {
+    T foobar;
+  };
+}
+
+constexpr {
+  gen1<int>();
+}
+
+int test_foobar = foobar;
+
+
+int global = 5;
+
+constexpr {
+  int p = 7;
+  char q = 49;
+  
+  auto x = __fragment namespace N {
+    int foo() { return p + q; };
+  };
+
+  __generate x;
+}
 
 enum E {
   A, B, C
 };
 
- // Namespace injection
+struct S {
+  constexpr {
+    int n = 0;
+    for... (auto x : $E.members()) {
+      __generate struct {
+        int idexpr("x", n) = n;
+      };
+      ++n;
+    }
 
-constexpr {
-  int n = 0;
-  for... (auto x : $E.members()) {
-    __generate namespace N {
-      const int idexpr("x", n) = n;
+    auto frag = __fragment struct S {
+      int foo() { return 42; }
     };
-    ++n;
-  }
-} // constexpr
-
-static_assert(x0 == 0);
-static_assert(x1 == 1);
-static_assert(x2 == 2);
-
-int n = x0;
-
-// Direct class injection
-
-struct S1 {
-  constexpr {
-    auto f1 = __fragment struct C {
-      C* next;
-    };
-    __generate f1;
-  } // constexpr
-};
-
-// Indirect class injection
-
-constexpr void make_pointers() {
-  __generate struct S {
-    S* p1;
-    S* p2;
-  };
-}
-
-struct S2 {
-  constexpr { make_pointers(); }
-};
-
-// Injecting member functions
-
-constexpr void make_getters() {
-  __generate struct S {
-    int get_external() const { return this->n; }
-
-    int local;
-    int get_local() const { return this->local; }
-
-    // FIXME: When this is instantiated, we will have lost injection context 
-    // that provides the replacement of 'this' with its the injectee. In other 
-    // words, this won't be resolved correctly.
-    //
-    // Actually, it looks like this is being 'local' is being created as
-    // a MemberExpr, when it should be CXXDependentScopeMemberExpr. That's
-    // the difference between this function and the one above.
-    //
-    // For now, write this-> to ensure explicit replacement.
-    int get_local_err() const { return local; }
-
-    // FIXME: This currently fails. But... here's an interesting problem.
-    // If you introduce local variables through an injection, how do you
-    // initialize them in the derived class? We should allow constructors
-    // that initialize members as part as a kind of sub-object.
-    //
-    // Of course, we would then require destructors to do the same.
-    //
-    // The implication would be that neither constructors nor destructors
-    // are injected, but in fact VERY special in these contexts. 
-
-    // int err = 42;
-  };
-}
-
-struct S3 {
-  S3() {
-    local = 42;
-  }
-  int n = 12;
-  constexpr { make_getters(); }
-};
-
-
-// Test with templates.
-
-template<typename T>
-constexpr auto f2() {
-  return __fragment class {
-    T a;
-    T b;
-  };
-}
-
-struct S4 {
-  constexpr {
-    __generate f2<int>();
+    __generate frag;
   }
 };
 
-template<typename T>
-struct S5 {
-  constexpr {
-    __generate f2<T>();
-  }
-};
+int main() {
+  assert(a == 42);
+  assert(b == 44);
+  assert(c == 10);
+  assert(f() == 0);
 
-int main() { 
-  compiler.debug($S1);
-  compiler.debug($S2);
-
-  // FIXME: This isn't printing member functions. Why not? However, they
-  // clearly exist: see below.
-  compiler.debug($S3);
-
-  S3 x;
-  assert(x.get_external() == 12);
-  assert(x.get_local() == 42);
-
-  compiler.debug($S4);
-  compiler.debug($S5<int>); //  Not instantiated, won't show def. Should it?
-  S5<char> s5;
-  compiler.debug($S5<char>); // Fully instantiated.
+  S s;
+  assert(s.x0 == 0);
+  assert(s.x1 == 1);
+  assert(s.x2 == 2);
+  assert(s.foo() == 42);
 }
