@@ -1737,6 +1737,10 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
   if (D->isLocalExternDecl()) {
     DC = Owner;
     SemaRef.adjustContextForLocalExternDecl(DC);
+  } else if (D->isInFragment()) {
+    // If D is a member of a fragment, then the owner will simply be
+    // the receiving context.
+    DC = Owner;
   } else if (isFriend && QualifierLoc) {
     CXXScopeSpec SS;
     SS.Adopt(QualifierLoc);
@@ -1964,10 +1968,36 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
 
   if (Function->isLocalExternDecl() && !Function->getPreviousDecl())
     DC->makeDeclVisibleInContext(PrincipalDecl);
+  else if (SemaRef.CurrentInjectionContext && D->isInFragment())
+    // FIXME: This is probably wrong for any injection more complex than
+    // a simple function definition.
+    DC->makeDeclVisibleInContext(PrincipalDecl);
 
   if (Function->isOverloadedOperator() && !DC->isRecord() &&
       PrincipalDecl->isInIdentifierNamespace(Decl::IDNS_Ordinary))
     PrincipalDecl->setNonMemberOperator();
+
+  // If we injected a top-level function, we need to instantiate the
+  // definition.
+  //
+  // FIXME: We'd probably like to defer instantiation since it could refer
+  // to as-of-yet defined members. For example:
+  //
+  //    auto f = __fragment namespace N {
+  //        void foo() { 
+  //          return N::member;  // refers to a dependent member
+  //        }
+  //
+  // Of course, we don't have dependent namespaces, so the example doesn't
+  // make the most sense. This more likely describes a problem with the
+  // design of the feature.
+  else if (SemaRef.CurrentInjectionContext && D->isInFragment()) {
+    SemaRef.InstantiateFunctionDefinition(D->getLocation(), Function, 
+                                          /*Recursive=*/false, 
+                                          /*DefinitionRequired=*/true, 
+                                          /*AtEndOfTU=*/false, 
+                                          /*Injection=*/ D);
+  }
 
   assert(!D->isDefaulted() && "only methods should be defaulted");
   return Function;
@@ -3860,7 +3890,8 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
                                          FunctionDecl *Function,
                                          bool Recursive,
                                          bool DefinitionRequired,
-                                         bool AtEndOfTU) {
+                                         bool AtEndOfTU,
+                                         FunctionDecl *Injection) {
   if (Function->isInvalidDecl() || Function->isDefined())
     return;
 
@@ -3871,9 +3902,16 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
       !Function->getClassScopeSpecializationPattern()) 
     return;
 
-  // Find the function body that we'll be substituting.
-  const FunctionDecl *PatternDecl = Function->getTemplateInstantiationPattern();
-  assert(PatternDecl && "instantiating a non-template");
+  // Find the function body that we'll be substituting. This is normally
+  // available through the instantiated declaration, except in the case where
+  // the function was injected.
+  const FunctionDecl *PatternDecl;
+  if (!Injection) {
+    PatternDecl = Function->getTemplateInstantiationPattern();
+    assert(PatternDecl && "instantiating a non-template");
+  } else {
+    PatternDecl = Injection;
+  }
 
   const FunctionDecl *PatternDef = PatternDecl->getDefinition();
   Stmt *Pattern = nullptr;

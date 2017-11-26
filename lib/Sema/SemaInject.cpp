@@ -1266,6 +1266,7 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
     MultiLevelTemplateArgumentList Args;
     Decl *R = SemaRef.SubstDecl(D, InjecteeDC, Args);
     if (!R || R->isInvalidDecl()) {
+      if (R) R->dump();
       Injectee->setInvalidDecl(true);
       continue;
     }

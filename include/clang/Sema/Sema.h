@@ -7757,7 +7757,8 @@ public:
                                      FunctionDecl *Function,
                                      bool Recursive = false,
                                      bool DefinitionRequired = false,
-                                     bool AtEndOfTU = false);
+                                     bool AtEndOfTU = false,
+                                     FunctionDecl *Original = nullptr);
   VarTemplateSpecializationDecl *BuildVarTemplateInstantiation(
       VarTemplateDecl *VarTemplate, VarDecl *FromVar,
       const TemplateArgumentList &TemplateArgList,
