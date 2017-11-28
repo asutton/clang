@@ -796,6 +796,12 @@ Decl *TemplateDeclInstantiator::VisitAccessSpecDecl(AccessSpecDecl *D) {
 
 Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
   bool Invalid = false;
+
+  DeclarationNameInfo DNI(D->getDeclName(), D->getLocation());
+  DNI = SemaRef.SubstDeclarationNameInfo(DNI, TemplateArgs);
+  if (!DNI.getName())
+    Invalid = true;
+
   TypeSourceInfo *DI = D->getTypeSourceInfo();
   if (DI->getType()->isInstantiationDependentType() ||
       DI->getType()->isVariablyModifiedType())  {
@@ -836,7 +842,7 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
       BitWidth = InstantiatedBitWidth.getAs<Expr>();
   }
 
-  FieldDecl *Field = SemaRef.CheckFieldDecl(D->getDeclName(),
+  FieldDecl *Field = SemaRef.CheckFieldDecl(DNI.getName(),
                                             DI->getType(), DI,
                                             cast<RecordDecl>(Owner),
                                             D->getLocation(),
@@ -872,6 +878,12 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
   Field->setImplicit(D->isImplicit());
   Field->setAccess(D->getAccess());
   Owner->addDecl(Field);
+
+  // If this is part of a fragment, instantiate the initializer.
+  if (SemaRef.CurrentInjectionContext && D->isInFragment() && 
+      D->hasInClassInitializer())
+    SemaRef.InstantiateInClassInitializer(Field->getLocation(), Field, D, 
+                                          TemplateArgs);
 
   return Field;
 }

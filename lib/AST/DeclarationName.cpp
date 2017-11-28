@@ -105,8 +105,9 @@ public:
   void *FETokenInfo;
 
   void Profile(llvm::FoldingSetNodeID &ID) {
+    ID.AddInteger(NumArgs);
     for (std::size_t I = 0; I < NumArgs; ++I)
-      Args[I]->Profile(ID, *Ctx, false);
+      Args[I]->Profile(ID, *Ctx, true);
   }
 };
 
@@ -626,9 +627,9 @@ DeclarationNameTable::getCXXIdExprName(std::size_t NumArgs, Expr **Args) {
   llvm::FoldingSetNodeID ID;
   ID.AddInteger(NumArgs);
   for (std::size_t I = 0; I < NumArgs; ++I)
-    Args[I]->Profile(ID, Ctx, false);
+    Args[I]->Profile(ID, Ctx, true);
 
-  void *InsertPos = nullptr;
+  void *InsertPos;
   if (CXXIdExprNameExtra *Name = Names->FindNodeOrInsertPos(ID, InsertPos))
     return DeclarationName (Name);
   

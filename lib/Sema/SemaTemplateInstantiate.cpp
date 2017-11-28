@@ -2746,7 +2746,20 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
             Instantiation->getTemplateInstantiationPattern();
         DeclContext::lookup_result Lookup =
             ClassPattern->lookup(Field->getDeclName());
-        FieldDecl *Pattern = cast<FieldDecl>(Lookup.front());
+
+        FieldDecl *Pattern;
+        if (!Lookup.empty()) {
+          // This should almost always succeed.
+          Pattern = cast<FieldDecl>(Lookup.front());
+        } else {
+          // We get here declarations whose names are instantiated idexprs.
+          // This is because idexprs referring to instantiated local variables
+          // are canonically different names. We should be able to
+          //
+          // FIXME: Using the field index seems tenuous at best, but it
+          // should be okay.
+          Pattern = *std::next(ClassPattern->field_begin(), Field->getFieldIndex());
+        }
         InstantiateInClassInitializer(PointOfInstantiation, Field, Pattern,
                                       TemplateArgs);
       }

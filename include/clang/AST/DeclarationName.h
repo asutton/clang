@@ -361,7 +361,7 @@ class DeclarationNameTable {
   CXXOperatorIdName *CXXOperatorNames; // Operator names
   void *CXXLiteralOperatorNames; // Actually a CXXOperatorIdName*
   void *CXXDeductionGuideNames; // FoldingSet<CXXDeductionGuideNameExtra> *
-  void *CXXIdExprNames; // FoldingSet<CXXIdExperName> *
+  void *CXXIdExprNames; // FoldingSet<CXXIdExprName> *
 
   DeclarationNameTable(const DeclarationNameTable&) = delete;
   void operator=(const DeclarationNameTable&) = delete;
