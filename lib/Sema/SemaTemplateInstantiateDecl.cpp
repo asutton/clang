@@ -979,17 +979,21 @@ Decl *TemplateDeclInstantiator::VisitConstexprDecl(ConstexprDecl *D) {
 }
 
 Decl *TemplateDeclInstantiator::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
-  llvm_unreachable("not implemented");
+  // Fragment declarations only occur as part of a fragment expression.
+  // These declarations are instantiated independently from the visitor.
+  llvm_unreachable("should never get here");
 }
 
 Decl *TemplateDeclInstantiator::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
   ExprResult E = SemaRef.SubstExpr(D->getReflection(), TemplateArgs);
   if (E.isInvalid())
     return nullptr;
+  
   Sema::DeclGroupPtrTy Result = 
       SemaRef.ActOnCXXInjectionDecl(D->getLocation(), E.get());
   if (!Result)
     return nullptr;
+  
   DeclGroupRef DG = Result.get();
   if (DG.isNull())
     return nullptr;
@@ -998,7 +1002,26 @@ Decl *TemplateDeclInstantiator::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
 }
 
 Decl *TemplateDeclInstantiator::VisitCXXExtensionDecl(CXXExtensionDecl *D) {
-  llvm_unreachable("not implemented");
+  ExprResult Injectee = SemaRef.SubstExpr(D->getInjectee(), TemplateArgs);
+  if (Injectee.isInvalid())
+    return nullptr;
+  
+  ExprResult Reflection = SemaRef.SubstExpr(D->getReflection(), TemplateArgs);
+  if (Reflection.isInvalid())
+    return nullptr;
+  
+  Sema::DeclGroupPtrTy Result = 
+      SemaRef.ActOnCXXExtensionDecl(D->getLocation(), 
+                                    Injectee.get(), 
+                                    Reflection.get());
+  if (!Result)
+    return nullptr;
+  
+  DeclGroupRef DG = Result.get();
+  if (DG.isNull())
+    return nullptr;
+  else
+    return *DG.begin();
 }
 
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
