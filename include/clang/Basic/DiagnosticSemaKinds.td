@@ -9052,6 +9052,8 @@ def err_capture_non_static : Error<
   "injection captures a non-static member %select{function|variable}0">;
 def err_injecting_local_into_invalid_scope : Error<
   "cannot inject a local variable into %select{namespace|class}0 scope">;
+def err_extending_declaration : Error<"declaration is not extendable">;
+def err_extending_rvalue : Error<"rvalue injectee is not extendable">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

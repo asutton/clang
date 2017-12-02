@@ -507,6 +507,12 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXExtensionDecl(SourceLocation Loc,
     return DeclGroupPtrTy::make(DeclGroupRef(D));
   }
 
+  // The injectee shall be a gl-value.
+  if (!Target->isGLValue()) {
+    Diag(Target->getExprLoc(), diag::err_extending_rvalue);
+    return DeclGroupPtrTy();
+  }
+
   // Force an lvalue-to-rvalue conversion.
   if (Target->isGLValue())
     Target = ImplicitCastExpr::Create(Context, Target->getType(), 
@@ -544,6 +550,9 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXExtensionDecl(SourceLocation Loc,
     }
     return DeclGroupPtrTy();
   }
+
+  llvm::outs() << "HERE FUCK\n";
+
 
   // Apply the corresponding operation. And accumulate the resulting
   // declarations.
