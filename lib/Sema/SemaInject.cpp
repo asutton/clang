@@ -416,10 +416,8 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) {
 }
 
 static Decl *
-GetDeclFromReflection(Sema &SemaRef, Expr *Reflection)
+GetDeclFromReflection(Sema &SemaRef, QualType Ty, SourceLocation Loc)
 {
-  SourceLocation Loc = Reflection->getExprLoc();
-  QualType Ty = Reflection->getType();
   Sema::ReflectedConstruct Construct = SemaRef.EvaluateReflection(Ty, Loc);
   Decl *Injection = nullptr;
   if (Type *T = Construct.getAsType()) {
@@ -432,6 +430,14 @@ GetDeclFromReflection(Sema &SemaRef, Expr *Reflection)
     return nullptr;
   }
   return Injection;
+}
+
+static Decl *
+GetDeclFromReflection(Sema &SemaRef, Expr *Reflection)
+{
+  return GetDeclFromReflection(SemaRef, 
+                               Reflection->getType(),
+                               Reflection->getExprLoc());
 }
 
 /// An injection declaration injects its fragment members at this point
@@ -500,17 +506,25 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc,
 Sema::DeclGroupPtrTy Sema::ActOnCXXExtensionDecl(SourceLocation Loc, 
                                                  Expr *Target,
                                                  Expr *Reflection) { 
-  if (Reflection->isTypeDependent() || Reflection->isValueDependent() ||
-      Target->isTypeDependent() || Target->isValueDependent()) {
-    Decl *D = CXXExtensionDecl::Create(Context, CurContext, Loc, Target, Reflection);
-    CurContext->addDecl(D);
-    return DeclGroupPtrTy::make(DeclGroupRef(D));
-  }
-
-  // The injectee shall be a gl-value.
-  if (!Target->isGLValue()) {
-    Diag(Target->getExprLoc(), diag::err_extending_rvalue);
-    return DeclGroupPtrTy();
+  // Check the glvalue.
+  if (!Target->isTypeDependent()) {
+    // NOTE: This isn't strictly *required* since even prvalues are just
+    // pointers to a mutable data structure.
+    if (!Target->isGLValue()) {
+      Diag(Target->getExprLoc(), diag::err_extending_rvalue);
+      return DeclGroupPtrTy();
+    }
+    
+    QualType TargetTy = Context.getCanonicalType(Target->getType());
+    if (CXXRecordDecl* Class = TargetTy->getAsCXXRecordDecl()) {
+      if (!Class->isFragment()) {
+        Diag(Target->getExprLoc(), diag::err_extending_declaration);
+        return DeclGroupPtrTy();
+      }
+    } else {
+      Diag(Target->getExprLoc(), diag::err_extending_non_reflection);
+      return DeclGroupPtrTy();
+    }
   }
 
   // Force an lvalue-to-rvalue conversion.
@@ -522,6 +536,22 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXExtensionDecl(SourceLocation Loc,
     Reflection = ImplicitCastExpr::Create(Context, Reflection->getType(), 
                                           CK_LValueToRValue, Reflection, 
                                           nullptr, VK_RValue);
+
+  // Build an extension declaration that can be evaluated when executed.
+  Decl *D = CXXExtensionDecl::Create(Context, CurContext, Loc, Target, Reflection);
+  CurContext->addDecl(D);
+  return DeclGroupPtrTy::make(DeclGroupRef(D));
+
+
+#if 0
+  if (Reflection->isTypeDependent() || Reflection->isValueDependent() ||
+      Target->isTypeDependent() || Target->isValueDependent()) {
+    Decl *D = CXXExtensionDecl::Create(Context, CurContext, Loc, Target, Reflection);
+    CurContext->addDecl(D);
+    return DeclGroupPtrTy::make(DeclGroupRef(D));
+  }
+
+
 
   // Get the declaration or fragment to be injected.
   Decl *Injectee = GetDeclFromReflection(*this, Target);
@@ -575,6 +605,7 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXExtensionDecl(SourceLocation Loc,
     DeclGroup *DG = DeclGroup::Create(Context, Decls.data(), Decls.size());
     return DeclGroupPtrTy::make(DeclGroupRef(DG));
   }
+#endif
 }
 
 
@@ -1088,22 +1119,18 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
 
 static bool
 ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
-  // Get the declaration or fragment to be injected. 
-  Sema::ReflectedConstruct Construct = 
-      SemaRef.EvaluateReflection(II.ReflectionType, POI);
-  Decl *Injection = nullptr;
-  if (Type *T = Construct.getAsType()) {
-    if (CXXRecordDecl *Class = T->getAsCXXRecordDecl())
-      Injection = Class;
-  } else
-    Injection = Construct.getAsDeclaration();
-  if (!Injection) {
-    SemaRef.Diag(POI, diag::err_reflection_not_a_decl);
-    return false;
-  }
+  // Get the injection declaration.
+  Decl *Injection = GetDeclFromReflection(SemaRef, II.ReflectionType, POI);
 
-  /// The injectee is the current context.
-  Decl *Injectee = Decl::castFromDeclContext(SemaRef.CurContext);
+  /// Get the injectee declaration. This is either the one specified or
+  /// the current context.
+  Decl *Injectee = nullptr;
+  if (!II.InjecteeType.isNull())
+    Injectee = GetDeclFromReflection(SemaRef, II.InjecteeType, POI);
+  else
+    Injectee = Decl::castFromDeclContext(SemaRef.CurContext);
+  if (!Injectee)
+    return false;
 
   // Apply the injection operation.
   QualType Ty = II.ReflectionType;

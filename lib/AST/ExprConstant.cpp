@@ -3641,6 +3641,37 @@ static bool EvaluateVarDecl(EvalInfo &Info, const VarDecl *VD) {
   return true;
 }
 
+static bool EvaluateExtensionDecl(EvalInfo &Info, const CXXExtensionDecl *CD) {
+  if (Info.checkingPotentialConstantExpression())
+    return true;
+
+  if (!Info.EvalStatus.Injections) {
+    // Only metapgrams can produce modifications.
+    Info.CCEDiag(CD->getLocation(), diag::note_injection_outside_constexpr_decl);
+    return false;
+  }
+
+  // Compute the value of the injected reflection and its modifications.
+  //
+  // FIXME: I don't think we actually need to evaluate this, except that
+  // we kind of want to make sure that it's actually a constant expression.
+  Expr *Target = CD->getInjectee();
+  APValue R0;
+  if (!Evaluate(R0, Info, Target))
+    return false;
+
+  // Compute the value of the injected reflection and its modifications.
+  Expr *Reflection = CD->getReflection();
+  APValue R1;
+  if (!Evaluate(R1, Info, Reflection))
+    return false;
+
+  // Queue the injection as a side effect.
+  Expr::InjectionInfo II {Reflection->getType(), R1, Target->getType()};
+  Info.EvalStatus.Injections->push_back(II);
+  return true;
+}
+
 static bool EvaluateDecl(EvalInfo &Info, const Decl *D) {
   bool OK = true;
 
@@ -3651,6 +3682,9 @@ static bool EvaluateDecl(EvalInfo &Info, const Decl *D) {
     for (auto *BD : DD->bindings())
       if (auto *VD = BD->getHoldingVar())
         OK &= EvaluateDecl(Info, VD);
+
+  if (const CXXExtensionDecl *CD = dyn_cast<CXXExtensionDecl>(D))
+    OK &= EvaluateExtensionDecl(Info, CD);
 
   return OK;
 }
@@ -4070,7 +4104,7 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
       return ESR_Failed;
 
     // Queue the injection as a side effect.
-    Expr::InjectionInfo II {Reflection->getType(), Result};
+    Expr::InjectionInfo II {Reflection->getType(), Result, QualType()};
     Info.EvalStatus.Injections->push_back(II);
     return ESR_Succeeded;
   }

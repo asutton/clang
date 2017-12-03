@@ -544,6 +544,10 @@ public:
 
     /// The actual value computed by the injection statement.
     APValue ReflectionValue;
+
+    /// If non-null, the type of the injectee. This embeds the declaration
+    /// into which the value or contents will be injected.
+    QualType InjecteeType;
   };
 
   /// EvalStatus is a struct with detailed info about an evaluation in progress.

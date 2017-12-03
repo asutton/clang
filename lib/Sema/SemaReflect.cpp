@@ -2532,7 +2532,6 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   // Associate the call expression with the declaration.
   CD->setCallExpr(Call);
 
-
   // Don't evaluate the call if this declaration appears within a metaclass.
   if (CXXRecordDecl *RD = dyn_cast_or_null<CXXRecordDecl>(CurContext)) {
     if (RD->isMetaclassDefinition())
