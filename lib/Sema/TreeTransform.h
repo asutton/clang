@@ -441,6 +441,9 @@ public:
     return getDerived().TransformLocalDecl(D->getLocation(), D);
   }
 
+  // FIXME: Remove all of this stuff and move it over to the normal
+  // template instantiator.
+
   /// \brief Transform the declaration as a member of the current 
   /// transformation, generating a new declaration.
   ///

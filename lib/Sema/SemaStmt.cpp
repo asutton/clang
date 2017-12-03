@@ -71,6 +71,7 @@ StmtResult Sema::ActOnNullStmt(SourceLocation SemiLoc,
   return new (Context) NullStmt(SemiLoc, HasLeadingEmptyMacro);
 }
 
+#if 0
 // Replace an evaluated constexpr declaration with its injected statements.
 //
 // FIXME: Preserve the constexpr-decl in the generated source? We could
@@ -84,6 +85,7 @@ static StmtResult ReplaceWithInjectedStmts(Sema &SemaRef, ConstexprDecl *CD) {
   SemaRef.InjectedStmts.clear();
   return S;
 }
+#endif
 
 StmtResult Sema::ActOnDeclStmt(DeclGroupPtrTy dg, SourceLocation StartLoc,
                                SourceLocation EndLoc) {
@@ -95,9 +97,11 @@ StmtResult Sema::ActOnDeclStmt(DeclGroupPtrTy dg, SourceLocation StartLoc,
   // If we have a constexpr decl, repace it with its injected statements.
   //
   // FIXME: Even if we're in a template?
+  #if 0
   if (DG.isSingleDecl())
     if (ConstexprDecl *CD = dyn_cast<ConstexprDecl>(DG.getSingleDecl()))
       return ReplaceWithInjectedStmts(*this, CD);
+  #endif
 
   return new (Context) DeclStmt(DG, StartLoc, EndLoc);
 }

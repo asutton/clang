@@ -8617,31 +8617,11 @@ public:
   // Source code injection/modification
   bool ApplySourceCodeModifications(SourceLocation POI,
                                     SmallVectorImpl<InjectionInfo> &Injections);
-  bool InjectBlockStatements(SourceLocation POI, InjectionInfo &II);
-  bool InjectClassMembers(SourceLocation POI, InjectionInfo &II);
-  bool InjectNamespaceMembers(SourceLocation POI, InjectionInfo &II);
 
   void ApplyMetaclass(MetaclassDecl *Meta, 
                       CXXRecordDecl *Proto, 
                       CXXRecordDecl *Final,
                       SmallVectorImpl<Decl *> &Fields);
-
-  // Statements resulting from injection.
-  SmallVector<Stmt *, 8> InjectedStmts;
-
-  /// Source code injectors are cached globally so that pending injections
-  /// can continue to refer to them (and their accumulated state) well beyond
-  /// the point where the injection actually happened. These injectors are
-  /// shared by pending member transformation entries.
-  ///
-  /// FIXME: Injection lifetimes appear to be bound to scope. When we pop
-  /// the transformation scope, we could simply backtrack through the 
-  /// injections and remove those that are no longer in use. 
-  llvm::SmallVector<SourceCodeInjector *, 4> Injectors;
-
-  SourceCodeInjector &MakeInjector(DeclContext *Src, DeclContext *Dst);
-  void DestroyInjectors();
-
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
