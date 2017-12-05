@@ -444,6 +444,7 @@ GetDeclFromReflection(Sema &SemaRef, Expr *Reflection)
 /// in the program. 
 Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc, 
                                                  Expr *Reflection) { 
+
   if (Reflection->isTypeDependent() || Reflection->isValueDependent()) {
     Decl *D = CXXInjectionDecl::Create(Context, CurContext, Loc, Reflection);
     CurContext->addDecl(D);
@@ -464,7 +465,7 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc,
   // The Injectee is the current context.
   Decl *Injectee = Decl::castFromDeclContext(CurContext);
 
-  // Evaluate the injection.
+  // Evaluate the reflection.
   SmallVector<PartialDiagnosticAt, 8> Notes;
   Expr::EvalResult Result;
   Result.Diag = &Notes;
@@ -478,18 +479,14 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc,
     return DeclGroupPtrTy();
   }
 
-  // Apply the corresponding operation. And accumulate the resulting
-  // declarations.
+  // FIXME: If this is a fragment without a name, that should probably
+  // be an error, right?
+
+  // Always copy the injected declaration.
   QualType Ty = Reflection->getType();
-  CXXRecordDecl *Class = Ty->getAsCXXRecordDecl();
   SmallVector<Decl *, 8> Decls;
-  if (Class->isFragment()) {
-    if (!InjectFragment(*this, Loc, Ty, Result.Val, Injectee, Injection, Decls))
-      return DeclGroupPtrTy();
-  } else {
-    if (!CopyDeclaration(*this, Loc, Ty, Result.Val, Injectee, Injection, Decls))
-      return DeclGroupPtrTy();
-  }
+  if (!CopyDeclaration(*this, Loc, Ty, Result.Val, Injectee, Injection, Decls))
+    return DeclGroupPtrTy();
 
   if (Decls.empty()) {
     return DeclGroupPtrTy();
@@ -508,24 +505,38 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXExtensionDecl(SourceLocation Loc,
                                                  Expr *Reflection) { 
   // Check the glvalue.
   if (!Target->isTypeDependent()) {
-    // NOTE: This isn't strictly *required* since even prvalues are just
-    // pointers to a mutable data structure.
-    if (!Target->isGLValue()) {
-      Diag(Target->getExprLoc(), diag::err_extending_rvalue);
-      return DeclGroupPtrTy();
-    }
+    // FIXEM: This isn't strictly *required* since even prvalues are just
+    // pointers to a mutable data structure. This is disabled, because the
+    // reflection operator returns prvalues, which complicates certain
+    // use patterns. For example:
+    //
+    //    struct C {
+    //      constexpr { fill($C); } // Would be an error.
+    //    };
+    //
+    // So, disable this for now.
+
+    // if (!Target->isGLValue()) {
+    //   Diag(Target->getExprLoc(), diag::err_extending_rvalue);
+    //   return DeclGroupPtrTy();
+    // }
     
     QualType TargetTy = Context.getCanonicalType(Target->getType());
     if (CXXRecordDecl* Class = TargetTy->getAsCXXRecordDecl()) {
-      if (!Class->isFragment()) {
-        Diag(Target->getExprLoc(), diag::err_extending_declaration);
-        return DeclGroupPtrTy();
-      }
+      // FIXME: This isn't the right test. We need to determine during 
+      // application if the target satisfies the requirements for extensions.
+      // if (!Class->isFragment() || !Class->isBeingDefined()) {
+      //   Diag(Target->getExprLoc(), diag::err_extending_declaration);
+      //   return DeclGroupPtrTy();
+      // }
     } else {
       Diag(Target->getExprLoc(), diag::err_extending_non_reflection);
       return DeclGroupPtrTy();
     }
   }
+
+  // FIXME: If the reflection is non-dependent, verify that we actually
+  // have a reflection.
 
   // Force an lvalue-to-rvalue conversion.
   if (Target->isGLValue())
@@ -550,8 +561,6 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXExtensionDecl(SourceLocation Loc,
     CurContext->addDecl(D);
     return DeclGroupPtrTy::make(DeclGroupRef(D));
   }
-
-
 
   // Get the declaration or fragment to be injected.
   Decl *Injectee = GetDeclFromReflection(*this, Target);
@@ -580,9 +589,6 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXExtensionDecl(SourceLocation Loc,
     }
     return DeclGroupPtrTy();
   }
-
-  llvm::outs() << "HERE FUCK\n";
-
 
   // Apply the corresponding operation. And accumulate the resulting
   // declarations.
@@ -980,6 +986,7 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   // Set up the injection context. There are no placeholders for copying.
   // Note that we also don't need a local instantiation scope at this
   // level. However, nested substitutions may require one.
+  LocalInstantiationScope Locals(SemaRef);
   InjectionContext InjectionCxt(SemaRef);
   Sema::InstantiatingTemplate Inst(SemaRef, POI, &InjectionCxt);
   InjectionCxt.AddDeclSubstitution(Injection, Injectee);
@@ -1131,6 +1138,11 @@ ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
     Injectee = Decl::castFromDeclContext(SemaRef.CurContext);
   if (!Injectee)
     return false;
+
+  // FIXME: Make sure that we can actually apply the injection to the
+  // target context. For example, we should only be able to extend fragments
+  // or classes currently being defined. We'll need to incorporate the kind
+  // of extension operator into the InjectionInfo.
 
   // Apply the injection operation.
   QualType Ty = II.ReflectionType;

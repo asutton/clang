@@ -633,6 +633,17 @@ bool Sema::DiagnoseUninstantiableTemplate(SourceLocation PointOfInstantiation,
   if (!Complain || (PatternDef && PatternDef->isInvalidDecl()))
     return true;
 
+  // It's not technically an instantiation, but it's close.
+  //
+  // FIXME: This is almost certainly not the right way to make the code
+  // well-formed. We probably want to add injection to the template 
+  // specialization kind. More likely, we want a new kind of specifier that
+  // determines how a declaration originated. It was either written explicitly,
+  // injected, instantiated, specialized, etc. Injection has nothing to do
+  // with templates.
+  if (Pattern->isInFragment())
+    return true;
+
   llvm::Optional<unsigned> Note;
   QualType InstantiationTy;
   if (TagDecl *TD = dyn_cast<TagDecl>(Instantiation))

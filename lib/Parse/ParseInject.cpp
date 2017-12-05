@@ -256,7 +256,6 @@ StmtResult Parser::ParseCXXInjectionStatement() {
 ///
 ///   injection-declaration:
 ///     '__inject' reflection ';'
-///     '__inject' fragment ';'
 ///
 /// Returns the group of declarations parsed.
 Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
@@ -264,31 +263,9 @@ Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
   SourceLocation Loc = ConsumeToken();
 
   /// Get a reflection as the operand of the 
-  ExprResult Reflection;
-  switch (Tok.getKind()) {
-    case tok::kw_namespace:
-    case tok::kw_struct:
-    case tok::kw_class:
-    case tok::kw_union:
-    case tok::kw_enum:
-    case tok::l_brace: {
-      SmallVector<Expr *, 8> Captures;
-      Decl *Fragment = ParseCXXFragment(Captures);
-      if (!Fragment)
-        return DeclGroupPtrTy();
-      Reflection = Actions.ActOnCXXFragmentExpr(Loc, Captures, Fragment);
-      break;
-    }
-    
-    default: {
-      Reflection = ParseConstantExpression();
-      break;
-    }
-  }
+  ExprResult Reflection = ParseConstantExpression();
   if (Reflection.isInvalid())
     return DeclGroupPtrTy();
-
-  // FIXME: Save the semicolon?
   ExpectAndConsumeSemi(diag::err_expected_semi_after_fragment);
 
   return Actions.ActOnCXXInjectionDecl(Loc, Reflection.get());

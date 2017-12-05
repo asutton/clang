@@ -3896,6 +3896,7 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     break;
 
   case Decl::Constexpr:
+  case Decl::CXXInjection:
     // Nothing to do.
     break;
 
