@@ -300,10 +300,15 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
 
     // Don't print implicit specializations, as they are printed when visiting
     // corresponding templates.
+    //
+    // FIXME: We *do* want to print injected nodes. However, they *look* like
+    // implicit instantiations except that they don't have a primary template.
+    // This is gross, but it kind works, for now.
     if (auto FD = dyn_cast<FunctionDecl>(*D))
-      if (FD->getTemplateSpecializationKind() == TSK_ImplicitInstantiation &&
-          !isa<ClassTemplateSpecializationDecl>(DC))
-        continue;
+      if (FD->getTemplateSpecializationKind() == TSK_ImplicitInstantiation) {
+        if (FD->getPrimaryTemplate() && !isa<ClassTemplateSpecializationDecl>(DC))
+          continue;
+      }
 
     // The next bits of code handles stuff like "struct {int x;} a,b"; we're
     // forced to merge the declarations because there's no other way to
