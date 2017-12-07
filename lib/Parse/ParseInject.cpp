@@ -138,6 +138,16 @@ Decl *Parser::ParseClassFragment(Decl *Fragment) {
     TagType = DeclSpec::TST_union;
 
   SourceLocation ClassKeyLoc = ConsumeToken();
+
+  // FIXME: We could accept an idexpr here, except that those names aren't
+  // exported. They're really only meant to be used for self-references
+  // within the fragment.
+  if (Tok.isNot(tok::identifier) && Tok.isNot(tok::l_brace)) {
+    Diag(Tok.getLocation(), diag::err_expected) << "class-fragment";
+    Actions.ActOnFinishCXXFragment(getCurScope(), nullptr, nullptr);
+    return nullptr;
+  }
+
   IdentifierInfo *Id = nullptr;
   SourceLocation IdLoc;
   if (Tok.is(tok::identifier)) {
@@ -165,9 +175,6 @@ Decl *Parser::ParseClassFragment(Decl *Fragment) {
   ParsedAttributesWithRange PA(AttrFactory);
   ParseCXXMemberSpecification(ClassKeyLoc, SourceLocation(), PA, TagType,
                               Class);
-  if (Class->isInvalidDecl())
-    return nullptr;
-  
   return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Class);
 }
 
