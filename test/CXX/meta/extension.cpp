@@ -6,7 +6,7 @@
 #include <cassert>
 
 struct S { 
-  __inject struct { int y; };
+  int y;
 };
 
 __extend ($S) struct { int x; };
@@ -24,6 +24,5 @@ __extend ($S) f;
 
 int
 main() {
-
   compiler.debug($S);
 }

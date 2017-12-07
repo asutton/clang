@@ -36,9 +36,13 @@ namespace proto {
 template<typename T, typename U>
 constexpr void make_interface(T target, U source)
 {
-  __extend (target) class C {
+  __extend (target) struct C {
     virtual ~C() = default;
   };
+  for... (auto x : source.member_functions()) {
+    x.make_pure_virtual();
+    __extend (target) x;
+  }
 }
 
 struct IComparable {

@@ -969,6 +969,10 @@ bool TemplateInstantiator::AlreadyTransformed(QualType T) {
   if (T.isNull())
     return true;
   
+  // FIXME: This will cause overly aggressive substitutions.
+  if (getSema().CurrentInjectionContext)
+    return false;
+
   if (T->isInstantiationDependentType() || T->isVariablyModifiedType())
     return false;
   
@@ -1605,10 +1609,18 @@ TypeSourceInfo *Sema::SubstType(TypeSourceInfo *T,
   assert(!CodeSynthesisContexts.empty() &&
          "Cannot perform an instantiation without some context on the "
          "instantiation stack");
-  
+
+  // In certain cases, don't try transforming the type. If we're injecting
+  // code, however, always perform the substitution.
+  //
+  // FIXME: This is over-aggressive. The injection context is visible during
+  // nested instantiations, which will lead to more substitutions than we'd
+  // normally care to have.
   if (!T->getType()->isInstantiationDependentType() && 
-      !T->getType()->isVariablyModifiedType())
+      !T->getType()->isVariablyModifiedType() &&
+      !CurrentInjectionContext) {
     return T;
+  }
 
   TemplateInstantiator Instantiator(*this, Args, Loc, Entity);
   return AllowDeducedTST ? Instantiator.TransformTypeWithDeducedTST(T)
@@ -1788,7 +1800,7 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
     NewDI = SubstType(OldDI, TemplateArgs, OldParm->getLocation(), 
                       OldParm->getDeclName());
   }
-  
+
   if (!NewDI)
     return nullptr;
 

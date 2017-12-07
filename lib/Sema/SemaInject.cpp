@@ -975,6 +975,7 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
                             Decl *Injectee, Decl *Injection, 
                             SmallVectorImpl<Decl *> &Decls) {
   DeclContext *InjectionDC = Injection->getDeclContext();
+  Decl *InjectionOwner = Decl::castFromDeclContext(InjectionDC);
   DeclContext *InjecteeDC = Decl::castToDeclContext(Injectee);
 
   if (!CheckInjectionContexts(SemaRef, POI, InjectionDC, InjecteeDC))
@@ -984,18 +985,16 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
     return false;
 
   // Set up the injection context. There are no placeholders for copying.
-  // Note that we also don't need a local instantiation scope at this
-  // level. However, nested substitutions may require one.
+  // Within the copied declaration, references to the enclosing context are 
+  // replaced with references to the destination context.
   LocalInstantiationScope Locals(SemaRef);
   InjectionContext InjectionCxt(SemaRef);
   Sema::InstantiatingTemplate Inst(SemaRef, POI, &InjectionCxt);
-  InjectionCxt.AddDeclSubstitution(Injection, Injectee);
+  InjectionCxt.AddDeclSubstitution(InjectionOwner, Injectee);
 
-  // // Configure the injection. Within the injected declaration, references
-  // // to the enclosing context are replaced with references to the destination
-  // // context.
-  // SourceCodeInjector &Injector = SemaRef.MakeInjector(SourceDC, InjecteeDC);
-  // Injector.AddSubstitution(Decl::castFromDeclContext(InjectionDC), Injectee);
+  // llvm::outs() << "SUBST\n";
+  // InjectionOwner->dump();
+  // Injectee->dump();
 
   // Unpack the modification traits so we can apply them after generating
   // the declaration.
@@ -1019,18 +1018,6 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
 
   assert(Storage != Automatic && "Can't make declarations automatic");
   assert(Storage != ThreadLocal && "Thread local storage not implemented");
-
-  CXXRecordDecl *Class = nullptr;
-  if (isa<CXXRecordDecl>(Injectee))
-    // The injection site is a class and the injection is a member. We need
-    // to establish the pending member transformation context for the receiving
-    // class.
-    Class = cast<CXXRecordDecl>(Injectee);
-  else if (isa<CXXRecordDecl>(Injection))
-    // The injection itself is a class that may have members whose definitions
-    // will be transformed after completion. Establish the transformation
-    // context for the injection itself.
-    Class = cast<CXXRecordDecl>(Injection);
 
   // Build the declaration. If there was a request to make field static, we'll
   // need to build a new declaration.

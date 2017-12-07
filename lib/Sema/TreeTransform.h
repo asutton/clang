@@ -4346,6 +4346,7 @@ TypeSourceInfo *TreeTransform<Derived>::TransformType(TypeSourceInfo *DI) {
 template<typename Derived>
 QualType
 TreeTransform<Derived>::TransformType(TypeLocBuilder &TLB, TypeLoc T) {
+  // Otherwise, transform the type.
   switch (T.getTypeLocClass()) {
 #define ABSTRACT_TYPELOC(CLASS, PARENT)
 #define TYPELOC(CLASS, PARENT)                                                 \
@@ -5201,7 +5202,6 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
             OldParm, indexAdjustment, None, 
             /*ExpectParameterPack=*/ false,
             /*TransformLocal=*/ TransformLocal);
-
       }
 
       if (!NewParm)
@@ -5325,6 +5325,7 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
     if (IsPackExpansion)
       NewType = getSema().Context.getPackExpansionType(NewType, NumExpansions);
 
+    // Handle injected type parameters.
     if (const InjectedParmType *IPT = NewType->getAs<InjectedParmType>()) {
       if (!IPT->isDependentType()) {
         for (ParmVarDecl *Orig : IPT->getParameters()) {
