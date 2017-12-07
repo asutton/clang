@@ -331,6 +331,10 @@ void StmtProfiler::VisitCXXInjectionStmt(const CXXInjectionStmt *S) {
   VisitStmt(S);
 }
 
+void StmtProfiler::VisitCXXExtensionStmt(const CXXExtensionStmt *S) {
+  VisitStmt(S);
+}
+
 void StmtProfiler::VisitMSDependentExistsStmt(const MSDependentExistsStmt *S) {
   VisitStmt(S);
   ID.AddBoolean(S->isIfExists());

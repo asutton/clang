@@ -252,6 +252,60 @@ StmtResult Parser::ParseCXXInjectionStatement() {
   return Actions.ActOnCXXInjectionStmt(Loc, Reflection.get());
 }
 
+/// \brief Parse a C++ extension declaration.
+///
+///   extension-declaration:
+///     '__extend' '(' reflection ')' reflection ';'
+///     '__extend' '(' reflection ')' fragment ';'
+///
+/// Returns the group of declarations parsed.
+StmtResult Parser::ParseCXXExtensionStatement() {
+  assert(Tok.is(tok::kw___extend) && "expected __extend");
+  SourceLocation Loc = ConsumeToken();
+
+  // Match the '(reflection)' clause.
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.consumeOpen()) {
+    Diag(Tok, diag::err_expected) << tok::l_paren;
+    return StmtError();
+  }
+  ExprResult Injectee = ParseConstantExpression();
+  if (Injectee.isInvalid())
+    return StmtError();
+  if (T.consumeClose()) {
+    Diag(Tok, diag::err_expected) << tok::l_paren;
+    return StmtError();
+  }
+
+  // Get a reflection as the operand of the 
+  ExprResult Reflection;
+  switch (Tok.getKind()) {
+    case tok::kw_namespace:
+    case tok::kw_struct:
+    case tok::kw_class:
+    case tok::kw_union:
+    case tok::kw_enum:
+    case tok::l_brace: {
+      SmallVector<Expr *, 8> Captures;
+      Decl *Fragment = ParseCXXFragment(Captures);
+      if (!Fragment)
+        return StmtError();
+      Reflection = Actions.ActOnCXXFragmentExpr(Loc, Captures, Fragment);
+      break;
+    }
+    
+    default: {
+      Reflection = ParseConstantExpression();
+      break;
+    }
+  }
+  if (Reflection.isInvalid())
+    return StmtError();
+
+  return Actions.ActOnCXXExtensionStmt(Loc, Injectee.get(), Reflection.get());
+}
+
+
 /// \brief Parse a C++ injection declaration.
 ///
 ///   injection-declaration:
@@ -269,60 +323,4 @@ Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
   ExpectAndConsumeSemi(diag::err_expected_semi_after_fragment);
 
   return Actions.ActOnCXXInjectionDecl(Loc, Reflection.get());
-}
-
-/// \brief Parse a C++ extension declaration.
-///
-///   extension-declaration:
-///     '__extend' '(' reflection ')' reflection ';'
-///     '__extend' '(' reflection ')' fragment ';'
-///
-/// Returns the group of declarations parsed.
-Parser::DeclGroupPtrTy Parser::ParseCXXExtensionDeclaration() {
-  assert(Tok.is(tok::kw___extend) && "expected __extend");
-  SourceLocation Loc = ConsumeToken();
-
-  // Match the '(reflection)' clause.
-  BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.consumeOpen()) {
-    Diag(Tok, diag::err_expected) << tok::l_paren;
-    return nullptr;
-  }
-  ExprResult Injectee = ParseConstantExpression();
-  if (Injectee.isInvalid())
-    return DeclGroupPtrTy();
-  if (T.consumeClose()) {
-    Diag(Tok, diag::err_expected) << tok::l_paren;
-    return nullptr;
-  }
-
-  // Get a reflection as the operand of the 
-  ExprResult Reflection;
-  switch (Tok.getKind()) {
-    case tok::kw_namespace:
-    case tok::kw_struct:
-    case tok::kw_class:
-    case tok::kw_union:
-    case tok::kw_enum:
-    case tok::l_brace: {
-      SmallVector<Expr *, 8> Captures;
-      Decl *Fragment = ParseCXXFragment(Captures);
-      if (!Fragment)
-        return DeclGroupPtrTy();
-      Reflection = Actions.ActOnCXXFragmentExpr(Loc, Captures, Fragment);
-      break;
-    }
-    
-    default: {
-      Reflection = ParseConstantExpression();
-      break;
-    }
-  }
-  if (Reflection.isInvalid())
-    return DeclGroupPtrTy();
-
-  // FIXME: Save the semicolon?
-  ExpectAndConsumeSemi(diag::err_expected_semi_after_fragment);
-
-  return Actions.ActOnCXXExtensionDecl(Loc, Injectee.get(), Reflection.get());
 }

@@ -486,7 +486,6 @@ namespace  {
     void VisitFriendDecl(const FriendDecl *D);
     void VisitConstexprDecl(const ConstexprDecl *D);
     void VisitCXXInjectionDecl(const CXXInjectionDecl *D);
-    void VisitCXXExtensionDecl(const CXXExtensionDecl *D);
 
     // ObjC Decls
     void VisitObjCIvarDecl(const ObjCIvarDecl *D);
@@ -1600,10 +1599,6 @@ void ASTDumper::VisitConstexprDecl(const ConstexprDecl *D) {
 }
 
 void ASTDumper::VisitCXXInjectionDecl(const CXXInjectionDecl *D) {
-  dumpStmt(D->getReflection());
-}
-
-void ASTDumper::VisitCXXExtensionDecl(const CXXExtensionDecl *D) {
   dumpStmt(D->getReflection());
 }
 

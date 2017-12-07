@@ -2570,39 +2570,6 @@ CXXInjectionDecl *CXXInjectionDecl::CreateDeserialized(ASTContext &C,
   return new (C, ID) CXXInjectionDecl(nullptr, SourceLocation(), nullptr);
 }
 
-void CXXExtensionDecl::anchor() {}
-
-CXXExtensionDecl *CXXExtensionDecl::Create(ASTContext &Cxt, DeclContext *DC,
-                                           SourceLocation IntroLoc, Expr *I,
-                                           Expr* R) {
-  return new (Cxt, DC) CXXExtensionDecl(DC, IntroLoc, I, R);
-}
-
-CXXExtensionDecl *CXXExtensionDecl::CreateDeserialized(ASTContext &C, 
-                                                       unsigned ID) {
-  return new (C, ID) CXXExtensionDecl(nullptr, SourceLocation(), nullptr, 
-                                      nullptr);
-}
-
-CXXInjectedParmDecl::CXXInjectedParmDecl(ASTContext &Ctx, DeclContext *DC, 
-                                         SourceLocation Loc, Expr *Ref) 
-  : ParmVarDecl(CXXInjectedParm, Ctx, DC, Loc, Ref->getExprLoc(), 
-                nullptr, Ctx.DependentTy, 
-                Ctx.getTrivialTypeSourceInfo(Ctx.DependentTy), SC_None, 
-                nullptr),
-      Reflection(Ref) {}
-
-CXXInjectedParmDecl *CXXInjectedParmDecl::Create(ASTContext &C, 
-                                                 DeclContext *DC,
-                                                 SourceLocation Loc, Expr* E) {
-  return new (C, DC) CXXInjectedParmDecl(C, DC, Loc, E);
-}
-
-CXXInjectedParmDecl *CXXInjectedParmDecl::CreateDeserialized(ASTContext &C, 
-                                                             unsigned ID) {
-  return new (C, ID) CXXInjectedParmDecl(C, nullptr, SourceLocation(), nullptr);
-}
-
 const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
                                            AccessSpecifier AS) {
   return DB << getAccessName(AS);

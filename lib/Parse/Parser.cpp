@@ -851,9 +851,6 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
   case tok::kw___inject: // [Meta] injection-declaration
     return ParseCXXInjectionDeclaration();
 
-  case tok::kw___extend: // [Meta] extension-declaration
-    return ParseCXXExtensionDeclaration();
-
   case tok::kw___if_exists:
   case tok::kw___if_not_exists:
     ParseMicrosoftIfExistsExternalDeclaration();

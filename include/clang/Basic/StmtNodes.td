@@ -51,6 +51,7 @@ def CXXExpansionStmt : Stmt<1>;
 def CXXTupleExpansionStmt : DStmt<CXXExpansionStmt>;
 def CXXPackExpansionStmt : DStmt<CXXExpansionStmt>;
 def CXXInjectionStmt : Stmt;
+def CXXExtensionStmt : Stmt;
 
 // C++ Coroutines TS statements
 def CoroutineBodyStmt : Stmt;

@@ -95,9 +95,7 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
   case Decl::Metaclass: // $class X { ... }
   case Decl::Constexpr: // constexpr { ... }
   case Decl::CXXInjection: // __inject expr;
-  case Decl::CXXExtension: // __extend expr;
   case Decl::CXXFragment: // __fragment decl;
-  case Decl::CXXInjectedParm: // __inject expr
     llvm_unreachable("Declaration should not be in declstmts!");
   case Decl::Function:  // void X();
   case Decl::Record:    // struct/union/class X;

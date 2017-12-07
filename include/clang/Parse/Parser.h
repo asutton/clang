@@ -2621,8 +2621,8 @@ private:
   Decl *ParseEnumFragment(Decl *Fragment);
 
   StmtResult ParseCXXInjectionStatement();
+  StmtResult ParseCXXExtensionStatement();
   DeclGroupPtrTy ParseCXXInjectionDeclaration();
-  DeclGroupPtrTy ParseCXXExtensionDeclaration();
   
   bool ParseCXXInjectedParameter(
                         SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);

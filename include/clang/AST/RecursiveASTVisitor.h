@@ -1899,15 +1899,6 @@ DEF_TRAVERSE_DECL(CXXInjectionDecl, {
   TRY_TO(TraverseStmt(D->getReflection()));
 });
 
-DEF_TRAVERSE_DECL(CXXExtensionDecl, {
-  TRY_TO(TraverseStmt(D->getInjectee()));
-  TRY_TO(TraverseStmt(D->getReflection()));
-});
-
-DEF_TRAVERSE_DECL(CXXInjectedParmDecl, {
-  TRY_TO(TraverseStmt(D->getReflection()));
-});
-
 DEF_TRAVERSE_DECL(FieldDecl, {
   TRY_TO(TraverseDeclaratorHelper(D));
   if (D->isBitField())
@@ -2184,6 +2175,8 @@ DEF_TRAVERSE_STMT(CXXPackExpansionStmt, {
 })
 
 DEF_TRAVERSE_STMT(CXXInjectionStmt, {})
+
+DEF_TRAVERSE_STMT(CXXExtensionStmt, {})
 
 DEF_TRAVERSE_STMT(MSDependentExistsStmt, {
   TRY_TO(TraverseNestedNameSpecifierLoc(S->getQualifierLoc()));

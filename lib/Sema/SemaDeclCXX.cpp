@@ -1731,7 +1731,6 @@ static bool CheckConstexprDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
 
     case Decl::Constexpr:
     case Decl::CXXInjection:
-    case Decl::CXXExtension:
       continue;
 
     default:
@@ -1878,7 +1877,8 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
     return true;
 
   case Stmt::CXXInjectionStmtClass:
-    //   - injections
+  case Stmt::CXXExtensionStmtClass:
+    // Injection and extension are compile-time statements.
     return true;
 
   case Stmt::SwitchStmtClass:

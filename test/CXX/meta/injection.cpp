@@ -9,4 +9,4 @@ constexpr {
   __generate class C { }; 
 } // expected-error{{injecting class members into global scope}}
 
-int main() { }
+// int main() { }

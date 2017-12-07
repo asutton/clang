@@ -8604,13 +8604,19 @@ public:
 
   StmtResult ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);
   StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);
+
+  StmtResult ActOnCXXExtensionStmt(SourceLocation Loc, 
+                                   Expr *Injectee,
+                                   Expr *Reflection);
+  StmtResult BuildCXXExtensionStmt(SourceLocation Loc, 
+                                   Expr *Injectee,
+                                   Expr *Reflection);
+  
   DeclGroupPtrTy ActOnCXXInjectionDecl(SourceLocation Loc, Expr *Reflection);
-  DeclGroupPtrTy ActOnCXXExtensionDecl(SourceLocation Loc, Expr *Injectee,
-                                       Expr *Reflection);
+  
   bool ActOnCXXInjectedParameter(SourceLocation UsingLoc, Expr *Reflection,
                                  IdentifierInfo *II,
                         SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);
-
 
   using InjectionInfo = Expr::InjectionInfo;
 

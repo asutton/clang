@@ -1250,6 +1250,12 @@ void ASTStmtWriter::VisitCXXInjectionStmt(CXXInjectionStmt *S) {
   Code = serialization::STMT_CXX_INJECTION;
 }
 
+void ASTStmtWriter::VisitCXXExtensionStmt(CXXExtensionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+  Code = serialization::STMT_CXX_EXTENSION;
+}
+
 void ASTStmtWriter::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
   VisitStmt(S);
   Record.AddSourceLocation(S->getKeywordLoc());

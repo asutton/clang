@@ -56,7 +56,6 @@ def Named : Decl<1>;
             : DDecl<VarTemplateSpecialization>;
         def ImplicitParam : DDecl<Var>;
         def ParmVar : DDecl<Var>;
-          def CXXInjectedParm : DDecl<ParmVar>;
         def Decomposition : DDecl<Var>;
         def OMPCapturedExpr : DDecl<Var>;
       def NonTypeTemplateParm : DDecl<Declarator>;
@@ -100,5 +99,4 @@ def Empty : Decl;
 def Constexpr : Decl;
 def CXXFragment : Decl, DeclContext;
 def CXXInjection : Decl;
-def CXXExtension : Decl;
 

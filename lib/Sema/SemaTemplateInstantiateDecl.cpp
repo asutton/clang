@@ -1001,29 +1001,6 @@ Decl *TemplateDeclInstantiator::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
     return *DG.begin();
 }
 
-Decl *TemplateDeclInstantiator::VisitCXXExtensionDecl(CXXExtensionDecl *D) {
-  ExprResult Injectee = SemaRef.SubstExpr(D->getInjectee(), TemplateArgs);
-  if (Injectee.isInvalid())
-    return nullptr;
-  
-  ExprResult Reflection = SemaRef.SubstExpr(D->getReflection(), TemplateArgs);
-  if (Reflection.isInvalid())
-    return nullptr;
-  
-  Sema::DeclGroupPtrTy Result = 
-      SemaRef.ActOnCXXExtensionDecl(D->getLocation(), 
-                                    Injectee.get(), 
-                                    Reflection.get());
-  if (!Result)
-    return nullptr;
-  
-  DeclGroupRef DG = Result.get();
-  if (DG.isNull())
-    return nullptr;
-  else
-    return *DG.begin();
-}
-
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   NamedDecl **NamedChain =
     new (SemaRef.Context)NamedDecl*[D->getChainingSize()];
@@ -2293,10 +2270,6 @@ Decl *TemplateDeclInstantiator::VisitCXXConversionDecl(CXXConversionDecl *D) {
 Decl *TemplateDeclInstantiator::VisitParmVarDecl(ParmVarDecl *D) {
   return SemaRef.SubstParmVarDecl(D, TemplateArgs, /*indexAdjustment*/ 0, None,
                                   /*ExpectParameterPack=*/ false);
-}
-
-Decl* TemplateDeclInstantiator::VisitCXXInjectedParmDecl(CXXInjectedParmDecl *D) {
-  llvm_unreachable("not implemented");
 }
 
 Decl *TemplateDeclInstantiator::VisitTemplateTypeParmDecl(

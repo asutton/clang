@@ -2931,9 +2931,6 @@ ExprResult Sema::BuildDeclarationNameExpr(
 #include "clang/AST/DeclNodes.inc"
       llvm_unreachable("invalid value decl kind");
 
-    case Decl::CXXInjectedParm:
-      llvm_unreachable("forming reference to injected parm");
-
     // These shouldn't make it here.
     case Decl::ObjCAtDefsField:
     case Decl::ObjCIvar:

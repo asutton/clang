@@ -3967,68 +3967,6 @@ public:
   static bool classofKind(Kind K) { return K == CXXInjection; }
 };
 
-/// Represents extension of a declaration context by a fragment.
-///
-/// Example:
-///
-///     struct S {
-///       __inject class { int a; }
-///     };
-///
-/// The fragment containing 'a' is injected into the enclosing class.
-///
-/// FIXME: Is it possible for the declaration context to be a statement?
-class CXXExtensionDecl : public Decl {
-  virtual void anchor();
-
-  /// The injection target; a reflection.
-  Expr *Injectee;
-
-  /// The injection source; a reflection.
-  Expr *Reflection;
-
-  CXXExtensionDecl(DeclContext *DC, SourceLocation Loc, Expr *Inj, Expr *Ref)
-    : Decl(CXXExtension, DC, Loc), Injectee(Inj), Reflection(Ref) {}
-public:
-  static CXXExtensionDecl *Create(ASTContext &CXT, DeclContext *DC,
-                                  SourceLocation IntroLoc, Expr *Inj, 
-                                  Expr *Ref);
-
-  static CXXExtensionDecl *CreateDeserialized(ASTContext &C, unsigned ID);
-
-  /// \brief The injectee.
-  Expr *getInjectee() const { return Injectee; }
-
-  /// \brief The reflection.
-  Expr *getReflection() const { return Reflection; }
-
-  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classofKind(Kind K) { return K == CXXExtension; }
-};
-
-/// Represents the injection of parameters into a function parameter list.
-///
-/// FIXME: I don't think this is being used any more.
-class CXXInjectedParmDecl : public ParmVarDecl {
-  /// The injection source; a reflection.
-  Expr *Reflection;
-
-  CXXInjectedParmDecl(ASTContext &Ctx, DeclContext *DC, SourceLocation Loc, 
-                      Expr *Ref);
-public:
-  static CXXInjectedParmDecl *Create(ASTContext &CXT, DeclContext *DC,
-                                     SourceLocation IntroLoc, Expr *Ref);
-
-  static CXXInjectedParmDecl *CreateDeserialized(ASTContext &C, unsigned ID);
-
-  /// \brief The reflection.
-  Expr *getReflection() const { return Reflection; }
-
-  // Implement isa/cast/dyncast/etc.
-  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classofKind(Kind K) { return K == CXXInjectedParm; }
-};
-
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier
 /// into a diagnostic with <<.
 const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,

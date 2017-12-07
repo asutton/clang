@@ -481,9 +481,6 @@ public:
   Decl* TransformLocalTemplateTemplateParmDecl(TemplateTemplateParmDecl *D);
 
   Decl *TransformLocalCXXInjectionDecl(CXXInjectionDecl *D);
-  Decl *TransformLocalCXXExtensionDecl(CXXExtensionDecl *D);
-  int TransformLocalCXXInjectedParmDecl(CXXInjectedParmDecl *D,
-                                        SmallVectorImpl<ParmVarDecl *> &Params);
 
   // \brief Transforms function parameter in D, adding them to R.
   void TransformFunctionParameters(FunctionDecl *D, FunctionDecl *R);
@@ -2156,6 +2153,10 @@ public:
 
   StmtResult RebuildCXXInjectionStmt(SourceLocation Loc, Expr *Ref) {
     return getSema().BuildCXXInjectionStmt(Loc, Ref);
+  }
+
+  StmtResult RebuildCXXExtensionStmt(SourceLocation Loc, Expr *Inj, Expr *Ref) {
+    return getSema().BuildCXXExtensionStmt(Loc, Inj, Ref);
   }
 
   /// \brief Build a new C++0x range-based for statement.
@@ -7870,6 +7871,22 @@ TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
 
 template<typename Derived>
 StmtResult
+TreeTransform<Derived>::TransformCXXExtensionStmt(CXXExtensionStmt *S) {
+  ExprResult Injectee = TransformExpr(S->getInjectee());
+  if (Injectee.isInvalid())
+    return StmtError();
+
+  ExprResult Reflection = TransformExpr(S->getReflection());
+  if (Reflection.isInvalid())
+    return StmtError();
+  
+  return RebuildCXXExtensionStmt(S->getLocStart(), 
+                                 Injectee.get(), 
+                                 Reflection.get());
+}
+
+template<typename Derived>
+StmtResult
 TreeTransform<Derived>::TransformMSDependentExistsStmt(
                                                     MSDependentExistsStmt *S) {
   // Transform the nested-name-specifier, if any.
@@ -13150,8 +13167,6 @@ TreeTransform<Derived>::TransformLocalDecl(SourceLocation Loc, Decl *D) {
     return getDerived().TransformLocalNamespaceDecl(cast<NamespaceDecl>(D));
   case Decl::CXXInjection:
     return getDerived().TransformLocalCXXInjectionDecl(cast<CXXInjectionDecl>(D));
-  case Decl::CXXExtension:
-    return getDerived().TransformLocalCXXExtensionDecl(cast<CXXExtensionDecl>(D));
   }
 
   llvm_unreachable("Injecting unknown declaration");
@@ -13628,51 +13643,6 @@ TreeTransform<Derived>::TransformLocalCXXInjectionDecl(CXXInjectionDecl *D) {
     return *DG.begin();
 }
 
-template<typename Derived>
-Decl *
-TreeTransform<Derived>::TransformLocalCXXExtensionDecl(CXXExtensionDecl *D) {  
-  ExprResult Injectee = getDerived().TransformExpr(D->getInjectee());
-  if (Injectee.isInvalid())
-    return nullptr;
-
-  ExprResult Reflection = getDerived().TransformExpr(D->getReflection());
-  if (Reflection.isInvalid())
-    return nullptr;
-
-  Sema::DeclGroupPtrTy Result = 
-      getSema().ActOnCXXExtensionDecl(D->getLocation(), 
-                                      Injectee.get(), 
-                                      Reflection.get());
-  if (!Result)
-    return nullptr;
-  DeclGroupRef DG = Result.get();
-  if (DG.isNull())
-    return nullptr;
-  else
-    return *DG.begin();
-}
-
-// Apply 
-template<typename Derived>
-int
-TreeTransform<Derived>::TransformLocalCXXInjectedParmDecl(
-  CXXInjectedParmDecl *D, llvm::SmallVectorImpl<ParmVarDecl *> &Parms) {
-  // Transform the reflection.
-  ExprResult E = getDerived().TransformExpr(D->getReflection());
-  if (E.isInvalid())
-    return -1;
-
-  llvm_unreachable("not implemented");
-
-  // SmallVector<DeclaratorChunk::ParamInfo, 4> Info;
-  // if (!getSema().ActOnCXXInjectedParameter(D->getLocation(), E.get(), Info))
-  //   return -1;
-  
-  // // Copy gathered parameters.
-  // for (const DeclaratorChunk::ParamInfo &PI : Info)
-  //   Parms.push_back(cast<ParmVarDecl>(PI.Param));
-  // return Info.size();
-}
 
 /// Transform each parameter of a function.
 template<typename Derived>

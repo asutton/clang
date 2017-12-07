@@ -276,20 +276,17 @@ Retry:
     SemiError = "__generate";
     break;
 
+  case tok::kw___extend: // [Meta] extension-statement
+    Res = ParseCXXExtensionStatement();
+    SemiError = "__extend";
+    break;
+
   case tok::kw___inject: { // [Meta] injection declaration
     SourceLocation DeclStart = Tok.getLocation(), 
                    DeclEnd = Tok.getLocation();
     DeclGroupPtrTy Decls = ParseCXXInjectionDeclaration();
     return Actions.ActOnDeclStmt(Decls, DeclStart, DeclEnd);
   }
-
-  case tok::kw___extend: { // [Meta] extension declaration
-    SourceLocation DeclStart = Tok.getLocation(), 
-                   DeclEnd = Tok.getLocation();
-    DeclGroupPtrTy Decls = ParseCXXExtensionDeclaration();
-    return Actions.ActOnDeclStmt(Decls, DeclStart, DeclEnd);
-  }
-
 
   case tok::kw_asm: {
     ProhibitAttributes(Attrs);

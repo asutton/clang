@@ -1254,6 +1254,11 @@ void ASTStmtReader::VisitCXXInjectionStmt(CXXInjectionStmt *S) {
   // FIXME: Implement me.
 }
 
+void ASTStmtReader::VisitCXXExtensionStmt(CXXExtensionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+}
+
 void ASTStmtReader::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
   VisitStmt(S);
   S->KeywordLoc = ReadSourceLocation();
@@ -3426,7 +3431,10 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       S = new (Context) CXXPackExpansionStmt(Empty);
       break;
     case STMT_CXX_INJECTION:
-      S = new (Context) CXXPackExpansionStmt(Empty);
+      S = new (Context) CXXInjectionStmt(Empty);
+      break;
+    case STMT_CXX_EXTENSION:
+      S = new (Context) CXXExtensionStmt(Empty);
       break;
 
     case STMT_MS_DEPENDENT_EXISTS:

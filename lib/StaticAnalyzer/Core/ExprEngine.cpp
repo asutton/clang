@@ -900,6 +900,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CXXDependentIdExprClass:
     case Stmt::CXXFragmentExprClass:
     case Stmt::CXXInjectionStmtClass:
+    case Stmt::CXXExtensionStmtClass:
     {
       const ExplodedNode *node = Bldr.generateSink(S, Pred, Pred->getState());
       Engine.addAbortedBlock(node, currBldrCtx->getBlock());

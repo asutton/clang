@@ -415,6 +415,126 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) {
   return new (Context) CXXInjectionStmt(Loc, Reflection);
 }
 
+/// An injection declaration injects its fragment members at this point
+/// in the program. 
+StmtResult Sema::ActOnCXXExtensionStmt(SourceLocation Loc, 
+                                       Expr *Target,
+                                       Expr *Reflection) { 
+  return BuildCXXExtensionStmt(Loc, Target, Reflection);
+}
+
+StmtResult Sema::BuildCXXExtensionStmt(SourceLocation Loc, 
+                                       Expr *Target,
+                                       Expr *Reflection) { 
+  // Check the glvalue.
+  if (!Target->isTypeDependent()) {
+    // FIXEM: This isn't strictly *required* since even prvalues are just
+    // pointers to a mutable data structure. This is disabled, because the
+    // reflection operator returns prvalues, which complicates certain
+    // use patterns. For example:
+    //
+    //    struct C {
+    //      constexpr { fill($C); } // Would be an error.
+    //    };
+    //
+    // So, disable this for now.
+
+    // if (!Target->isGLValue()) {
+    //   Diag(Target->getExprLoc(), diag::err_extending_rvalue);
+    //   return StmtError();
+    // }
+    
+    QualType TargetTy = Context.getCanonicalType(Target->getType());
+    if (CXXRecordDecl* Class = TargetTy->getAsCXXRecordDecl()) {
+      // FIXME: This isn't the right test. We need to determine during 
+      // application if the target satisfies the requirements for extensions.
+      // if (!Class->isFragment() || !Class->isBeingDefined()) {
+      //   Diag(Target->getExprLoc(), diag::err_extending_declaration);
+      //   return StmtError();
+      // }
+    } else {
+      Diag(Target->getExprLoc(), diag::err_extending_non_reflection);
+      return StmtError();
+    }
+  }
+
+  // FIXME: If the reflection is non-dependent, verify that we actually
+  // have a reflection.
+
+  // Force an lvalue-to-rvalue conversion.
+  if (Target->isGLValue())
+    Target = ImplicitCastExpr::Create(Context, Target->getType(), 
+                                      CK_LValueToRValue, Target, 
+                                      nullptr, VK_RValue);
+  if (Reflection->isGLValue())
+    Reflection = ImplicitCastExpr::Create(Context, Reflection->getType(), 
+                                          CK_LValueToRValue, Reflection, 
+                                          nullptr, VK_RValue);
+
+  // Build an extension statement that can be evaluated when executed.
+  return new (Context) CXXExtensionStmt(Loc, Target, Reflection);
+
+#if 0
+  if (Reflection->isTypeDependent() || Reflection->isValueDependent() ||
+      Target->isTypeDependent() || Target->isValueDependent()) {
+    Decl *D = CXXExtensionDecl::Create(Context, CurContext, Loc, Target, Reflection);
+    CurContext->addDecl(D);
+    return DeclGroupPtrTy::make(DeclGroupRef(D));
+  }
+
+  // Get the declaration or fragment to be injected.
+  Decl *Injectee = GetDeclFromReflection(*this, Target);
+  if (!Injectee)
+    return DeclGroupPtrTy();
+
+  // Get the declaration or fragment to be injected.
+  Decl *Injection = GetDeclFromReflection(*this, Reflection);
+  if (!Injection)
+    return DeclGroupPtrTy();
+
+  // FIXME: Do we need to evaluate the reflection? Probably not, we just
+  // want to get the declaration so we can inject into it.
+
+  // Evaluate the reflection expression. This may contain captured values or 
+  // local modifications to be applied during injection.
+  SmallVector<PartialDiagnosticAt, 8> Notes;
+  Expr::EvalResult Result;
+  Result.Diag = &Notes;
+  if (!Reflection->EvaluateAsRValue(Result, Context)) {
+    // FIXME: This is not the right error.
+    Diag(Reflection->getExprLoc(), diag::err_not_a_reflection);
+    if (!Notes.empty()) {
+      for (const PartialDiagnosticAt &Note : Notes)
+        Diag(Note.first, Note.second);
+    }
+    return DeclGroupPtrTy();
+  }
+
+  // Apply the corresponding operation. And accumulate the resulting
+  // declarations.
+  QualType Ty = Reflection->getType();
+  CXXRecordDecl *Class = Ty->getAsCXXRecordDecl();
+  SmallVector<Decl *, 8> Decls;
+  if (Class->isFragment()) {
+    if (!InjectFragment(*this, Loc, Ty, Result.Val, Injectee, Injection, Decls))
+      return DeclGroupPtrTy();
+  } else {
+    if (!CopyDeclaration(*this, Loc, Ty, Result.Val, Injectee, Injection, Decls))
+      return DeclGroupPtrTy();
+  }
+
+  if (Decls.empty()) {
+    return DeclGroupPtrTy();
+  } else if (Decls.size() == 1) {
+    return DeclGroupPtrTy::make(DeclGroupRef(Decls.front()));
+  } else {
+    DeclGroup *DG = DeclGroup::Create(Context, Decls.data(), Decls.size());
+    return DeclGroupPtrTy::make(DeclGroupRef(DG));
+  }
+#endif
+}
+
+
 static Decl *
 GetDeclFromReflection(Sema &SemaRef, QualType Ty, SourceLocation Loc)
 {
@@ -497,123 +617,6 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc,
     return DeclGroupPtrTy::make(DeclGroupRef(DG));
   }
 }
-
-/// An injection declaration injects its fragment members at this point
-/// in the program. 
-Sema::DeclGroupPtrTy Sema::ActOnCXXExtensionDecl(SourceLocation Loc, 
-                                                 Expr *Target,
-                                                 Expr *Reflection) { 
-  // Check the glvalue.
-  if (!Target->isTypeDependent()) {
-    // FIXEM: This isn't strictly *required* since even prvalues are just
-    // pointers to a mutable data structure. This is disabled, because the
-    // reflection operator returns prvalues, which complicates certain
-    // use patterns. For example:
-    //
-    //    struct C {
-    //      constexpr { fill($C); } // Would be an error.
-    //    };
-    //
-    // So, disable this for now.
-
-    // if (!Target->isGLValue()) {
-    //   Diag(Target->getExprLoc(), diag::err_extending_rvalue);
-    //   return DeclGroupPtrTy();
-    // }
-    
-    QualType TargetTy = Context.getCanonicalType(Target->getType());
-    if (CXXRecordDecl* Class = TargetTy->getAsCXXRecordDecl()) {
-      // FIXME: This isn't the right test. We need to determine during 
-      // application if the target satisfies the requirements for extensions.
-      // if (!Class->isFragment() || !Class->isBeingDefined()) {
-      //   Diag(Target->getExprLoc(), diag::err_extending_declaration);
-      //   return DeclGroupPtrTy();
-      // }
-    } else {
-      Diag(Target->getExprLoc(), diag::err_extending_non_reflection);
-      return DeclGroupPtrTy();
-    }
-  }
-
-  // FIXME: If the reflection is non-dependent, verify that we actually
-  // have a reflection.
-
-  // Force an lvalue-to-rvalue conversion.
-  if (Target->isGLValue())
-    Target = ImplicitCastExpr::Create(Context, Target->getType(), 
-                                        CK_LValueToRValue, Target, 
-                                        nullptr, VK_RValue);
-  if (Reflection->isGLValue())
-    Reflection = ImplicitCastExpr::Create(Context, Reflection->getType(), 
-                                          CK_LValueToRValue, Reflection, 
-                                          nullptr, VK_RValue);
-
-  // Build an extension declaration that can be evaluated when executed.
-  Decl *D = CXXExtensionDecl::Create(Context, CurContext, Loc, Target, Reflection);
-  CurContext->addDecl(D);
-  return DeclGroupPtrTy::make(DeclGroupRef(D));
-
-
-#if 0
-  if (Reflection->isTypeDependent() || Reflection->isValueDependent() ||
-      Target->isTypeDependent() || Target->isValueDependent()) {
-    Decl *D = CXXExtensionDecl::Create(Context, CurContext, Loc, Target, Reflection);
-    CurContext->addDecl(D);
-    return DeclGroupPtrTy::make(DeclGroupRef(D));
-  }
-
-  // Get the declaration or fragment to be injected.
-  Decl *Injectee = GetDeclFromReflection(*this, Target);
-  if (!Injectee)
-    return DeclGroupPtrTy();
-
-  // Get the declaration or fragment to be injected.
-  Decl *Injection = GetDeclFromReflection(*this, Reflection);
-  if (!Injection)
-    return DeclGroupPtrTy();
-
-  // FIXME: Do we need to evaluate the reflection? Probably not, we just
-  // want to get the declaration so we can inject into it.
-
-  // Evaluate the reflection expression. This may contain captured values or 
-  // local modifications to be applied during injection.
-  SmallVector<PartialDiagnosticAt, 8> Notes;
-  Expr::EvalResult Result;
-  Result.Diag = &Notes;
-  if (!Reflection->EvaluateAsRValue(Result, Context)) {
-    // FIXME: This is not the right error.
-    Diag(Reflection->getExprLoc(), diag::err_not_a_reflection);
-    if (!Notes.empty()) {
-      for (const PartialDiagnosticAt &Note : Notes)
-        Diag(Note.first, Note.second);
-    }
-    return DeclGroupPtrTy();
-  }
-
-  // Apply the corresponding operation. And accumulate the resulting
-  // declarations.
-  QualType Ty = Reflection->getType();
-  CXXRecordDecl *Class = Ty->getAsCXXRecordDecl();
-  SmallVector<Decl *, 8> Decls;
-  if (Class->isFragment()) {
-    if (!InjectFragment(*this, Loc, Ty, Result.Val, Injectee, Injection, Decls))
-      return DeclGroupPtrTy();
-  } else {
-    if (!CopyDeclaration(*this, Loc, Ty, Result.Val, Injectee, Injection, Decls))
-      return DeclGroupPtrTy();
-  }
-
-  if (Decls.empty()) {
-    return DeclGroupPtrTy();
-  } else if (Decls.size() == 1) {
-    return DeclGroupPtrTy::make(DeclGroupRef(Decls.front()));
-  } else {
-    DeclGroup *DG = DeclGroup::Create(Context, Decls.data(), Decls.size());
-    return DeclGroupPtrTy::make(DeclGroupRef(DG));
-  }
-#endif
-}
-
 
 static ClassTemplateSpecializationDecl *ReferencedReflectionClass(Sema &SemaRef, 
                                                                   Expr *E) {

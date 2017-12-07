@@ -5855,7 +5855,6 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::Metaclass: // FIXME: Is this right?
   case Decl::CXXFragment:
   case Decl::CXXInjection:
-  case Decl::CXXInjectedParm:
     return C;
 
   // Declaration kinds that don't make any sense here, but are

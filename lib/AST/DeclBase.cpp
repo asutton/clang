@@ -778,8 +778,6 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case Empty:
     case CXXFragment:
     case CXXInjection:
-    case CXXExtension:
-    case CXXInjectedParm:
       // Never looked up by name.
       return 0;
   }

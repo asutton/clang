@@ -2552,10 +2552,6 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
   if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw___inject))
     return ParseCXXInjectionDeclaration();
 
-  // [Meta] extension-declaration
-  if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw___extend))
-    return ParseCXXExtensionDeclaration();
-
   // [Meta] constexpr-declaration
   if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw_constexpr) &&
       NextToken().is(tok::l_brace))

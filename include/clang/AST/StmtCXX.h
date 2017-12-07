@@ -664,7 +664,7 @@ class CXXInjectionStmt : public Stmt {
   Stmt *Reflection;
 
 public:
-  CXXInjectionStmt(SourceLocation IntroLoc, Expr*Ref)
+  CXXInjectionStmt(SourceLocation IntroLoc, Expr *Ref)
     : Stmt(CXXInjectionStmtClass), IntroLoc(IntroLoc), Reflection(Ref) {}
 
   explicit CXXInjectionStmt(EmptyShell Empty)
@@ -694,6 +694,65 @@ public:
   friend class ASTStmtReader;
   friend class ASTStmtWriter;
 };
+
+/// Represents a C++ extension statement.
+///
+/// An extension statement, when evaluated, queues a source code modification,
+/// usually the injection of a fragment into the metaprogram evaluation
+/// context.
+///
+/// Example:
+///
+///     __extend (target) class { int a; }
+///
+class CXXExtensionStmt : public Stmt {
+  SourceLocation IntroLoc;
+
+  /// Substatements.
+  /// Sub[0] is the injectee.
+  /// Sub[1]  is the reflected injection.
+  Stmt *Sub[2];
+
+public:
+  CXXExtensionStmt(SourceLocation IntroLoc, Expr *I, Expr *R)
+      : Stmt(CXXExtensionStmtClass), IntroLoc(IntroLoc) {
+    Sub[0] = I;
+    Sub[1] = R;
+  }
+
+  explicit CXXExtensionStmt(EmptyShell Empty)
+      : Stmt(CXXExtensionStmtClass, Empty), IntroLoc() {
+    Sub[0] = Sub[1] = nullptr;
+  }
+
+  /// \brief The injectee.
+  Expr *getInjectee() const { return reinterpret_cast<Expr *>(Sub[0]); }
+
+  /// \brief The introduced reflection.
+  Expr *getReflection() const { return reinterpret_cast<Expr *>(Sub[1]); }
+
+  /// \brief The location of introducer token.
+  SourceLocation getIntroLoc() const { return IntroLoc; }
+
+  SourceLocation getLocStart() const LLVM_READONLY { 
+    return IntroLoc; 
+  }  
+  SourceLocation getLocEnd() const LLVM_READONLY { 
+    return getReflection()->getLocEnd(); 
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXExtensionStmtClass;
+  }
+
+  child_range children() {
+    return child_range(&Sub[0], &Sub[0] + 2);
+  }
+
+  friend class ASTStmtReader;
+  friend class ASTStmtWriter;
+};
+
 
 }  // end namespace clang
 

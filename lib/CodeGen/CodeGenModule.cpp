@@ -3895,6 +3895,11 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     // No code gen needed for metaclasses.
     break;
 
+  case Decl::CXXFragment:
+    // A fragment expression appearing in a global declaration will be
+    // registered as a top-level declaration. Don't do anything with it.
+    break;
+
   case Decl::Constexpr:
   case Decl::CXXInjection:
     // Nothing to do.
