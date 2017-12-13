@@ -2336,7 +2336,6 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
   ConstexprDecl *CD;
   if (NeedsFunctionRepresentation(CurContext)) {
     ScopeFlags = Scope::FnScope | Scope::DeclScope;
-
     PushFunctionScope();
 
     // Build the function
@@ -2417,8 +2416,8 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
   } else
     llvm_unreachable("constexpr declaration in unsupported context");
 
-  // Add the declaration to the current context. This will be from the AST
-  // after evaluation.
+  // Add the declaration to the current context. This will be removed from the 
+  // AST after evaluation.
   CurContext->addDecl(CD);
   
   return CD;

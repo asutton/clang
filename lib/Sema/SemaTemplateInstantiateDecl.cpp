@@ -1001,6 +1001,10 @@ Decl *TemplateDeclInstantiator::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
     return *DG.begin();
 }
 
+Decl *TemplateDeclInstantiator::VisitCXXGeneratedTypeDecl(CXXGeneratedTypeDecl *D) {
+  llvm_unreachable("not implemented");
+}
+
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   NamedDecl **NamedChain =
     new (SemaRef.Context)NamedDecl*[D->getChainingSize()];

@@ -108,6 +108,7 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
   case Decl::OMPThreadPrivate:
   case Decl::OMPCapturedExpr:
   case Decl::Empty:
+  case Decl::CXXGeneratedType:
     // None of these decls require codegen support.
     return;
 

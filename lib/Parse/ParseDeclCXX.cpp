@@ -449,6 +449,10 @@ Parser::ParseUsingDirectiveOrDeclaration(unsigned Context,
     return nullptr;
   }
 
+  // 'using struct' or 'using class' indicates a generated type.
+  if (Tok.isOneOf(tok::kw_class, tok::kw_struct))
+    return ParseCXXGeneratedTypeDeclaration(UsingLoc);    
+
   // 'using namespace' means this is a using-directive.
   if (Tok.is(tok::kw_namespace)) {
     // Template parameters are always an error here.

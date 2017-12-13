@@ -3967,6 +3967,74 @@ public:
   static bool classofKind(Kind K) { return K == CXXInjection; }
 };
 
+/// Represents the declaration of a generated type.
+///
+/// Example:
+///
+///     using struct X as make_type($Y).
+///
+/// Here make_type is a metafunction that constructs a new class X from
+/// an existing type Y. The metafunction must have the form:
+///
+///     template<typename T, typename S>
+///     constexpr void <metafunction>(T target, S source);
+///
+/// The entire declaration is equivalent to writing this:
+///
+///   struct X {
+///     using prototype = typename($Y);
+///     constexpr { make_type($X, $Y); }
+///   };
+///
+/// The make_type function uses the __extend facility to inject new members 
+/// into X based on analysis of Y.
+class CXXGeneratedTypeDecl : public TypeDecl {
+  virtual void anchor();
+
+  /// The generating function, as written.
+  Decl *Generator;
+
+  /// A reflection indicating the source data type, as written.
+  Expr *Reflection;
+
+  /// The generated type. When the generated type declaration is a template,
+  /// this will contain only the metaprogram. Otherwise, this will contain
+  /// the properties generated as a result of evaluating the metaprogram.
+  CXXRecordDecl *Class;
+
+  CXXGeneratedTypeDecl(DeclContext *DC, SourceLocation Loc, 
+                       IdentifierInfo *Id, Decl *Gen, Expr *Ref)
+      : TypeDecl(CXXGeneratedType, DC, Loc, Id), Generator(Gen), 
+        Reflection(Ref) {
+  }
+public:
+  static CXXGeneratedTypeDecl *Create(ASTContext &Ctx, DeclContext *DC,
+                                      SourceLocation Loc, IdentifierInfo *Id,
+                                      Decl *Gen, Expr *Ref);
+
+  static CXXGeneratedTypeDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  ///  \brief The generating function.
+  Decl *getGenerator() const { return Generator; }
+
+  /// \brief The reflection.
+  Expr *getReflection() const { return Reflection; }
+
+  /// \brief Sets the generated class.
+  void setGeneratedClass(CXXRecordDecl *C) { 
+    assert(!C && "generated class already set");
+    Class = C;
+  }
+
+  /// \brief The generated class.
+  CXXRecordDecl *getGeneratedClass() const { return Class; }
+
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXGeneratedType; }
+};
+
+
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier
 /// into a diagnostic with <<.
 const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,

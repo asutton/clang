@@ -2636,6 +2636,8 @@ private:
   TypeResult ParseMetaclassBaseSpecifier(SourceLocation &BaseLoc,
                                          SourceLocation &EndLocation);
 
+  DeclGroupPtrTy ParseCXXGeneratedTypeDeclaration(SourceLocation UsingLoc);
+
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

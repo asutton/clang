@@ -1899,6 +1899,10 @@ DEF_TRAVERSE_DECL(CXXInjectionDecl, {
   TRY_TO(TraverseStmt(D->getReflection()));
 });
 
+DEF_TRAVERSE_DECL(CXXGeneratedTypeDecl, {
+  // TODO: Traverse members or not? 
+});
+
 DEF_TRAVERSE_DECL(FieldDecl, {
   TRY_TO(TraverseDeclaratorHelper(D));
   if (D->isBitField())

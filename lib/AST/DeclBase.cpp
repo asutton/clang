@@ -723,6 +723,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case Record:
     case CXXRecord:
     case Enum:
+    case CXXGeneratedType:
       return IDNS_Tag | IDNS_Type;
 
     case Metaclass:

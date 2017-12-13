@@ -1231,3 +1231,60 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
 #endif
 }
 
+  Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,
+                                                       bool IsClass,
+                                                       SourceLocation IdLoc,
+                                                       IdentifierInfo *Id,
+                                                       Expr* Generator,
+                                                       Expr *Reflection) {
+    // FIXME: This is a terrible, terrible hack. It looks like the
+    // constexpr code is messing up the scope stack by overwriting the
+    // entity in PushDeclContext. This is because we don't have a unique
+    // scope when we enter this context. I'm not sure why ConstexprDecl
+    // actions don't break in other contexts.
+    DeclContext *Prev = CurScope->getEntity();
+
+    // Create the generated type.
+    TagTypeKind TTK = IsClass ? TTK_Class : TTK_Struct;
+    CXXRecordDecl *Class = CXXRecordDecl::Create(Context, TTK, CurContext, 
+                                                 IdLoc, IdLoc, Id);
+    Class->setImplicit(true);
+    CurContext->addDecl(Class);
+
+    PushDeclContext(CurScope, Class);
+    StartDefinition(Class);
+
+    // Create this constexpr declaration:
+    //
+    //    constexpr { <gen>($<id>, <ref>); }
+    //
+    // And add it as the sole member of the class.
+    unsigned ScopeFlags;
+    Decl *CD = ActOnConstexprDecl(CurScope, UsingLoc, ScopeFlags);
+    CD->setImplicit(true);
+    
+    ActOnStartConstexprDecl(CurScope, CD);
+    SourceLocation Loc;
+
+    // Build the expression $<id>.
+    QualType ThisType = Context.getRecordType(Class);
+    TypeSourceInfo *ThisTypeInfo = Context.getTrivialTypeSourceInfo(ThisType);
+    ExprResult Output = ActOnCXXReflectExpr(IdLoc, ThisTypeInfo);
+
+    // Build the call to <gen>($<id>, <ref>)
+    Expr *Args[] {Output.get(), Reflection};
+    ExprResult Call = ActOnCallExpr(CurScope, Generator, IdLoc, Args, IdLoc);
+
+    Stmt* Body = new (Context) CompoundStmt(Context, Call.get(), IdLoc, IdLoc);
+    ActOnFinishConstexprDecl(CurScope, CD, Body);
+
+    CompleteDefinition(Class);
+    PopDeclContext();
+
+    // Restore the original entity.
+    //
+    // FIXME: See the comments above about ConstexprDecl breaking the scope.
+    CurScope->setEntity(Prev);
+
+    return DeclGroupPtrTy::make(DeclGroupRef(Class));
+  }

@@ -2570,6 +2570,22 @@ CXXInjectionDecl *CXXInjectionDecl::CreateDeserialized(ASTContext &C,
   return new (C, ID) CXXInjectionDecl(nullptr, SourceLocation(), nullptr);
 }
 
+void CXXGeneratedTypeDecl::anchor() {}
+
+CXXGeneratedTypeDecl *CXXGeneratedTypeDecl::Create(ASTContext &Ctx, 
+                                                   DeclContext *DC, 
+                                                   SourceLocation Loc, 
+                                                   IdentifierInfo *Id, 
+                                                   Decl *Gen, Expr *Ref) {
+  return new (Ctx, DC) CXXGeneratedTypeDecl(DC, Loc, Id, Gen, Ref);
+}
+
+CXXGeneratedTypeDecl *CXXGeneratedTypeDecl::CreateDeserialized(ASTContext &Ctx, 
+                                                               unsigned ID) {
+  return new (Ctx, ID) CXXGeneratedTypeDecl(nullptr, SourceLocation(),
+                                            nullptr, nullptr, nullptr);
+}
+
 const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
                                            AccessSpecifier AS) {
   return DB << getAccessName(AS);

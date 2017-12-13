@@ -8614,6 +8614,13 @@ public:
   
   DeclGroupPtrTy ActOnCXXInjectionDecl(SourceLocation Loc, Expr *Reflection);
   
+  DeclGroupPtrTy ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc, 
+                                           bool IsClass,
+                                           SourceLocation IdLoc, 
+                                           IdentifierInfo *Id,
+                                           Expr* Gen, 
+                                           Expr *Ref);
+  
   bool ActOnCXXInjectedParameter(SourceLocation UsingLoc, Expr *Reflection,
                                  IdentifierInfo *II,
                         SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);
