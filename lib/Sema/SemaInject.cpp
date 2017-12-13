@@ -988,6 +988,11 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   Decl *InjectionOwner = Decl::castFromDeclContext(InjectionDC);
   DeclContext *InjecteeDC = Decl::castToDeclContext(Injectee);
 
+  // Don't copy injected class names.
+  if (CXXRecordDecl *ClassInjection = dyn_cast<CXXRecordDecl>(Injection))
+    if (ClassInjection->isInjectedClassName())
+      return true;
+
   if (!CheckInjectionContexts(SemaRef, POI, InjectionDC, InjecteeDC))
     return false;
 
