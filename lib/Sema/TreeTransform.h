@@ -9642,6 +9642,38 @@ TreeTransform<Derived>::TransformMemberExpr(MemberExpr *E) {
       return ExprError();
   }
 
+  // If the expression is (implicitly) this->x and the type of this and the 
+  // context in which x is found differ, then we need to redo the lookup. But 
+  // don't do this in the case where x is a member of a (non-dependent) base 
+  // class.
+  //
+  // See TransformCXXDependentScopeMemberExpr. This applies when the member
+  // reference is explicitly specified.
+  if (CXXThisExpr *This = dyn_cast<CXXThisExpr>(Base.get())) {
+    QualType ThisTy = getSema().getCurrentThisType();
+    const CXXRecordDecl *CurrentClass = ThisTy->getPointeeCXXRecordDecl();
+    const CXXRecordDecl *FoundClass = cast<CXXRecordDecl>(FoundDecl->getDeclContext());
+    if (CurrentClass != FoundClass && 
+        CurrentClass->isProvablyNotDerivedFrom(FoundClass)) {
+      DeclarationNameInfo NameInfo(FoundDecl->getDeclName(), 
+                                   FoundDecl->getLocation());
+      DeclContext *DC = const_cast<CXXRecordDecl*>(CurrentClass);
+      LookupResult R(getSema(), NameInfo, Sema::LookupOrdinaryName);
+      if (!getSema().LookupQualifiedName(R, DC)) {
+        // FIXME: I would have expected lookup to fail noisily. Not
+        // sure why it doesn't.
+        //
+        // FIXME: Do a better job with the diagnostic.
+        SemaRef.Diag(NameInfo.getLoc(), diag::err_injection_lookup) 
+            << NameInfo.getName();
+        return ExprError();
+      }
+
+      // FIXME: This may crash on ambiguous resolution.
+      FoundDecl = R.getFoundDecl();
+    }
+  }
+
   if (!getDerived().AlwaysRebuild() &&
       Base.get() == E->getBase() &&
       QualifierLoc == E->getQualifierLoc() &&

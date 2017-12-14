@@ -26,8 +26,9 @@
 using namespace clang;
 using namespace sema;
 
-InjectionContext::InjectionContext(Sema &SemaRef)
-    : SemaRef(SemaRef), Prev(SemaRef.CurrentInjectionContext) {
+InjectionContext::InjectionContext(Sema &SemaRef, DeclContext *Injectee)
+    : SemaRef(SemaRef), Prev(SemaRef.CurrentInjectionContext), 
+      Injectee(Injectee) {
   SemaRef.CurrentInjectionContext = this;
 }
 
@@ -894,7 +895,7 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
   // scope stores (for the duration of injection) the new members created
   // by expanding the injection into the current context.
   LocalInstantiationScope Locals(SemaRef);
-  InjectionContext InjectionCxt(SemaRef);
+  InjectionContext InjectionCxt(SemaRef, InjecteeDC);
   Sema::InstantiatingTemplate Inst(SemaRef, POI, &InjectionCxt);
   InjectionCxt.AddDeclSubstitution(Injection, Injectee);
   InjectionCxt.AddPlaceholderSubstitutions(Fragment, Class, Captures);
@@ -978,7 +979,6 @@ static Decl *RewriteAsStaticMemberVariable(Sema &SemaRef,
   return R;
 }
 
-
 /// Clone a declaration into the current context.
 static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI, 
                             QualType ReflectionTy, const APValue &ReflectionVal, 
@@ -989,8 +989,8 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   DeclContext *InjecteeDC = Decl::castToDeclContext(Injectee);
 
   // Don't copy injected class names.
-  if (CXXRecordDecl *ClassInjection = dyn_cast<CXXRecordDecl>(Injection))
-    if (ClassInjection->isInjectedClassName())
+  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Injection))
+    if (Class->isInjectedClassName())
       return true;
 
   if (!CheckInjectionContexts(SemaRef, POI, InjectionDC, InjecteeDC))
@@ -1003,13 +1003,9 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   // Within the copied declaration, references to the enclosing context are 
   // replaced with references to the destination context.
   LocalInstantiationScope Locals(SemaRef);
-  InjectionContext InjectionCxt(SemaRef);
+  InjectionContext InjectionCxt(SemaRef, InjecteeDC);
   Sema::InstantiatingTemplate Inst(SemaRef, POI, &InjectionCxt);
   InjectionCxt.AddDeclSubstitution(InjectionOwner, Injectee);
-
-  // llvm::outs() << "SUBST\n";
-  // InjectionOwner->dump();
-  // Injectee->dump();
 
   // Unpack the modification traits so we can apply them after generating
   // the declaration.
@@ -1034,10 +1030,12 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   assert(Storage != Automatic && "Can't make declarations automatic");
   assert(Storage != ThreadLocal && "Thread local storage not implemented");
 
-  // Build the declaration. If there was a request to make field static, we'll
-  // need to build a new declaration.
   // llvm::outs() << "BEFORE\n";
   // Injection->dump();
+  // Injectee->dump();
+
+  // Build the declaration. If there was a request to make field static, we'll
+  // need to build a new declaration.
   Decl* Result;
   if (isa<FieldDecl>(Injection) && Storage == Static) {
     Result = RewriteAsStaticMemberVariable(SemaRef, 
@@ -1051,7 +1049,7 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
     Injectee->setInvalidDecl(true);
     return false;
   }
-  // llvm::outs() << "AFTER: " << Result->getDeclContext() << '\n';
+  // llvm::outs() << "AFTER CLONING\n";
   // Result->dump();
   // Decl::castFromDeclContext(Result->getDeclContext())->dump();
 

@@ -294,7 +294,7 @@ struct TypedValue
 class InjectionContext
 {
 public:
-  InjectionContext(Sema &SemaRef);
+  InjectionContext(Sema &SemaRef, DeclContext *Injectee);
   ~InjectionContext();
 
   /// \brief Adds a substitution from one declaration to another.
@@ -321,6 +321,9 @@ public:
 
   /// \brief The previous injection context.
   InjectionContext *Prev;
+
+  /// \brief The Injectee declaration context.
+  DeclContext *Injectee;
 
   /// \brief A mapping from declarations in an injection to those in the
   /// destination context.

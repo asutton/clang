@@ -9055,6 +9055,7 @@ def err_injecting_local_into_invalid_scope : Error<
 def err_extending_non_reflection : Error<"injectee is not a reflection">;
 def err_extending_declaration : Error<"cannot extend a declaration">;
 def err_extending_rvalue : Error<"rvalue injectee is not extendable">;
+def err_injection_lookup : Error<"%0 not in the receiving class">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {
