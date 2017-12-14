@@ -1257,14 +1257,21 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
     PushDeclContext(CurScope, Class);
     StartDefinition(Class);
 
-    // Create this constexpr declaration:
-    //
-    //    constexpr { <gen>($<id>, <ref>); }
-    //
-    // And add it as the sole member of the class.
+    // Insert 'using prototype = typename(ref)'
+    IdentifierInfo *ProtoId = &Context.Idents.get("prototype");
+    QualType ProtoTy = BuildReflectedType(IdLoc, Reflection);
+    TypeSourceInfo *ProtoTSI = Context.getTrivialTypeSourceInfo(ProtoTy);
+    Decl *Alias = TypeAliasDecl::Create(Context, Class, IdLoc, IdLoc, 
+                                        ProtoId, ProtoTSI);
+    Alias->setImplicit(true);
+    Alias->setAccess(AS_public);
+    Class->addDecl(Alias);
+
+    // Add 'constexpr { <gen>($<id>, <ref>); }' to the class.
     unsigned ScopeFlags;
     Decl *CD = ActOnConstexprDecl(CurScope, UsingLoc, ScopeFlags);
     CD->setImplicit(true);
+    CD->setAccess(AS_public);
     
     ActOnStartConstexprDecl(CurScope, CD);
     SourceLocation Loc;
