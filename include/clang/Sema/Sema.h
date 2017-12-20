@@ -2165,7 +2165,7 @@ public:
     TUK_Friend       // Friend declaration:  'friend struct foo;'
   };
 
-  Decl *ActOnTag(Scope *S, unsigned TagSpec, Decl *Metaclass, TagUseKind TUK,
+  Decl *ActOnTag(Scope *S, unsigned TagSpec, Expr *Metaclass, TagUseKind TUK,
                  SourceLocation KWLoc, CXXScopeSpec &SS,
                  IdentifierInfo *Name, SourceLocation NameLoc,
                  AttributeList *Attr, AccessSpecifier AS,

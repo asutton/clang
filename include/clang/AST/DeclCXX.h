@@ -43,7 +43,6 @@ class CXXFinalOverriderMap;
 class CXXIndirectPrimaryBaseSet;
 class FriendDecl;
 class LambdaExpr;
-class MetaclassDecl;
 class ConstexprDecl;
 class UsingDecl;
 
@@ -627,9 +626,9 @@ class CXXRecordDecl : public RecordDecl {
   llvm::PointerUnion<ClassTemplateDecl*, MemberSpecializationInfo*>
     TemplateOrInstantiation;
 
-  /// \brief If this is a class prototype, the C++ metaclass declaration that is
-  /// associated with this class.
-  MetaclassDecl *Metaclass;
+  /// \brief An unresolved id expression that nominates a function to
+  /// generate the definition of this class.
+  Expr *Generator;
 
   friend class DeclContext;
   friend class LambdaExpr;
@@ -1772,15 +1771,12 @@ public:
   /// C++ metaclass.
   bool isMetaclassDefinition() const;
 
-  /// \brief Returns the metaclass the class was declared with. May be null.
-  MetaclassDecl *getMetaclass() const { return Metaclass; }
+  /// \brief The expression used to generate a final class from a prototype.
+  /// This is always an unresolved id expression. 
+  Expr *getGenerator() const { return Generator; }
 
-  /// \brief Associates a metaclass definition with this class.
-  ///
-  /// When the class definition is completed, the metaclass is instantiated
-  /// and evaluated, ultimately replacing this class with the generated one.
-  void setMetaclass(MetaclassDecl *MD) { Metaclass = MD; }
-
+  /// \brief Associates a generating function with with a class.
+  void setGenerator(Expr *E) { Generator = E; }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) {

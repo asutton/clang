@@ -13046,15 +13046,14 @@ static bool isAcceptableTagRedeclContext(Sema &S, DeclContext *OldDC,
 /// TagSpec indicates what kind of tag this is. TUK indicates whether this is a
 /// reference/declaration/definition of a tag.
 ///
-/// \param Metaclass The metaclass declaration, if the tag was introduced by a
-/// metaclass-name. May be null.
+/// \param Generator The generating expression, if any.
 ///
 /// \param IsTypeSpecifier \c true if this is a type-specifier (or
 /// trailing-type-specifier) other than one in an alias-declaration.
 ///
 /// \param SkipBody If non-null, will be set to indicate if the caller should
 /// skip the definition of this tag and treat it as if it were a declaration.
-Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, Decl *Metaclass,
+Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, Expr *Generator,
                      TagUseKind TUK, SourceLocation KWLoc, CXXScopeSpec &SS,
                      IdentifierInfo *Name, SourceLocation NameLoc,
                      AttributeList *Attr, AccessSpecifier AS,
@@ -13772,31 +13771,51 @@ CreateNewDecl:
                                cast_or_null<RecordDecl>(PrevDecl));
   }
 
-  if (Metaclass) {
-    // Bind the class to its metaclass specifier.
-    MetaclassDecl *Meta = cast<MetaclassDecl>(Metaclass);
-    CXXRecordDecl *Class = cast<CXXRecordDecl>(New);
-    Class->setMetaclass(Meta);
+  if (Generator) {
+    // Given an  input like this:
+    //
+    //    class(gen) Proto { ... };
+    //
+    // Generate something that looks (about) like this:
+    //
+    //    namespace __fake__ { class Proto {... } };
+    //    class Class {
+    //      using prototype = __fake__::Proto;
+    //      constexpr { gen($Class, $__fake__::Proto); }
+    //    }
+    //
+    // We don't actually need to emit the fake namespace; we just don't
+    // add it to a declaration context.
+
+    // The class we just created will be the target of gen.
+    CXXRecordDecl* Class = cast<CXXRecordDecl>(New);
+    Class->setGenerator(Generator);
 
     if (TUK == TUK_Definition) {
-      // When defining a prototype, construct a new, empty class of the same
-      // name. All of the normal parsing and processing is applied to the
-      // prototype, which will eventually be replaced by its context.
-      //
-      // Note that the prototype is considered a class fragment; only the
-      // parent class will be a real class.
-      CXXRecordDecl* Prototype = 
-        CXXRecordDecl::Create(Context, Kind, Class, KWLoc, Loc, Name, nullptr);
-      Prototype->setMetaclass(Meta);
-      Prototype->setFragment(true);
-
-      Class->addHiddenDecl(Prototype);
+      // Start defining the (final) class.
+      Class->setLexicalDeclContext(CurContext);
+      CurContext->addDecl(Class);
       StartDefinition(Class);
 
-      CurContext->addDecl(Class);
+      // Create a new, nested class to hold the parsed member. This must
+      // be a fragment in order to suppress default generation of members.
+      CXXRecordDecl* Proto = CXXRecordDecl::Create(Context, Kind, Class, KWLoc, 
+                                                   Loc, Name, nullptr);
+      Proto->setImplicit(true);
+      Proto->setFragment(true);
 
-      // We'll be working with the prototype from here on out.
-      New = Prototype;
+      // Create the nested type alias.
+      QualType ProtoTy = Context.getRecordType(Proto);
+      TypeSourceInfo *ProtoTSI = Context.getTrivialTypeSourceInfo(ProtoTy);
+      IdentifierInfo *ProtoId = &Context.Idents.get("prototype");
+      Decl *Alias = TypeAliasDecl::Create(Context, Class, Loc, Loc, ProtoId, 
+                                          ProtoTSI);
+      Alias->setImplicit(true);
+      Alias->setAccess(AS_public);
+      Class->addDecl(Alias);
+
+      // Make this the new class. StartDefinition is called below.
+      New = Proto;
     }
   }
 
@@ -14058,41 +14077,110 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
 
   // If we just finished a prototype, apply it's metaclass to create the
   // final class.
-  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Tag)) {
-    // We get here when we finish a metaclass. Adjust the tag so that we finish
-    // the right class.
-    if (MetaclassDecl *Meta = Class->getMetaclass()) {
-      assert(Class->isFragment() && "Expected class fragment");
+  if (CXXRecordDecl *Proto = dyn_cast<CXXRecordDecl>(Tag)) {
+    if (Proto->isPrototypeClass()) {
+      CXXRecordDecl *Class = cast<CXXRecordDecl>(Proto->getDeclContext());
+      Expr *Generator = Class->getGenerator();
+      assert(Generator && "expected metaclass");
 
-      CXXRecordDecl *Final = cast<CXXRecordDecl>(Class->getDeclContext());
-
-      // Remove the prototype so it doesn't appear in the final AST, nor
-      // will it be reflected by a metafunction.
-      Class->setLexicalDeclContext(Final);
-      Final->removeDecl(Class);
-
-      // Make the final class available in its declaring scope.
-      PushOnScopeChains(Final, getCurScope()->getParent(), false);
-
-      // Apply the metaclass. Re-enter a member xform context. We've already 
-      // finished the metaclass, but haven't injected anything.
+      // We've just finished parsing the definition of something like this:
       //
-      // FIXME: This seems out of order. It might be nice to perform injections
-      // prior to completion, but I seem to remember that there were some
-      // issues doing this. I don't remember what...
-      SmallVector<Decl *, 32> InjectedFields;
-      ApplyMetaclass(Meta, Class, Final, InjectedFields);
+      //    class(M) Proto { ... };
+      //
+      // And have internally transformed that into something like this. 
+      //
+      //    namespace __fake__ { class Proto {... } };
+      //    class Class {
+      //      using prototype = __fake__::Proto;
+      //      constexpr { M($Class, $__fake__::Proto); }
+      //    };
+      //
+      // The only remaining step is to build and apply the metaprogram to
+      // generate the enclosing class.
 
-      // Perform a final analysis on the members of the resulting class.
-      S->setEntity(Final);
-      ActOnFields(S, Final->getLocation(), Final, InjectedFields, 
-                  BraceRange.getBegin(), BraceRange.getEnd(),
-                  /*Attr=*/nullptr);
+      // FIXME: Are there any properties that Class should inherit from
+      // the prototype? Alignment and layout attributes?
+
+      // Make sure that the final class available in its declaring scope.
+      PushOnScopeChains(Class, CurScope->getParent(), false);
+
+      // For the purpose of creating the metaprogram and performing
+      // the final analysis, the Class needs to be scope's entity, not
+      // prototype.
       S->setEntity(Class);
 
-      // Replace the tag so the consumer doesn't see the prototype.
-      Tag = cast<CXXRecordDecl>(Class->getDeclContext());
+      // Add 'constexpr { M($Class, $Proto); }' to the class.
+      //
+      // FIXME: This is duplicated in SemaInject.
+      unsigned ScopeFlags;
+      SourceLocation Loc = Class->getLocation();
+      Decl *CD = ActOnConstexprDecl(CurScope, Loc, ScopeFlags);
+      CD->setImplicit(true);
+      CD->setAccess(AS_public);
+      
+      ActOnStartConstexprDecl(CurScope, CD);
+
+      // Build the expression $Class.
+      QualType ThisType = Context.getRecordType(Class);
+      TypeSourceInfo *ThisTypeInfo = Context.getTrivialTypeSourceInfo(ThisType);
+      ExprResult Output = ActOnCXXReflectExpr(Loc, ThisTypeInfo);
+
+      // Build the expression $prototype (or equivalent).
+      QualType ProtoType = Context.getRecordType(Proto);
+      TypeSourceInfo *ProtoTypeInfo = Context.getTrivialTypeSourceInfo(ProtoType);
+      ExprResult Input = ActOnCXXReflectExpr(Loc, ProtoTypeInfo);
+
+      // Build the call to <gen>($<id>, <ref>)
+      Expr *Args[] {Output.get(), Input.get()};
+      ExprResult Call = ActOnCallExpr(CurScope, Generator, Loc, Args, Loc);
+
+      Stmt* Body = new (Context) CompoundStmt(Context, Call.get(), Loc, Loc);
+      ActOnFinishConstexprDecl(CurScope, CD, Body);
+
+      // Finally, re-analyze the fields of the fields the class to instantiate
+      // remaining defaults. This will also complete the definition.
+      SmallVector<Decl *, 32> Fields;
+      ActOnFields(S, Class->getLocation(), Class, Fields, 
+                  BraceRange.getBegin(), BraceRange.getEnd(), nullptr);
+
+      // Replace the closed tag with this class.
+      Tag = Class;
     }
+
+    // // We get here when we finish a metaclass. Adjust the tag so that we finish
+    // // the right class.
+    // if (Expr *Meta = Class->getMetaclass()) {
+    //   assert(Class->isFragment() && "Expected class fragment");
+
+    //   CXXRecordDecl *Final = cast<CXXRecordDecl>(Class->getDeclContext());
+
+    //   // Remove the prototype so it doesn't appear in the final AST, nor
+    //   // will it be reflected by a metafunction.
+    //   Class->setLexicalDeclContext(Final);
+    //   Final->removeDecl(Class);
+
+    //   // Make the final class available in its declaring scope.
+    //   PushOnScopeChains(Final, getCurScope()->getParent(), false);
+
+    //   // Apply the metaclass. Re-enter a member xform context. We've already 
+    //   // finished the metaclass, but haven't injected anything.
+    //   //
+    //   // FIXME: This seems out of order. It might be nice to perform injections
+    //   // prior to completion, but I seem to remember that there were some
+    //   // issues doing this. I don't remember what...
+    //   SmallVector<Decl *, 32> InjectedFields;
+    //   ApplyMetaclass(Meta, Class, Final, InjectedFields);
+
+    //   // Perform a final analysis on the members of the resulting class.
+    //   S->setEntity(Final);
+    //   ActOnFields(S, Final->getLocation(), Final, InjectedFields, 
+    //               BraceRange.getBegin(), BraceRange.getEnd(),
+    //               /*Attr=*/nullptr);
+    //   S->setEntity(Class);
+
+    //   // Replace the tag so the consumer doesn't see the prototype.
+    //   Tag = cast<CXXRecordDecl>(Class->getDeclContext());
+    // }
   }
 
   // Notify the consumer that we've defined a tag.
@@ -14786,16 +14874,7 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
 
   bool ApplyDefaults = true;
   if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
-    // If this this a prototype, we don't want to apply defaults.
-    //
-    // FIXME: Is this true for classes resulting from the metaclass?
-    // Currently, we still apply defaults since we still want our classes
-    // to be sane.
-    if (MetaclassDecl *Metaclass = Class->getMetaclass())
-      ApplyDefaults = Class->isFragment();
-
-    // Same for metaclasses.
-    if (isa<MetaclassDecl>(Class->getDeclContext()))
+    if (Class->isPrototypeClass())
       ApplyDefaults = false;
   }
 

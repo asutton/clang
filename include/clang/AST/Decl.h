@@ -3455,6 +3455,16 @@ public:
   /// construct.
   void setCapturedRecord();
 
+  /// \brief Whether this class is a prototype specification for a generated
+  /// class. In other words:
+  ///
+  /// \code
+  /// class(meta) C { ... };
+  /// \endcode
+  ///
+  /// If this class is the prototype definition of, then this is true.
+  bool isPrototypeClass() const;
+
   /// getDefinition - Returns the RecordDecl that actually defines
   ///  this struct/union/class.  When determining whether or not a
   ///  struct/union/class is completely defined, one should use this

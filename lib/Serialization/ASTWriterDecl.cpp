@@ -1258,7 +1258,7 @@ void ASTDeclWriter::VisitCXXRecordDecl(CXXRecordDecl *D) {
     Record.push_back(CXXRecNotTemplate);
   }
 
-  Record.AddDeclRef(D->getMetaclass());
+  Record.AddStmt(D->getGenerator());
 
   Record.push_back(D->isThisDeclarationADefinition());
   if (D->isThisDeclarationADefinition())

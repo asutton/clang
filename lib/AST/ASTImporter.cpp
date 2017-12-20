@@ -1720,12 +1720,11 @@ Decl *ASTNodeImporter::VisitRecordDecl(RecordDecl *D) {
   if (!D2) {
     CXXRecordDecl *D2CXX = nullptr;
     if (CXXRecordDecl *DCXX = llvm::dyn_cast<CXXRecordDecl>(D)) {
-      MetaclassDecl *FromMetaclass = DCXX->getMetaclass();
-      MetaclassDecl *ToMetaclass =
-          cast_or_null<MetaclassDecl>(Importer.Import(FromMetaclass));
-      if (!ToMetaclass && FromMetaclass)
+      Expr *FromGenerator = DCXX->getGenerator();
+      Expr *ToGenerator = Importer.Import(FromGenerator);
+      if (!ToGenerator && FromGenerator)
         return nullptr;
-      D2CXX->setMetaclass(ToMetaclass);
+      D2CXX->setGenerator(ToGenerator);
 
       if (DCXX->isLambda()) {
         TypeSourceInfo *TInfo = Importer.Import(DCXX->getLambdaTypeInfo());

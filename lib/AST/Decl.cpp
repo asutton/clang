@@ -3889,6 +3889,13 @@ void RecordDecl::setCapturedRecord() {
   addAttr(CapturedRecordAttr::CreateImplicit(getASTContext()));
 }
 
+/// A prototype class is nested within a generated class.
+bool RecordDecl::isPrototypeClass() const {
+  if (const CXXRecordDecl *Parent = dyn_cast<CXXRecordDecl>(getDeclContext()))
+    return Parent->getGenerator();
+  return false;
+}
+
 RecordDecl::field_iterator RecordDecl::field_begin() const {
   if (hasExternalLexicalStorage() && !LoadedFieldsFromExternalStorage)
     LoadFieldsFromExternalStorage();
