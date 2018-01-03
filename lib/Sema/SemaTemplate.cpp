@@ -46,6 +46,20 @@ clang::getTemplateParamsRange(TemplateParameterList const * const *Ps,
 }
 
 namespace clang {
+
+void  LocalInstantiationScope::dump() const {
+  llvm::errs() << "Scope: " << this << '\n';
+  llvm::errs() << "Parent: " << Outer << '\n';
+  llvm::errs() << "Local Decls: " <<LocalDecls.size() << '\n';
+  for (auto kv : LocalDecls) {
+    llvm::errs() << kv.first << " : ";
+    if (Decl *D = kv.second.dyn_cast<Decl*>())
+      D->dump();
+    else
+      llvm::errs() << "argument pack\n";
+  }
+}
+
 /// \brief [temp.constr.decl]p2: A template's associated constraints are
 /// defined as a single constraint-expression derived from the introduced
 /// constraint-expressions [ ... ].

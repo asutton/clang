@@ -1614,6 +1614,7 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
     return nullptr;
 
   Record->setImplicit(D->isImplicit());
+  Record->setFragment(D->isFragment());
   // FIXME: Check against AS_none is an ugly hack to work around the issue that
   // the tag decls introduced by friend class declarations don't have an access
   // specifier. Remove once this area of the code gets sorted out.
@@ -4562,7 +4563,6 @@ void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
   // PushDeclContext because we don't have a scope.
   ContextRAII PreviousContext(*this, Var->getDeclContext());
   LocalInstantiationScope Local(*this);
-
   LocalEagerInstantiationScope LocalInstantiations(*this);
 
   VarDecl *OldVar = Var;

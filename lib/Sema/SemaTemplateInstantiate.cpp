@@ -2072,6 +2072,12 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   // instantiation scope with the enclosing scope. Otherwise, every
   // instantiation of a class has its own local instantiation scope.
   bool MergeWithParentScope = !Instantiation->isDefinedOutsideFunctionOrMethod();
+  
+  // Alternatively, if this class is a fragment, then we should also
+  // merge the parent scope.
+  if (Instantiation->isInFragment())
+    MergeWithParentScope = true;
+
   LocalInstantiationScope Scope(*this, MergeWithParentScope);
 
   // All dllexported classes created during instantiation should be fully

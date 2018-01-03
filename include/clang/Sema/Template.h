@@ -395,6 +395,9 @@ namespace clang {
     NamedDecl *
     getPartiallySubstitutedPack(const TemplateArgument **ExplicitArgs = nullptr,
                                 unsigned *NumExplicitArgs = nullptr) const;
+
+    /// Dump information about the instantiation scope.
+    void dump() const;
   };
 
   class TemplateDeclInstantiator

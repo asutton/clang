@@ -7448,15 +7448,18 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
   }
 
   // Create the fragment declaration and its placeholders.
+  //
+  // FIXME: The instantiation of the fragment and its content should
+  // probably be managed by SubstDecl.
   SourceLocation Loc = E->getExprLoc();
   Decl *F = getSema().ActOnStartCXXFragment(nullptr, Loc, Captures);
   CXXFragmentDecl *NewFragment = cast<CXXFragmentDecl>(F);
   CXXFragmentDecl *OldFragment = cast<CXXFragmentDecl>(E->getFragment());
 
-  // Register captured parameters as local instantiations. Note that
-  // instantiations local to the fragment are distinct from those in
-  // the current context.
-  LocalInstantiationScope Scope(getSema());
+  // Register captured parameters as local instantiations. Merge with the
+  // parent scope so that names used in this context can refer to declarations
+  // outside.
+  LocalInstantiationScope Scope(getSema(), true);
   auto OldIter = OldFragment->decls_begin();
   auto NewIter = NewFragment->decls_begin();
   while (NewIter != NewFragment->decls_end())
