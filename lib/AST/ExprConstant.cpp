@@ -9946,7 +9946,12 @@ public:
 
   bool VisitCompilerErrorExpr(const CompilerErrorExpr *E) {
     // This never produces a value.
+    //
+    // FIXME: We probably want to evaluate the sub-expression for potential
+    // errors before stopping at these conditions.
     if (Info.checkingPotentialConstantExpression())
+      return false;
+    if (Info.checkingForOverflow())
       return false;
 
     APValue Result;
