@@ -3584,7 +3584,25 @@ TemplateDeclInstantiator::SubstFunctionType(FunctionDecl *D,
       for (unsigned OldIdx = 0, NumOldParams = OldProtoLoc.getNumParams();
            OldIdx != NumOldParams; ++OldIdx) {
         ParmVarDecl *OldParam = OldProtoLoc.getParam(OldIdx);
+        
         LocalInstantiationScope *Scope = SemaRef.CurrentInstantiationScope;
+
+        // FIXME: This is a bit of a hack... If the original parameter was
+        // injected, then we need to add 0 or more parameters into the
+        // array so that we match the number expected when creating the
+        // function.
+        if (isa<InjectedParmType>(OldParam->getType())) {
+          while (NewIdx < NewProtoLoc.getNumParams()) {
+            ParmVarDecl *NewParam = NewProtoLoc.getParam(NewIdx);
+            // FIXME: Why isn't the injected parameter injected?
+            if (!NewParam->isInjected() && 
+                !isa<InjectedParmType>(NewParam->getType()))
+              break;
+            Params.push_back(NewParam);
+            ++NewIdx;
+          }
+          continue;
+        }
 
         Optional<unsigned> NumArgumentsInExpansion;
         if (OldParam->isParameterPack())

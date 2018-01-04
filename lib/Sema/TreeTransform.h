@@ -5221,6 +5221,7 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
               return true;
 
             // Update the scope information for the new parameter.
+            New->setInjected(true);
             New->setScopeInfo(New->getFunctionScopeDepth(), 
                               OutParamTypes.size());
             
