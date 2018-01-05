@@ -5731,6 +5731,10 @@ QualType TreeTransform<Derived>::TransformReflectedType(TypeLocBuilder &TLB,
                                                         ReflectedTypeLoc TL) {
   const ReflectedType *T = TL.getTypePtr();
 
+  // Operands of type reflections are constant expressions.
+  EnterExpressionEvaluationContext Unevaluated(
+      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);
+
   ExprResult E = getDerived().TransformExpr(T->getTypeReflection());
   if (E.isInvalid())
     return QualType();
