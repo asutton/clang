@@ -706,8 +706,7 @@ public:
       const QualType *ParamTypes,
       const FunctionProtoType::ExtParameterInfo *ParamInfos,
       SmallVectorImpl<QualType> &PTypes, SmallVectorImpl<ParmVarDecl *> *PVars,
-      Sema::ExtParameterInfoBuilder &PInfos,
-      bool TransformLocal = false);
+      Sema::ExtParameterInfoBuilder &PInfos);
 
   /// \brief Transforms a single function-type parameter.  Return null
   /// on error.
@@ -717,8 +716,7 @@ public:
   ParmVarDecl *TransformFunctionTypeParam(ParmVarDecl *OldParm,
                                           int indexAdjustment,
                                           Optional<unsigned> NumExpansions,
-                                          bool ExpectParameterPack,
-                                          bool TransformLocal = false);
+                                          bool ExpectParameterPack);
 
   QualType TransformReferenceType(TypeLocBuilder &TLB, ReferenceTypeLoc TL);
 
@@ -5038,7 +5036,7 @@ QualType TreeTransform<Derived>::TransformExtVectorType(TypeLocBuilder &TLB,
 template <typename Derived>
 ParmVarDecl *TreeTransform<Derived>::TransformFunctionTypeParam(
     ParmVarDecl *OldParm, int indexAdjustment, Optional<unsigned> NumExpansions,
-    bool ExpectParameterPack, bool TransformLocal) {
+    bool ExpectParameterPack) {
   TypeSourceInfo *OldDI = OldParm->getTypeSourceInfo();
   TypeSourceInfo *NewDI = nullptr;
 
@@ -5088,9 +5086,6 @@ ParmVarDecl *TreeTransform<Derived>::TransformFunctionTypeParam(
   newParm->setScopeInfo(OldParm->getFunctionScopeDepth(),
                         OldParm->getFunctionScopeIndex() + indexAdjustment);
 
-  if (TransformLocal)
-    transformedLocalDecl(OldParm, newParm);
-  
   return newParm;
 }
 
@@ -5101,8 +5096,7 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
     const FunctionProtoType::ExtParameterInfo *ParamInfos,
     SmallVectorImpl<QualType> &OutParamTypes,
     SmallVectorImpl<ParmVarDecl *> *PVars,
-    Sema::ExtParameterInfoBuilder &PInfos,
-    bool TransformLocal) {
+    Sema::ExtParameterInfoBuilder &PInfos) {
   int indexAdjustment = 0;
 
   unsigned NumParams = Params.size();
@@ -5148,8 +5142,7 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
               = getDerived().TransformFunctionTypeParam(OldParm,
                                                         indexAdjustment++,
                                                         OrigNumExpansions,
-                                                /*ExpectParameterPack=*/false,
-                                             /*TransformLocal=*/TransformLocal);
+                                                /*ExpectParameterPack=*/false);
             if (!NewParm)
               return true;
 
@@ -5168,8 +5161,7 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
               = getDerived().TransformFunctionTypeParam(OldParm,
                                                         indexAdjustment++,
                                                         OrigNumExpansions,
-                                                /*ExpectParameterPack=*/false,
-                                             /*TransformLocal=*/TransformLocal);
+                                                /*ExpectParameterPack=*/false);
             if (!NewParm)
               return true;
 
@@ -5196,44 +5188,47 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
         NewParm = getDerived().TransformFunctionTypeParam(OldParm,
                                                           indexAdjustment,
                                                           NumExpansions,
-                                                  /*ExpectParameterPack=*/true,
-                                             /*TransformLocal=*/TransformLocal);
+                                                  /*ExpectParameterPack=*/true);
+      } else if (isa<InjectedParmType>(OldParm->getType()) &&
+                 !OldParm->getType()->isDependentType()) {
+        // Injected parameters are handled similarly to packs, except that
+        // they don't produce argument packs; they just expand in place.
+        // This is only done when the parameter is not dependent (i.e., we
+        // can actually find the referenced parameters to inject).
+        const InjectedParmType *IPT = cast<InjectedParmType>(OldParm->getType());
+        for (ParmVarDecl *Old : IPT->getParameters()) {
+          ParmVarDecl *New
+            = getDerived().TransformFunctionTypeParam(Old,
+                                                      indexAdjustment++,
+                                                      NumExpansions,
+                                                 /*ExpectParameterPack=*/false);
+          if (!New)
+            return true;
+
+          // Mark the parameter injected. 
+          New->setInjected(true);
+          
+          if (ParamInfos)
+            PInfos.set(OutParamTypes.size(), ParamInfos[i]);
+          OutParamTypes.push_back(New->getType());
+          if (PVars)
+            PVars->push_back(New);
+        }
+        
+        // Decrement the index adjustment so the next parameter has
+        // the same adjustment as the last pushed. (Same reason as above).
+        --indexAdjustment;
+
+        continue;
       } else {
-        NewParm = getDerived().TransformFunctionTypeParam(
-            OldParm, indexAdjustment, None, 
-            /*ExpectParameterPack=*/ false,
-            /*TransformLocal=*/ TransformLocal);
+        NewParm = getDerived().TransformFunctionTypeParam(OldParm, 
+                                                          indexAdjustment, 
+                                                          None,
+                                                 /*ExpectParameterPack=*/false);
       }
 
       if (!NewParm)
         return true;
-
-      // If this is an injection, expand the parameter.
-      //
-      // FIXME: It would be better if we did this *before* creating the new 
-      // parameter; that's just wasted memory.
-      QualType NewType = NewParm->getType();
-      if (const InjectedParmType *IPT = NewType->getAs<InjectedParmType>()) {
-        if (!IPT->isDependentType()) {
-          for (ParmVarDecl *Orig : IPT->getParameters()) {
-            ParmVarDecl *New = cast<ParmVarDecl>(TransformLocalParmVarDecl(Orig));
-            if (!New)
-              return true;
-
-            // Update the scope information for the new parameter.
-            New->setInjected(true);
-            New->setScopeInfo(New->getFunctionScopeDepth(), 
-                              OutParamTypes.size());
-            
-            if (ParamInfos)
-              PInfos.set(OutParamTypes.size(), ParamInfos[i]);
-            OutParamTypes.push_back(New->getType());
-            if (PVars)
-              PVars->push_back(New);
-          }
-          continue;
-        }
-      }
 
       if (ParamInfos)
         PInfos.set(OutParamTypes.size(), ParamInfos[i]);
@@ -5317,6 +5312,22 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
       IsPackExpansion = true;
       Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), -1);
       NewType = getDerived().TransformType(OldType);
+    } 
+    else if (isa<InjectedParmType>(OldType) && !OldType->isDependentType()) {
+      // Handle injected parameters like packs.
+      const InjectedParmType *IPT = cast<InjectedParmType>(OldType);
+      for (ParmVarDecl *Orig : IPT->getParameters()) {
+        QualType New = TransformType(Orig->getType());
+        if (New.isNull())
+          return true;
+        
+        if (ParamInfos)
+          PInfos.set(OutParamTypes.size(), ParamInfos[i]);
+        OutParamTypes.push_back(New);
+        if (PVars)
+          PVars->push_back(nullptr);
+      }
+      continue;
     } else {
       NewType = getDerived().TransformType(OldType);
     }
@@ -5326,24 +5337,6 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
 
     if (IsPackExpansion)
       NewType = getSema().Context.getPackExpansionType(NewType, NumExpansions);
-
-    // Handle injected type parameters.
-    if (const InjectedParmType *IPT = NewType->getAs<InjectedParmType>()) {
-      if (!IPT->isDependentType()) {
-        for (ParmVarDecl *Orig : IPT->getParameters()) {
-          QualType New = TransformType(Orig->getType());
-          if (New.isNull())
-            return true;
-          
-          if (ParamInfos)
-            PInfos.set(OutParamTypes.size(), ParamInfos[i]);
-          OutParamTypes.push_back(New);
-          if (PVars)
-            PVars->push_back(nullptr);
-        }
-        continue;
-      }
-    }
     
     if (ParamInfos)
       PInfos.set(OutParamTypes.size(), ParamInfos[i]);
@@ -13696,28 +13689,6 @@ TreeTransform<Derived>::TransformFunctionParameters(FunctionDecl *D,
     return;
 
   R->setParams(Params);
-
-  // llvm::SmallVector<ParmVarDecl *, 4> Params;
-  // for (ParmVarDecl *Old : D->parameters()) {
-  //   if (CXXInjectedParmDecl *IP = dyn_cast<CXXInjectedParmDecl>(Old)) { 
-  //     // Apply the transformation, returning N new parameters. Note that
-  //     // 0 is a valid number of parameters, so is a new injected parameter.
-  //     int N = getDerived().TransformLocalCXXInjectedParmDecl(IP, Params);
-  //     if (N < 0) {
-  //       R->setInvalidDecl(true);
-  //     } else {
-  //       // Update the owners of the function.
-  //       for (auto I = Params.end() - N; I != Params.end(); ++I)
-  //         (*I)->setOwningFunction(R);
-  //     }
-  //   } else {
-  //     ParmVarDecl *New 
-  //       = cast<ParmVarDecl>(getDerived().TransformDecl(Old->getLocation(), Old));
-  //     New->setOwningFunction(R);
-  //     Params.push_back(New);
-  //   }
-  // }
-  // R->setParams(Params);
 }
 
 

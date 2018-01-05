@@ -652,7 +652,8 @@ bool Sema::ActOnCXXInjectedParameter(SourceLocation Loc, Expr *Reflection,
                                            Context.getTranslationUnitDecl(), 
                                            Loc, Loc, II, T, TSI, SC_None,
                                            nullptr);    
-    New->setScopeInfo(0, Parms.size());
+      New->setScopeInfo(CurScope->getFunctionPrototypeDepth(),
+                        CurScope->getNextFunctionPrototypeIndex());
     Parms.push_back(DeclaratorChunk::ParamInfo(nullptr, Loc, New));
     return true;
   }
@@ -674,7 +675,8 @@ bool Sema::ActOnCXXInjectedParameter(SourceLocation Loc, Expr *Reflection,
                                              Orig->getIdentifier(),
                                              Orig->getType(), TSI, SC_None,
                                              nullptr);
-      New->setScopeInfo(0, Parms.size());
+      New->setScopeInfo(CurScope->getFunctionPrototypeDepth(),
+                        CurScope->getNextFunctionPrototypeIndex());
       Parms.push_back(DeclaratorChunk::ParamInfo(New->getIdentifier(),
                                                  New->getLocation(), New));
     }
@@ -694,7 +696,8 @@ bool Sema::ActOnCXXInjectedParameter(SourceLocation Loc, Expr *Reflection,
                                            Orig->getIdentifier(),
                                            Orig->getType(), TSI, SC_None,
                                            nullptr);
-    New->setScopeInfo(0, Parms.size());
+    New->setScopeInfo(CurScope->getFunctionPrototypeDepth(), 
+                      CurScope->getNextFunctionPrototypeIndex());
 
     Parms.push_back(DeclaratorChunk::ParamInfo(New->getIdentifier(),
                                                New->getLocation(), New));

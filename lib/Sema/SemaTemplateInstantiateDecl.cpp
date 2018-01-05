@@ -3584,7 +3584,7 @@ TemplateDeclInstantiator::SubstFunctionType(FunctionDecl *D,
       for (unsigned OldIdx = 0, NumOldParams = OldProtoLoc.getNumParams();
            OldIdx != NumOldParams; ++OldIdx) {
         ParmVarDecl *OldParam = OldProtoLoc.getParam(OldIdx);
-        
+
         LocalInstantiationScope *Scope = SemaRef.CurrentInstantiationScope;
 
         // FIXME: This is a bit of a hack... If the original parameter was
