@@ -3735,6 +3735,7 @@ public:
                                    SourceLocation ColonLoc, Expr *Collection,
                                    SourceLocation RParenLoc,
                                    BuildForRangeKind Kind);
+  StmtResult ActOnCXXExpansionStmtError(Stmt *S);
   StmtResult BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
                                         SourceLocation EllipsisLoc,
                                         SourceLocation ColonLoc,
@@ -10612,6 +10613,30 @@ private:
   IdentifierInfo *Ident__Null_unspecified = nullptr;
 
   IdentifierInfo *Ident_NSError = nullptr;
+
+public:
+  /// Tracks the nesting level of loop expansions. A loop expansion is
+  /// is initially dependent when parsed an instantiated. It is non-dependent
+  /// after that.
+  ///
+  /// This affects ODR usage. In particular, expressions in the body of
+  /// these statements aren't really expressions until they're instantiated.
+  struct LoopExpansionContext
+  {
+    LoopExpansionContext(FunctionDecl *F)
+      : Fn(F)
+    { }
+
+    FunctionDecl *Fn;
+    SmallVector<Stmt *, 4> Loops;
+  };
+
+  /// Maintains a stack of expansion contexts.
+  SmallVector<LoopExpansionContext, 4> LoopExpansionStack;
+
+  void PushLoopExpansion(Stmt *S);
+  void PopLoopExpansion();
+private:
 
 protected:
   friend class Parser;

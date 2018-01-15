@@ -1849,8 +1849,11 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   // Leave the for-scope.
   ForScope.Exit();
 
-  if (Body.isInvalid())
+  if (Body.isInvalid()) {
+    if (!EllipsisLoc.isInvalid())
+      return Actions.ActOnCXXExpansionStmtError(ForEachStmt.get());
     return StmtError();
+  }
 
   if (ForEach)
    return Actions.FinishObjCForCollectionStmt(ForEachStmt.get(),

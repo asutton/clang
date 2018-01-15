@@ -20,6 +20,7 @@ if(LIBCPPX_BUILDING_CLANG)
   # Install these headers in the build version of the resource dir
   set(output_dir ${LLVM_LIBRARY_OUTPUT_INTDIR}/clang/${CLANG_VERSION}/include)
 
+  message(STATUS "Copying CPPX headers")
   file(COPY cppx DESTINATION ${output_dir}
     FILES_MATCHING ${LIBCPPX_HEADER_PATTERN})
   

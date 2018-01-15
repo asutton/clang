@@ -5085,7 +5085,6 @@ ParmVarDecl *TreeTransform<Derived>::TransformFunctionTypeParam(
                                              /* DefArg */ nullptr);
   newParm->setScopeInfo(OldParm->getFunctionScopeDepth(),
                         OldParm->getFunctionScopeIndex() + indexAdjustment);
-
   return newParm;
 }
 
@@ -5199,7 +5198,7 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
         for (ParmVarDecl *Old : IPT->getParameters()) {
           ParmVarDecl *New
             = getDerived().TransformFunctionTypeParam(Old,
-                                                      indexAdjustment++,
+                                                      indexAdjustment,
                                                       NumExpansions,
                                                  /*ExpectParameterPack=*/false);
           if (!New)
@@ -5217,7 +5216,8 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
         
         // Decrement the index adjustment so the next parameter has
         // the same adjustment as the last pushed. (Same reason as above).
-        --indexAdjustment;
+        // --indexAdjustment;
+        indexAdjustment += (IPT->getParameters().size() - 1);
 
         continue;
       } else {
@@ -7819,6 +7819,7 @@ TreeTransform<Derived>::TransformCXXTupleExpansionStmt(
   if (RangeVar.isInvalid())
     return StmtError();
 
+  // FIXME: Is this actually an evaluated expression.
   StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
   if (LoopVar.isInvalid())
     return StmtError();

@@ -308,6 +308,8 @@ Sema::~Sema() {
   DestroyDataSharingAttributesStack();
 
   assert(DelayedTypos.empty() && "Uncorrected typos!");
+
+  assert(LoopExpansionStack.empty() && "Imbalanced loop expansion stack");
 }
 
 /// makeUnavailableInSystemHeader - There is an error in the current

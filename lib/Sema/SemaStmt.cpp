@@ -2730,7 +2730,7 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
   }
 
   // Build the other various subexpressions needed for the loop body.
-  return BuildCXXTupleExpansionStmt(ForLoc, EllipsisLoc, ColonLoc,
+  return BuildCXXTupleExpansionStmt(ForLoc, EllipsisLoc, ColonLoc, 
                                     RangeDecl.get(), LoopDS, RParenLoc, Kind);
 }
 
@@ -2862,10 +2862,17 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
       return StmtError();
   }
 
-  // Note that the body isn't parsed yet.
-  return new (Context) CXXTupleExpansionStmt(
-      ParmList, RangeVarDS, LoopVarDS, nullptr, Size.getExtValue(), ForLoc,
-      EllipsisLoc, ColonLoc, RParenLoc);
+  // Build the incomplete expression.
+  Stmt *Ret = new (Context) CXXTupleExpansionStmt(ParmList, RangeVarDS, 
+                                                  LoopVarDS, nullptr, 
+                                                  Size.getExtValue(), ForLoc, 
+                                                  EllipsisLoc, ColonLoc, 
+                                                  RParenLoc);
+
+  // Indicate that the following statements parsed in a dependent context.
+  PushLoopExpansion(Ret);
+
+  return Ret;
 }
 
 StmtResult Sema::BuildCXXPackExpansionStmt(SourceLocation ForLoc,
@@ -2875,6 +2882,22 @@ StmtResult Sema::BuildCXXPackExpansionStmt(SourceLocation ForLoc,
                                            SourceLocation RParenLoc,
                                            BuildForRangeKind Kind) {
   llvm_unreachable("unimplemented");
+}
+
+// Check tat the 
+static bool
+CheckLoopExapansionStack(Sema &SemaRef, Stmt *S) {
+  if (SemaRef.LoopExpansionStack.empty())
+    return false;
+  Sema::LoopExpansionContext& Ctx = SemaRef.LoopExpansionStack.back();
+  return Ctx.Loops.back() == S;
+}
+
+/// Pop the current loop instantiation.
+StmtResult Sema::ActOnCXXExpansionStmtError(Stmt *S) {
+  assert(CheckLoopExapansionStack(*this, S));
+  PopLoopExpansion();
+  return StmtError();
 }
 
 /// FinishObjCForCollectionStmt - Attach the body to a objective-C foreach
@@ -3069,6 +3092,9 @@ StmtResult Sema::FinishCXXForRangeStmt(Stmt *S, Stmt *B) {
 StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
                                              Stmt *B) {
   SourceLocation Loc = S->getColonLoc();
+
+  // We're no longer in a dependent loop body context.
+  PopLoopExpansion();
 
   // The loop body is the pre-instantiated version of the composed loop body.
   S->setBody(B);
@@ -4558,4 +4584,25 @@ StmtResult Sema::ActOnCapturedRegionEnd(Stmt *S) {
   PopFunctionScopeInfo();
 
   return Res;
+}
+
+void
+Sema::PushLoopExpansion(Stmt *S)
+{
+  assert(isa<FunctionDecl>(CurContext));
+  FunctionDecl *F = cast<FunctionDecl>(CurContext);
+  if (LoopExpansionStack.empty())
+    LoopExpansionStack.emplace_back(F);
+  LoopExpansionContext& Ctx = LoopExpansionStack.back();
+  Ctx.Loops.push_back(S);
+}
+
+void
+Sema::PopLoopExpansion()
+{
+  assert(!LoopExpansionStack.empty());
+  LoopExpansionContext& Ctx = LoopExpansionStack.back();
+  Ctx.Loops.pop_back();
+  if (Ctx.Loops.empty())
+    LoopExpansionStack.pop_back();
 }

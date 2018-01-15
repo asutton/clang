@@ -297,6 +297,17 @@ template<reflection_t X, reflection_kind K>
 struct type : named<X, K> {
 };
 
+template<reflection_t X1, reflection_kind K1, reflection_t X2, reflection_kind K2>
+constexpr bool operator==(type<X1, K1>, type<X2, K2>) {
+  return X1 == X2;
+}
+
+template<reflection_t X1, reflection_kind K1, reflection_t X2, reflection_kind K2>
+constexpr bool operator!=(type<X1, K1>, type<X2, K2>) {
+  return X1 != X2;
+}
+
+
 template<reflection_t X>
 struct fundamental_type : type<X, fundamental_type_kind> {
 };
