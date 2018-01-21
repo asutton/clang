@@ -232,11 +232,12 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
     Inst.InstantiationRange = InstantiationRange;
     SemaRef.pushCodeSynthesisContext(Inst);
 
-    AlreadyInstantiating =
-        Inst.Entity && // There is no entity when instantiating a for loop.
-        !SemaRef.InstantiatingSpecializations
-             .insert(std::make_pair(Inst.Entity->getCanonicalDecl(), Inst.Kind))
-             .second;
+    if (Inst.Entity) {
+      auto X = SemaRef.InstantiatingSpecializations
+         .insert(std::make_pair(Inst.Entity->getCanonicalDecl(), Inst.Kind));
+      AlreadyInstantiating = !X.second;
+    } else
+      AlreadyInstantiating = false;
   }
 }
 
