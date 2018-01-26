@@ -20,6 +20,7 @@
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/ExternalASTSource.h"
 #include "clang/AST/LocInfoType.h"
@@ -50,7 +51,6 @@
 #include "clang/Sema/Weak.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/Optional.h"
-#include "llvm/ADT/PointerSumType.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -265,16 +265,6 @@ public:
     Cache.Nullability = Map[file];
     return Cache.Nullability;
   }
-};
-
-/// \brief The kind of source code construct reflected.
-/// This value is packed into the low-order bits of each reflected pointer.
-///
-/// FIXME: Put this somewhere meaningful.
-enum ReflectionKind { 
-  RK_Decl = 1, 
-  RK_Type = 2, 
-  RK_Base = 3 
 };
 
 
@@ -8458,64 +8448,6 @@ public:
 
   ExprResult BuildConstantExpression(Expr *E);
 
-  using ReflectionValue = llvm::PointerSumType<
-    ReflectionKind,
-    llvm::PointerSumTypeMember<RK_Decl, Decl *>, 
-    llvm::PointerSumTypeMember<RK_Type, Type *>, 
-    llvm::PointerSumTypeMember<RK_Base, CXXBaseSpecifier *>>;
-
-  using ReflectionPair = std::pair<ReflectionKind, void *>;
-
-  /// A wrapper around an exploded reflection pair. 
-  struct ReflectedConstruct {
-    bool Valid;
-    ReflectionPair P;
-
-    ReflectedConstruct() 
-      : Valid(false), P() { }
-    
-    ReflectedConstruct(std::uintptr_t V) 
-      : Valid(true), P(Explode(V)) { }
-
-    /// Returns true if the reflection is valid.
-    bool isValid() const { return Valid; }
-
-    /// Returns true if the reflection is invalid.
-    bool isInvalid() const { return !Valid; }
-
-    /// Converts to true when the reflection is valid.
-    explicit operator bool() const { return Valid; }
-
-    /// \brief The kind of construct reflected.
-    ReflectionKind getKind() const { return P.first; }
-
-    /// Returns true if this is a declaration.
-    bool isDeclaration() const { return P.first == RK_Decl; }
-    
-    /// Returns true if this is a type reflection.
-    bool isType() const { return P.first == RK_Type; }
-
-    /// \brief True if a reflection of a base class specifier.
-    bool isBaseSpecifier() const { return P.first == RK_Base; }
-
-    /// Returns the reflected declaration or nullptr if not a declaration.
-    Decl *getAsDeclaration() {
-      return isDeclaration() ? (Decl *)P.second : nullptr;
-    }
-
-    /// Returns the reflected type or nullptr if not a type.
-    Type *getAsType() {
-      return isType() ? (Type *)P.second : nullptr;
-    }
-
-    /// \brief The reflected base class specifier or nullptr.
-    CXXBaseSpecifier *getAsBaseSpecifier() {
-      return isBaseSpecifier() ? (CXXBaseSpecifier *)P.second : nullptr;
-    }
-
-    static ReflectionPair Explode(std::uintptr_t N);
-  };
-
   bool isReflectionType(QualType T);
   ReflectedConstruct EvaluateReflection(QualType T, SourceLocation Loc);
   ReflectedConstruct EvaluateReflection(Expr *E);
@@ -8629,11 +8561,8 @@ public:
                                  IdentifierInfo *II,
                         SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);
 
-  using InjectionInfo = Expr::InjectionInfo;
-
   // Source code injection/modification
-  bool ApplySourceCodeModifications(SourceLocation POI,
-                                    SmallVectorImpl<InjectionInfo> &Injections);
+  bool ApplyEffects(SourceLocation POI, SmallVectorImpl<EvalEffect> &Injections);
 
   void ApplyMetaclass(MetaclassDecl *Meta, 
                       CXXRecordDecl *Proto, 

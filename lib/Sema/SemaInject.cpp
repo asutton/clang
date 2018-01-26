@@ -487,7 +487,7 @@ StmtResult Sema::BuildCXXExtensionStmt(SourceLocation Loc,
 static Decl *
 GetDeclFromReflection(Sema &SemaRef, QualType Ty, SourceLocation Loc)
 {
-  Sema::ReflectedConstruct Construct = SemaRef.EvaluateReflection(Ty, Loc);
+  ReflectedConstruct Construct = SemaRef.EvaluateReflection(Ty, Loc);
   Decl *Injection = nullptr;
   if (Type *T = Construct.getAsType()) {
     if (CXXRecordDecl *Class = T->getAsCXXRecordDecl())
@@ -1069,7 +1069,7 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
 }
 
 static bool
-ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
+ApplyInjection(Sema &SemaRef, SourceLocation POI, InjectionInfo &II) {
   // Get the injection declaration.
   Decl *Injection = GetDeclFromReflection(SemaRef, II.ReflectionType, POI);
 
@@ -1099,16 +1099,39 @@ ApplyInjection(Sema &SemaRef, SourceLocation POI, Sema::InjectionInfo &II) {
     return CopyDeclaration(SemaRef, POI, Ty, Val, Injectee, Injection, Decls);
 }
 
+static bool
+ApplyDiagnostic(Sema &SemaRef, SourceLocation Loc, const APValue &Arg)
+{
+  PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
+  ReflectedConstruct R(Arg.getInt().getExtValue());
+  if (Decl *D = R.getAsDeclaration()) {
+    PP.TerseOutput = false;
+    D->print(llvm::errs(), PP);
+    llvm::errs() << '\n';
+  } else if (Type *T = R.getAsType()) {
+    QualType QT(T, 0);
+    QT.print(llvm::errs(), PP);
+    llvm::errs() << '\n';
+  } else {
+    llvm_unreachable("printing invalid reflection");
+  }
+  return true;
+}
+
 /// Inject a sequence of source code fragments or modification requests
 /// into the current AST. The point of injection (POI) is the point at
 /// which the injection is applied.
 ///
 /// \returns  true if no errors are encountered, false otherwise.
-bool Sema::ApplySourceCodeModifications(SourceLocation POI, 
-                                   SmallVectorImpl<InjectionInfo> &Injections) {
+bool Sema::ApplyEffects(SourceLocation POI, 
+                        SmallVectorImpl<EvalEffect> &Effects) {
   bool Ok = true;
-  for (InjectionInfo &II : Injections)
-    Ok &= ApplyInjection(*this, POI, II);
+  for (EvalEffect &Effect : Effects) {
+    if (Effect.Kind == EvalEffect::InjectionEffect)
+      Ok &= ApplyInjection(*this, POI, *Effect.Injection);
+    else
+      Ok &= ApplyDiagnostic(*this, POI, *Effect.DiagnosticArg);
+  }
   return Ok;
 }
 

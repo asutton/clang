@@ -23,6 +23,7 @@
 #include "clang/AST/UnresolvedSet.h"
 #include "clang/Basic/ExpressionTraits.h"
 #include "clang/Basic/TypeTraits.h"
+#include "llvm/ADT/PointerSumType.h"
 #include "llvm/Support/Compiler.h"
 
 namespace clang {
@@ -4374,6 +4375,76 @@ public:
     return child_range(child_iterator(), child_iterator());
   }
 };
+
+/// \brief The kind of source code construct reflected.
+/// This value is packed into the low-order bits of each reflected pointer.
+///
+/// FIXME: Put this somewhere meaningful.
+enum ReflectionKind { 
+  RK_Decl = 1, 
+  RK_Type = 2, 
+  RK_Base = 3 
+};
+
+/// Stores a reflection by stuffing bits into pointer.
+using ReflectionValue = llvm::PointerSumType<
+  ReflectionKind,
+  llvm::PointerSumTypeMember<RK_Decl, Decl *>, 
+  llvm::PointerSumTypeMember<RK_Type, Type *>, 
+  llvm::PointerSumTypeMember<RK_Base, CXXBaseSpecifier *>>;
+
+using ReflectionPair = std::pair<ReflectionKind, void *>;
+
+/// A wrapper around an exploded reflection pair. 
+struct ReflectedConstruct {
+  bool Valid;
+  ReflectionPair P;
+
+  ReflectedConstruct() 
+    : Valid(false), P() { }
+  
+  ReflectedConstruct(std::uintptr_t V) 
+    : Valid(true), P(Explode(V)) { }
+
+  /// Returns true if the reflection is valid.
+  bool isValid() const { return Valid; }
+
+  /// Returns true if the reflection is invalid.
+  bool isInvalid() const { return !Valid; }
+
+  /// Converts to true when the reflection is valid.
+  explicit operator bool() const { return Valid; }
+
+  /// \brief The kind of construct reflected.
+  ReflectionKind getKind() const { return P.first; }
+
+  /// Returns true if this is a declaration.
+  bool isDeclaration() const { return P.first == RK_Decl; }
+  
+  /// Returns true if this is a type reflection.
+  bool isType() const { return P.first == RK_Type; }
+
+  /// \brief True if a reflection of a base class specifier.
+  bool isBaseSpecifier() const { return P.first == RK_Base; }
+
+  /// Returns the reflected declaration or nullptr if not a declaration.
+  Decl *getAsDeclaration() {
+    return isDeclaration() ? (Decl *)P.second : nullptr;
+  }
+
+  /// Returns the reflected type or nullptr if not a type.
+  Type *getAsType() {
+    return isType() ? (Type *)P.second : nullptr;
+  }
+
+  /// \brief The reflected base class specifier or nullptr.
+  CXXBaseSpecifier *getAsBaseSpecifier() {
+    return isBaseSpecifier() ? (CXXBaseSpecifier *)P.second : nullptr;
+  }
+
+  static ReflectionPair Explode(std::uintptr_t N);
+};
+
 
 /// \brief A reflection trait intrinsic.
 /// 

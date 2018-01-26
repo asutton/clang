@@ -628,6 +628,13 @@ public:
     return Builder.getInt1(E->getValue());
   }
 
+  // FIXME: We should never actually get here... except that apparently
+  // functions calling these expressions are sometimes odr-used.
+  Value *VisitReflectionTraitExpr(const ReflectionTraitExpr *E) {
+    return nullptr;
+  }
+
+
   // Binary Operators.
   Value *EmitMul(const BinOpInfo &Ops) {
     if (Ops.Ty->isSignedIntegerOrEnumerationType()) {

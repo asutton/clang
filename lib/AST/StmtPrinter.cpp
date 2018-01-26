@@ -2584,7 +2584,7 @@ void StmtPrinter::VisitCXXDependentIdExpr(CXXDependentIdExpr *Node) {
 
 void StmtPrinter::VisitCXXFragmentExpr(CXXFragmentExpr *Node) {
   OS << "__fragment ";
-  Node->getFragment()->print(OS, Policy);
+  Node->getFragment()->getContent()->print(OS, Policy);
 }
 
 // Obj-C

@@ -21,19 +21,6 @@
 using namespace clang;
 using namespace sema;
 
-/// Returns a pair containing the reflection kind and AST node pointer.
-Sema::ReflectionPair Sema::ReflectedConstruct::Explode(std::uintptr_t N) {
-  // Look away. I'm totally breaking abstraction.
-  using Helper = llvm::detail::PointerSumTypeHelper<
-      ReflectionKind, 
-      llvm::PointerSumTypeMember<RK_Decl, Decl *>,
-      llvm::PointerSumTypeMember<RK_Type, Type *>,
-      llvm::PointerSumTypeMember<RK_Base, CXXBaseSpecifier *>>;
-  ReflectionKind K = (ReflectionKind)(N & Helper::TagMask);
-  void *P = (void *)(N & Helper::PointerMask);
-  return {K, P};
-}
-
 /// FIXME: Move this to ASTContext.
 bool Sema::isReflectionType(QualType T) {
   if (CXXRecordDecl *Class = T->getAsCXXRecordDecl()) {
@@ -67,8 +54,7 @@ static ExprResult ValueReflectionError(Sema &SemaRef, SourceLocation Loc) {
   return ExprResult(true);
 }
 
-Sema::ReflectedConstruct Sema::EvaluateReflection(QualType T, 
-                                                  SourceLocation Loc) {
+ReflectedConstruct Sema::EvaluateReflection(QualType T, SourceLocation Loc) {
   T = Context.getCanonicalType(T);
   CXXRecordDecl *Class = T->getAsCXXRecordDecl();
   if (!Class) {
@@ -118,7 +104,7 @@ Sema::ReflectedConstruct Sema::EvaluateReflection(QualType T,
   return ReflectedConstruct(Data.getExtValue());  
 }
 
-Sema::ReflectedConstruct Sema::EvaluateReflection(Expr *E) {
+ReflectedConstruct Sema::EvaluateReflection(Expr *E) {
   if (E->getType() == Context.getIntPtrType()) {
     // If this looks like an encoded integer, then evaluate it as such.
     //
@@ -372,7 +358,7 @@ static bool AppendInteger(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
 
 static bool
 AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
-  Sema::ReflectedConstruct RC = S.EvaluateReflection(E);
+  ReflectedConstruct RC = S.EvaluateReflection(E);
   if (Decl *D = RC.getAsDeclaration()) {
     // If this is a named declaration, append its identifier.
     if (!isa<NamedDecl>(D)) {
@@ -838,7 +824,7 @@ struct Reflector {
   ExprResult ReflectBase(Decl *D, const llvm::APSInt &N);
 };
 
-/// Returns \c true if \p RTK is a reflection trait that would modify a property
+/// Returns true if RTK is a reflection trait that would modify a property
 /// of a declaration.
 static inline bool IsModificationTrait(ReflectionTrait RTK) {
   return RTK >= BRT_ModifyAccess;
@@ -873,12 +859,9 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
                                       ReflectionTrait Kind,
                                       ArrayRef<Expr *> Args,
                                       SourceLocation RParenLoc) {
-  // If any arguments are dependent, then the result is a dependent
-  // expression.
-  //
-  // TODO: What if a argument is type dependent?
+  // If any arguments are dependent, then the result is a dependent expression.
   for (unsigned i = 0; i < Args.size(); ++i) {
-    if (Args[i]->isValueDependent()) {
+    if (Args[i]->isTypeDependent() || Args[i]->isValueDependent()) {
       QualType Ty = Context.DependentTy;
       return new (Context) ReflectionTraitExpr(Context, Kind, Ty, Args,
                                                APValue(), KWLoc, RParenLoc);
@@ -887,7 +870,9 @@ ExprResult Sema::ActOnReflectionTrait(SourceLocation KWLoc,
 
   // Modifications are preserved until constexpr evaluation. These expressions
   // have type void.
-  if (IsModificationTrait(Kind))
+  //
+  // Printing has an effect and must be evaluated, not instantiated.
+  if (IsModificationTrait(Kind) || Kind == URT_ReflectPrint)
     return new (Context) ReflectionTraitExpr(Context, Kind, Context.VoidTy,
                                              Args, APValue(), KWLoc, RParenLoc);
 
@@ -1743,7 +1728,7 @@ ExprResult Reflector::ReflectBase(Decl *D, const llvm::APSInt &N) {
   TemplateName TempName(Temp);
 
   // Build a template specialization, instantiate it, and then complete it.
-  Sema::ReflectionValue RV = Sema::ReflectionValue::create<RK_Base>(&*Iter);
+  ReflectionValue RV = ReflectionValue::create<RK_Base>(&*Iter);
   QualType IntPtrTy = S.Context.getIntPtrType();
   llvm::APSInt Val = S.Context.MakeIntValue(RV.getOpaqueValue(), IntPtrTy);
   Expr *Literal = new (S.Context) IntegerLiteral(S.Context, Val, IntPtrTy, KWLoc);
@@ -1927,7 +1912,7 @@ GetNonDependentReflectedType(Sema &SemaRef, Expr *E)
   // Decode the specialization argument as a type.
   llvm::APSInt Data = Arg.getAsIntegral();
 
-  Sema::ReflectedConstruct C(Data.getExtValue());
+  ReflectedConstruct C(Data.getExtValue());
 
   if (Type *T = C.getAsType()) {
     // Returns the referenced type. For example:
@@ -2540,10 +2525,10 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   // assert(InjectedStmts.empty() && "Residual injected statements");
 
   SmallVector<PartialDiagnosticAt, 8> Notes;
-  SmallVector<Expr::InjectionInfo, 16> Injections;
+  SmallVector<EvalEffect, 16> Effects;
   Expr::EvalResult Result;
   Result.Diag = &Notes;
-  Result.Injections = &Injections;
+  Result.Effects = &Effects;
 
   bool Folded = Call->EvaluateAsRValue(Result, Context);
   if (!Folded) {
@@ -2569,7 +2554,7 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   // the class; it shouldn't be visible in the output code.
   //
   SourceLocation POI = CD->getSourceRange().getEnd();
-  ApplySourceCodeModifications(POI, Injections);
+  ApplyEffects(POI, Effects);
 
   // FIXME: Do we really want to remove the metaprogram after evaluation? Or
   // should we just mark it completed.

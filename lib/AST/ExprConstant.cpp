@@ -4055,7 +4055,7 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     if (Info.checkingPotentialConstantExpression())
       return ESR_Succeeded;
 
-    if (!Info.EvalStatus.Injections) {
+    if (!Info.EvalStatus.Effects) {
       // Only metapgrams can produce injection results.
       Info.CCEDiag(S->getLocStart(), diag::note_injection_outside_constexpr_decl);
       return ESR_Failed;
@@ -4069,8 +4069,10 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
       return ESR_Failed;
 
     // Queue the injection as a side effect.
-    Expr::InjectionInfo II {Reflection->getType(), Result, QualType()};
-    Info.EvalStatus.Injections->push_back(II);
+    Info.EvalStatus.Effects->emplace_back();
+    EvalEffect &Effect = Info.EvalStatus.Effects->back();
+    Effect.Kind = EvalEffect::InjectionEffect;
+    Effect.Injection = new InjectionInfo{Reflection->getType(), Result, QualType()};
     return ESR_Succeeded;
   }
 
@@ -4078,7 +4080,7 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     if (Info.checkingPotentialConstantExpression())
       return ESR_Succeeded;
 
-    if (!Info.EvalStatus.Injections) {
+    if (!Info.EvalStatus.Effects) {
       // Only metapgrams can produce modifications.
       Info.CCEDiag(S->getLocStart(), diag::note_injection_outside_constexpr_decl);
       return ESR_Failed;
@@ -4102,8 +4104,10 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
       return ESR_Failed;
 
     // Queue the injection as a side effect.
-    Expr::InjectionInfo II {Reflection->getType(), R1, Target->getType()};
-    Info.EvalStatus.Injections->push_back(II);
+    Info.EvalStatus.Effects->emplace_back();
+    EvalEffect &Effect = Info.EvalStatus.Effects->back();
+    Effect.Kind = EvalEffect::InjectionEffect;
+    Effect.Injection = new InjectionInfo{Reflection->getType(), R1, Target->getType()};
     return ESR_Succeeded;  
   }
 
@@ -4946,9 +4950,10 @@ public:
     llvm_unreachable("Return from function from the loop above.");
   }
 
-  /// Visit a reflection trait expression. The value is computed during 
-  /// semantic analysis, so just return that here.
+  /// Visit a reflection trait expression.
   bool VisitReflectionTraitExpr(const ReflectionTraitExpr* E) {
+    // NOTE: Unless the trait has effects, these are evaluated at the point
+    // of translation. See the void visitor for traits with effects.
     return DerivedSuccess(E->getValue(), E);
   }
 
@@ -9918,9 +9923,9 @@ public:
 
   // Try adding the injection for future processing.
   bool RegisterInjection(const Expr *E) {
-    if (Info.EvalStatus.Injections) {
+    if (Info.EvalStatus.Effects) {
       llvm_unreachable("not implemented");
-      // Info.EvalStatus.Injections->push_back(const_cast<Expr *>(E));
+      // Info.EvalStatus.Effects->push_back(const_cast<Expr *>(E));
       // return true;
     }
     return Error(E, diag::note_modification_outside_constexpr_decl);
@@ -9935,6 +9940,22 @@ public:
       return false;
 
     switch (E->getTrait()) {
+    case URT_ReflectPrint: {
+      APValue Arg;
+      if (!Evaluate(Arg, Info, E->getArg(0)))
+        return Error(E, diag::note_invalid_subexpr_in_const_expr);
+
+      // FIXME: Traits also appear to be tentatively evaluated during codegen.
+      // It makes sense if this doesn't trigger output, but we probably
+      // shouldn't be generating the functions that invoke these expressions.
+      if (Info.EvalStatus.Effects) {
+        Info.EvalStatus.Effects->emplace_back();
+        EvalEffect &Effect = Info.EvalStatus.Effects->back();
+        Effect.Kind = EvalEffect::DiagnosticEffect;
+        Effect.DiagnosticArg = new APValue(Arg);
+      }
+      return Success(E->getValue(), E);
+    }
     case BRT_ModifyAccess:
     case BRT_ModifyVirtual:
     case URT_ModifyConstexpr:

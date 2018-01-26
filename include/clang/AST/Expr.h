@@ -98,6 +98,53 @@ struct SubobjectAdjustment {
   }
 };
 
+/// An injection records a code generation effect resulting from evaluation.
+/// This is a set containing the values of captured declarations and the
+/// expression into which those will be substituted.
+struct InjectionInfo {
+  /// The type of the expression being injected. This determines how the
+  /// result will be interpreted semantically.
+  QualType ReflectionType;
+
+  /// The actual value computed by the injection statement.
+  APValue ReflectionValue;
+
+  /// If non-null, the type of the injectee. This embeds the declaration
+  /// into which the value or contents will be injected.
+  QualType InjecteeType;
+};
+
+/// Represents a side-effect to constexpr evaluation. When recorded,
+/// these are returned to the semantic analyzer for subsequent processing.
+struct EvalEffect
+{
+  enum {
+    InjectionEffect,
+    DiagnosticEffect,
+  } Kind;
+
+  union {
+    /// Information about the injected entity.
+    InjectionInfo *Injection;
+
+    /// The argument to the print function: a reflection value.
+    APValue *DiagnosticArg;
+  };
+
+  EvalEffect()
+    : Injection(nullptr)
+  { }
+
+  ~EvalEffect() {
+    if (Kind == InjectionEffect)
+      delete Injection;
+    else
+      delete DiagnosticArg;
+  }
+};
+
+
+
 /// Expr - This represents one expression.  Note that Expr's are subclasses of
 /// Stmt.  This allows an expression to be transparently used any place a Stmt
 /// is required.
@@ -534,22 +581,6 @@ public:
   bool isConstantInitializer(ASTContext &Ctx, bool ForRef,
                              const Expr **Culprit = nullptr) const;
 
-  /// An injection records a code generation effect resulting from evaluation.
-  /// This is a set containing the values of captured declarations and the
-  /// expression into which those will be substituted.
-  struct InjectionInfo {
-    /// The type of the expression being injected. This determines how the
-    /// result will be interpreted semantically.
-    QualType ReflectionType;
-
-    /// The actual value computed by the injection statement.
-    APValue ReflectionValue;
-
-    /// If non-null, the type of the injectee. This embeds the declaration
-    /// into which the value or contents will be injected.
-    QualType InjecteeType;
-  };
-
   /// EvalStatus is a struct with detailed info about an evaluation in progress.
   struct EvalStatus {
     /// \brief Whether the evaluated expression has side effects.
@@ -570,17 +601,18 @@ public:
     /// expression *is* a constant expression, no notes will be produced.
     SmallVectorImpl<PartialDiagnosticAt> *Diag;
 
-    /// \brief A list of source code injections encountered during evaluation.
+    /// \brief A list of certain kinds of side effects encountered during
+    /// evaluation.
     ///
     /// If evaluation encounters an source code injection when this is not
     /// set, the expression has undefined behavior. This is only set for the
     /// evaluation of metaprograms. No other evaluations should modify source 
     /// code.
-    SmallVectorImpl<InjectionInfo> *Injections;
+    SmallVectorImpl<EvalEffect> *Effects;
 
     EvalStatus()
         : HasSideEffects(false), HasUndefinedBehavior(false), Diag(nullptr),
-          Injections(nullptr) {}
+          Effects(nullptr) {}
 
     // hasSideEffects - Return true if the evaluated expression has
     // side effects.

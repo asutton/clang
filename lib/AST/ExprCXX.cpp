@@ -1494,3 +1494,16 @@ CXXFragmentExpr::CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc,
     Captures(new (Ctx) Expr*[NumCaptures]), Fragment(Frag), Init(E) {
   std::copy(Caps.begin(), Caps.end(), Captures);
 }
+
+/// Returns a pair containing the reflection kind and AST node pointer.
+ReflectionPair ReflectedConstruct::Explode(std::uintptr_t N) {
+  // Look away. I'm totally breaking abstraction.
+  using Helper = llvm::detail::PointerSumTypeHelper<
+      ReflectionKind, 
+      llvm::PointerSumTypeMember<RK_Decl, Decl *>,
+      llvm::PointerSumTypeMember<RK_Type, Type *>,
+      llvm::PointerSumTypeMember<RK_Base, CXXBaseSpecifier *>>;
+  ReflectionKind K = (ReflectionKind)(N & Helper::TagMask);
+  void *P = (void *)(N & Helper::PointerMask);
+  return {K, P};
+}
