@@ -2576,12 +2576,17 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
   // FIXME: We need to notify the ASTMutationListener that we did all of these
   // things, in case we have an explicit instantiation definition in a PCM, a
   // module, or preamble, and the declaration is in an imported AST.
-  assert(
-      (TSK == TSK_ExplicitInstantiationDefinition ||
-       TSK == TSK_ExplicitInstantiationDeclaration ||
-       (TSK == TSK_ImplicitInstantiation && Instantiation->isLocalClass()) ||
-       (TSK == TSK_ImplicitInstantiation && Instantiation->isInFragment())) &&
-      "Unexpected template specialization kind!");
+
+  // FIXME: An injected class is a kind of implicitly instantiated local
+  // class. But that property doesn't appear to be readily detectable. How
+  // should we go about determining that?
+  // assert(
+  //     (TSK == TSK_ExplicitInstantiationDefinition ||
+  //      TSK == TSK_ExplicitInstantiationDeclaration ||
+  //      (TSK == TSK_ImplicitInstantiation && Instantiation->isLocalClass()) ||
+  //      (TSK == TSK_ImplicitInstantiation && Instantiation->isInFragment())) &&
+  //     "Unexpected template specialization kind!");
+  
   for (auto *D : Instantiation->decls()) {
     bool SuppressNew = false;
     if (auto *Function = dyn_cast<FunctionDecl>(D)) {

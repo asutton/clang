@@ -844,6 +844,9 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
   InjectionCxt.AddDeclSubstitution(Injection, Injectee);
   InjectionCxt.AddPlaceholderSubstitutions(Fragment, Class, Captures);
 
+  // Establish injectee as the current context.
+  Sema::ContextRAII Switch(SemaRef, InjecteeDC, isa<CXXRecordDecl>(Injectee));
+
   // llvm::outs() << "=============================================\n";
   // llvm::outs() << "INJECTING\n";
   // Fragment->dump();
@@ -951,6 +954,9 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   Sema::InstantiatingTemplate Inst(SemaRef, POI, &InjectionCxt);
   InjectionCxt.AddDeclSubstitution(InjectionOwner, Injectee);
 
+  // Establish injectee as the current context.
+  Sema::ContextRAII Switch(SemaRef, InjecteeDC, isa<CXXRecordDecl>(Injectee));
+
   // Unpack the modification traits so we can apply them after generating
   // the declaration.
   DeclarationName Name(&SemaRef.Context.Idents.get("mods"));
@@ -993,9 +999,9 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
     Injectee->setInvalidDecl(true);
     return false;
   }
-  // llvm::outs() << "AFTER CLONING\n";
+  // llvm::outs() << "AFTER CLONING: " << Injectee->getDeclKindName() << "\n";
   // Result->dump();
-  // Decl::castFromDeclContext(Result->getDeclContext())->dump();
+  // Injectee->dump();
 
   // Update access specifiers.
   if (Access) {
@@ -1099,22 +1105,33 @@ ApplyInjection(Sema &SemaRef, SourceLocation POI, InjectionInfo &II) {
     return CopyDeclaration(SemaRef, POI, Ty, Val, Injectee, Injection, Decls);
 }
 
-static bool
-ApplyDiagnostic(Sema &SemaRef, SourceLocation Loc, const APValue &Arg)
-{
+static void
+PrintDecl(Sema &SemaRef, Decl *D) {
   PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
+  PP.TerseOutput = false;
+  D->print(llvm::errs(), PP);
+  llvm::errs() << '\n';
+}
+
+static void
+PrintType(Sema &SemaRef, Type *T) {
+  if (TagDecl *TD = T->getAsTagDecl())
+    return PrintDecl(SemaRef, TD);
+  PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
+  QualType QT(T, 0);
+  QT.print(llvm::errs(), PP);
+  llvm::errs() << '\n';
+}
+
+static bool
+ApplyDiagnostic(Sema &SemaRef, SourceLocation Loc, const APValue &Arg) {
   ReflectedConstruct R(Arg.getInt().getExtValue());
-  if (Decl *D = R.getAsDeclaration()) {
-    PP.TerseOutput = false;
-    D->print(llvm::errs(), PP);
-    llvm::errs() << '\n';
-  } else if (Type *T = R.getAsType()) {
-    QualType QT(T, 0);
-    QT.print(llvm::errs(), PP);
-    llvm::errs() << '\n';
-  } else {
+  if (Decl *D = R.getAsDeclaration())
+    PrintDecl(SemaRef, D);
+  else if (Type *T = R.getAsType())
+    PrintType(SemaRef, T);
+  else
     llvm_unreachable("printing invalid reflection");
-  }
   return true;
 }
 
