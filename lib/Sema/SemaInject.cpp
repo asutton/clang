@@ -863,7 +863,6 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
     MultiLevelTemplateArgumentList Args;
     Decl *R = SemaRef.SubstDecl(D, InjecteeDC, Args);
     if (!R || R->isInvalidDecl()) {
-      if (R) R->dump();
       Injectee->setInvalidDecl(true);
       continue;
     }
@@ -984,7 +983,7 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
 
   // llvm::outs() << "BEFORE\n";
   // Injection->dump();
-  // Injectee->dump();
+  // // Injectee->dump();
 
   // Build the declaration. If there was a request to make field static, we'll
   // need to build a new declaration.
@@ -1081,7 +1080,7 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
 
   Decls.push_back(Result);
 
-  return Injectee->isInvalidDecl(); 
+  return !Injectee->isInvalidDecl(); 
 }
 
 static bool
@@ -1162,7 +1161,6 @@ bool Sema::ApplyEffects(SourceLocation POI,
   return Ok;
 }
 
-
 /// Copy, by way of transforming, the members of the given C++ metaclass into
 /// the target class.
 ///
@@ -1228,67 +1226,67 @@ void Sema::ApplyMetaclass(MetaclassDecl *Meta,
 #endif
 }
 
-  Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,
-                                                       bool IsClass,
-                                                       SourceLocation IdLoc,
-                                                       IdentifierInfo *Id,
-                                                       Expr* Generator,
-                                                       Expr *Reflection) {
-    // FIXME: This is a terrible, terrible hack. It looks like the
-    // constexpr code is messing up the scope stack by overwriting the
-    // entity in PushDeclContext. This is because we don't have a unique
-    // scope when we enter this context. I'm not sure why ConstexprDecl
-    // actions don't break in other contexts.
-    DeclContext *Prev = CurScope->getEntity();
+Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,
+                                                     bool IsClass,
+                                                     SourceLocation IdLoc,
+                                                     IdentifierInfo *Id,
+                                                     Expr* Generator,
+                                                     Expr *Reflection) {
+  // FIXME: This is a terrible, terrible hack. It looks like the
+  // constexpr code is messing up the scope stack by overwriting the
+  // entity in PushDeclContext. This is because we don't have a unique
+  // scope when we enter this context. I'm not sure why ConstexprDecl
+  // actions don't break in other contexts.
+  DeclContext *Prev = CurScope->getEntity();
 
-    // Create the generated type.
-    TagTypeKind TTK = IsClass ? TTK_Class : TTK_Struct;
-    CXXRecordDecl *Class = CXXRecordDecl::Create(Context, TTK, CurContext, 
-                                                 IdLoc, IdLoc, Id);
-    Class->setImplicit(true);
-    CurContext->addDecl(Class);
+  // Create the generated type.
+  TagTypeKind TTK = IsClass ? TTK_Class : TTK_Struct;
+  CXXRecordDecl *Class = CXXRecordDecl::Create(Context, TTK, CurContext, 
+                                               IdLoc, IdLoc, Id);
+  Class->setImplicit(true);
+  CurContext->addDecl(Class);
 
-    PushDeclContext(CurScope, Class);
-    StartDefinition(Class);
+  PushDeclContext(CurScope, Class);
+  StartDefinition(Class);
 
-    // Insert 'using prototype = typename(ref)'
-    IdentifierInfo *ProtoId = &Context.Idents.get("prototype");
-    QualType ProtoTy = BuildReflectedType(IdLoc, Reflection);
-    TypeSourceInfo *ProtoTSI = Context.getTrivialTypeSourceInfo(ProtoTy);
-    Decl *Alias = TypeAliasDecl::Create(Context, Class, IdLoc, IdLoc, 
-                                        ProtoId, ProtoTSI);
-    Alias->setImplicit(true);
-    Alias->setAccess(AS_public);
-    Class->addDecl(Alias);
+  // Insert 'using prototype = typename(ref)'
+  IdentifierInfo *ProtoId = &Context.Idents.get("prototype");
+  QualType ProtoTy = BuildReflectedType(IdLoc, Reflection);
+  TypeSourceInfo *ProtoTSI = Context.getTrivialTypeSourceInfo(ProtoTy);
+  Decl *Alias = TypeAliasDecl::Create(Context, Class, IdLoc, IdLoc, 
+                                      ProtoId, ProtoTSI);
+  Alias->setImplicit(true);
+  Alias->setAccess(AS_public);
+  Class->addDecl(Alias);
 
-    // Add 'constexpr { <gen>($<id>, <ref>); }' to the class.
-    unsigned ScopeFlags;
-    Decl *CD = ActOnConstexprDecl(CurScope, UsingLoc, ScopeFlags);
-    CD->setImplicit(true);
-    CD->setAccess(AS_public);
-    
-    ActOnStartConstexprDecl(CurScope, CD);
-    SourceLocation Loc;
+  // Add 'constexpr { <gen>($<id>, <ref>); }' to the class.
+  unsigned ScopeFlags;
+  Decl *CD = ActOnConstexprDecl(CurScope, UsingLoc, ScopeFlags);
+  CD->setImplicit(true);
+  CD->setAccess(AS_public);
+  
+  ActOnStartConstexprDecl(CurScope, CD);
+  SourceLocation Loc;
 
-    // Build the expression $<id>.
-    QualType ThisType = Context.getRecordType(Class);
-    TypeSourceInfo *ThisTypeInfo = Context.getTrivialTypeSourceInfo(ThisType);
-    ExprResult Output = ActOnCXXReflectExpr(IdLoc, ThisTypeInfo);
+  // Build the expression $<id>.
+  QualType ThisType = Context.getRecordType(Class);
+  TypeSourceInfo *ThisTypeInfo = Context.getTrivialTypeSourceInfo(ThisType);
+  ExprResult Output = ActOnCXXReflectExpr(IdLoc, ThisTypeInfo);
 
-    // Build the call to <gen>($<id>, <ref>)
-    Expr *Args[] {Output.get(), Reflection};
-    ExprResult Call = ActOnCallExpr(CurScope, Generator, IdLoc, Args, IdLoc);
+  // Build the call to <gen>($<id>, <ref>)
+  Expr *Args[] {Output.get(), Reflection};
+  ExprResult Call = ActOnCallExpr(CurScope, Generator, IdLoc, Args, IdLoc);
 
-    Stmt* Body = new (Context) CompoundStmt(Context, Call.get(), IdLoc, IdLoc);
-    ActOnFinishConstexprDecl(CurScope, CD, Body);
+  Stmt* Body = new (Context) CompoundStmt(Context, Call.get(), IdLoc, IdLoc);
+  ActOnFinishConstexprDecl(CurScope, CD, Body);
 
-    CompleteDefinition(Class);
-    PopDeclContext();
+  CompleteDefinition(Class);
+  PopDeclContext();
 
-    // Restore the original entity.
-    //
-    // FIXME: See the comments above about ConstexprDecl breaking the scope.
-    CurScope->setEntity(Prev);
+  // Restore the original entity.
+  //
+  // FIXME: See the comments above about ConstexprDecl breaking the scope.
+  CurScope->setEntity(Prev);
 
-    return DeclGroupPtrTy::make(DeclGroupRef(Class));
-  }
+  return DeclGroupPtrTy::make(DeclGroupRef(Class));
+}

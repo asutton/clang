@@ -14145,6 +14145,9 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
 
       // Replace the closed tag with this class.
       Tag = Class;
+
+      // llvm::outs() << "FINAL\n";
+      // Tag->dump();
     }
 
     // // We get here when we finish a metaclass. Adjust the tag so that we finish

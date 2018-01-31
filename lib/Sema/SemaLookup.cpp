@@ -2775,6 +2775,10 @@ Sema::SpecialMemberOverloadResult Sema::LookupSpecialMember(CXXRecordDecl *RD,
                                                            bool RValueThis,
                                                            bool ConstThis,
                                                            bool VolatileThis) {
+  if (!CanDeclareSpecialMemberFunction(RD)) {
+    llvm::outs() << "SAD\n";
+    RD->dump();
+  }
   assert(CanDeclareSpecialMemberFunction(RD) &&
          "doing special member lookup into record that isn't fully complete");
   RD = RD->getDefinition();
