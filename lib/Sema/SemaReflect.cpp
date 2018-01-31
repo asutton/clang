@@ -1894,8 +1894,17 @@ GetNonDependentReflectedType(Sema &SemaRef, Expr *E)
 
   // Unpack information from the expression.
   CXXRecordDecl *Class = T->getAsCXXRecordDecl();
-  if (!Class && !isa<ClassTemplateSpecializationDecl>(Class))
+  if (!Class)
     return TypeReflectionError(SemaRef, E);
+  if (!isa<ClassTemplateSpecializationDecl>(Class)) {
+    // This could be a fragment; search the base list for the type.
+    if (Class->getNumBases() == 0)
+      return TypeReflectionError(SemaRef, E);
+    Class = (*Class->bases_begin()).getType()->getAsCXXRecordDecl();
+  }
+  if (!Class)
+    return TypeReflectionError(SemaRef, E);
+
   ClassTemplateSpecializationDecl *Spec =
       cast<ClassTemplateSpecializationDecl>(Class);
   

@@ -868,6 +868,8 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
       continue;
     }
 
+    // If we're injecting into a class, inject members with the 
+
     Decls.push_back(R);
     
     // llvm::outs() << "AFTER\n";
@@ -1021,6 +1023,14 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
       break;
     default:
       llvm_unreachable("Invalid access specifier");
+    }
+  } else {
+    // FIXME: In some cases (nested classes?) member access specifiers
+    // are not inherited from the fragments. Force this to be public for
+    // now.
+    if (isa<CXXRecordDecl>(InjecteeDC)) {
+      if (Result->getAccess() == AS_none)
+        Result->setAccess(AS_public);
     }
   }
 
