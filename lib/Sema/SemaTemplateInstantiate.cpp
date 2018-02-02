@@ -1437,9 +1437,10 @@ TemplateInstantiator::TransformDeclRefExpr(DeclRefExpr *E) {
   }
 
   // Handle references to function parameter packs.
-  if (ParmVarDecl *PD = dyn_cast<ParmVarDecl>(D))
+  if (ParmVarDecl *PD = dyn_cast<ParmVarDecl>(D)) {
     if (PD->isParameterPack())
       return TransformFunctionParmPackRefExpr(E, PD);
+  }
 
   return TreeTransform<TemplateInstantiator>::TransformDeclRefExpr(E);
 }

@@ -415,6 +415,15 @@ public:
     if (InjectionContext *Injection = getSema().CurrentInjectionContext) {
       if (Decl *R = Injection->GetDeclReplacement(D))
         return R;
+
+      // There are also cases where substitution short-circuits because we
+      // may not be in a dependent context. (see FindInstantiatedDecl).
+      if (LocalInstantiationScope *S = getSema().CurrentInstantiationScope) {
+        if (auto Found = S->findInstantiationOf(D)) {
+          if (Decl *FD = Found->dyn_cast<Decl *>())
+            return FD;
+        }
+      }
     }
     return nullptr;
   }

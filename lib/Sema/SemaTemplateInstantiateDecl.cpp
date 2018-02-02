@@ -2256,6 +2256,19 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     Owner->addDecl(Method);
   }
 
+  // If we injected a method, we need to also instantiate the definition.
+  // See the comments in VisitFunctionDecl.
+  //
+  // FIXME: I'm not at all convinced that this is the right way to
+  // handle this.
+  if (SemaRef.CurrentInjectionContext) {
+    SemaRef.InstantiateFunctionDefinition(D->getLocation(), Method, 
+                                          /*Recursive=*/false, 
+                                          /*DefinitionRequired=*/true, 
+                                          /*AtEndOfTU=*/false, 
+                                          /*Injection=*/ D);
+  }
+
   return Method;
 }
 
@@ -3935,13 +3948,19 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   // Find the function body that we'll be substituting. This is normally
   // available through the instantiated declaration, except in the case where
   // the function was injected.
-  const FunctionDecl *PatternDecl;
-  if (!Injection) {
-    PatternDecl = Function->getTemplateInstantiationPattern();
-    assert(PatternDecl && "instantiating a non-template");
-  } else {
-    PatternDecl = Injection;
-  }
+  //
+  // FIXME: Remove this.
+  //
+  // const FunctionDecl *PatternDecl;
+  // if (!Injection) {
+  //   PatternDecl = Function->getTemplateInstantiationPattern();
+  //   assert(PatternDecl && "instantiating a non-template");
+  // } else {
+  //   PatternDecl = Injection;
+  // }
+
+  const FunctionDecl *PatternDecl = Function->getTemplateInstantiationPattern();
+  assert(PatternDecl && "instantiating a non-template");
 
   const FunctionDecl *PatternDef = PatternDecl->getDefinition();
   Stmt *Pattern = nullptr;

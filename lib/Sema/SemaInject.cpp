@@ -1000,7 +1000,7 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
     Injectee->setInvalidDecl(true);
     return false;
   }
-  // llvm::outs() << "AFTER CLONING: " << Injectee->getDeclKindName() << "\n";
+  // llvm::outs() << "AFTER CLONING\n";
   // Result->dump();
   // Injectee->dump();
 
