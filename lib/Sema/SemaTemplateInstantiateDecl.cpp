@@ -3691,6 +3691,16 @@ static bool addInstantiatedParametersToScope(Sema &S, FunctionDecl *Function,
   unsigned FParamIdx = 0;
   for (unsigned I = 0, N = PatternDecl->getNumParams(); I != N; ++I) {
     const ParmVarDecl *PatternParam = PatternDecl->getParamDecl(I);
+    if (isa<InjectedParmType>(PatternParam->getType())) {
+      // FIXME: If the injected parameter has a name...
+      //
+      // I think we need to skip the injected parameters in the instantiated
+      // function -- there's not much we can do with them.
+      // llvm::outs() << "HERE\n";
+      continue;
+
+    } 
+
     if (!PatternParam->isParameterPack()) {
       // Simple case: not a parameter pack.
       assert(FParamIdx < Function->getNumParams());

@@ -677,6 +677,7 @@ bool Sema::ActOnCXXInjectedParameter(SourceLocation Loc, Expr *Reflection,
                                              nullptr);
       New->setScopeInfo(CurScope->getFunctionPrototypeDepth(),
                         CurScope->getNextFunctionPrototypeIndex());
+      New->setInjected(true);
       Parms.push_back(DeclaratorChunk::ParamInfo(New->getIdentifier(),
                                                  New->getLocation(), New));
     }
@@ -698,7 +699,7 @@ bool Sema::ActOnCXXInjectedParameter(SourceLocation Loc, Expr *Reflection,
                                            nullptr);
     New->setScopeInfo(CurScope->getFunctionPrototypeDepth(), 
                       CurScope->getNextFunctionPrototypeIndex());
-
+    New->setInjected(true);
     Parms.push_back(DeclaratorChunk::ParamInfo(New->getIdentifier(),
                                                New->getLocation(), New));
     return true;

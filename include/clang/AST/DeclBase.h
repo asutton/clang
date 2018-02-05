@@ -346,7 +346,7 @@ protected:
   Decl(Kind DK, DeclContext *DC, SourceLocation L)
       : NextInContextAndBits(), DeclCtx(DC), Loc(L), DeclKind(DK),
         InvalidDecl(0), HasAttrs(false), Implicit(false), Used(false),
-        Referenced(false), Injectable(false), Access(AS_none), FromASTFile(0),
+        Referenced(false), Injectable(false), Injected(false), Access(AS_none), FromASTFile(0),
         Hidden(DC && cast<Decl>(DC)->Hidden &&
                (!cast<Decl>(DC)->isFromASTFile() ||
                 hasLocalOwningModuleStorage())),
@@ -358,8 +358,8 @@ protected:
   Decl(Kind DK, EmptyShell Empty)
     : NextInContextAndBits(), DeclKind(DK), InvalidDecl(0),
       HasAttrs(false), Implicit(false), Used(false), Referenced(false),
-      Access(AS_none), FromASTFile(0), Hidden(0),
-      IdentifierNamespace(getIdentifierNamespaceForKind(DK)),
+      Injectable(false), Injected(false), Access(AS_none), FromASTFile(0), 
+      Hidden(0), IdentifierNamespace(getIdentifierNamespaceForKind(DK)),
       CacheValidAndLinkage(0)
   {
     if (StatisticsEnabled) add(DK);
