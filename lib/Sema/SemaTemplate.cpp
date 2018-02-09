@@ -671,6 +671,7 @@ bool Sema::DiagnoseUninstantiableTemplate(SourceLocation PointOfInstantiation,
     // we're lexically inside it.
     Instantiation->setInvalidDecl();
   } else if (InstantiatedFromMember) {
+    llvm::outs() << "HERE 1\n";
     if (isa<FunctionDecl>(Instantiation)) {
       Diag(PointOfInstantiation,
            diag::err_explicit_instantiation_undefined_member)
@@ -702,11 +703,13 @@ bool Sema::DiagnoseUninstantiableTemplate(SourceLocation PointOfInstantiation,
              diag::err_explicit_instantiation_undefined_var_template)
           << Instantiation;
         Instantiation->setInvalidDecl();
-      } else
+      } else {
+        llvm::outs() << "HERE \n";
         Diag(PointOfInstantiation,
              diag::err_explicit_instantiation_undefined_member)
           << /*static data member*/ 2 << Instantiation->getDeclName()
           << Instantiation->getDeclContext();
+      }
       Note = diag::note_explicit_instantiation_here;
     }
   }

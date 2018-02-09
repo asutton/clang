@@ -2007,7 +2007,9 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
   // Of course, we don't have dependent namespaces, so the example doesn't
   // make the most sense. This more likely describes a problem with the
   // design of the feature.
-  else if (SemaRef.CurrentInjectionContext && D->isInFragment()) {
+  else if (SemaRef.CurrentInjectionContext && 
+           D->isThisDeclarationADefinition() && 
+           D->isInFragment()) {
     SemaRef.InstantiateFunctionDefinition(D->getLocation(), Function, 
                                           /*Recursive=*/false, 
                                           /*DefinitionRequired=*/true, 
@@ -2261,7 +2263,7 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
   //
   // FIXME: I'm not at all convinced that this is the right way to
   // handle this.
-  if (SemaRef.CurrentInjectionContext) {
+  if (SemaRef.CurrentInjectionContext && D->isThisDeclarationADefinition()) {
     SemaRef.InstantiateFunctionDefinition(D->getLocation(), Method, 
                                           /*Recursive=*/false, 
                                           /*DefinitionRequired=*/true, 
@@ -3959,18 +3961,19 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   // available through the instantiated declaration, except in the case where
   // the function was injected.
   //
-  // FIXME: Remove this.
-  //
-  // const FunctionDecl *PatternDecl;
-  // if (!Injection) {
-  //   PatternDecl = Function->getTemplateInstantiationPattern();
-  //   assert(PatternDecl && "instantiating a non-template");
-  // } else {
-  //   PatternDecl = Injection;
-  // }
+  // We sometimes get here when injecting a metaprogram; they aren't 
+  // instantiated in the usual way, so we have to be explicit about their
+  // "pattern".
+  const FunctionDecl *PatternDecl;
+  if (!Injection) {
+    PatternDecl = Function->getTemplateInstantiationPattern();
+    assert(PatternDecl && "instantiating a non-template");
+  } else {
+    PatternDecl = Injection;
+  }
 
-  const FunctionDecl *PatternDecl = Function->getTemplateInstantiationPattern();
-  assert(PatternDecl && "instantiating a non-template");
+  // const FunctionDecl *PatternDecl = Function->getTemplateInstantiationPattern();
+  // assert(PatternDecl && "instantiating a non-template");
 
   const FunctionDecl *PatternDef = PatternDecl->getDefinition();
   Stmt *Pattern = nullptr;

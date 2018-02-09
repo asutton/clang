@@ -2560,6 +2560,10 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     // Eat 'using'.
     SourceLocation UsingLoc = ConsumeToken();
 
+    // 'using struct' or 'using class' indicates a generated type.
+    if (Tok.isOneOf(tok::kw_class, tok::kw_struct))
+      return ParseCXXGeneratedTypeDeclaration(UsingLoc);    
+
     if (Tok.is(tok::kw_namespace)) {
       Diag(UsingLoc, diag::err_using_namespace_in_class);
       SkipUntil(tok::semi, StopBeforeMatch);

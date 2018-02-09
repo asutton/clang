@@ -1739,8 +1739,8 @@ protected:
         IsExplicitlyDefaulted(false), HasImplicitReturnZero(false),
         IsLateTemplateParsed(false), IsConstexpr(isConstexprSpecified),
         UsesSEHTry(false), HasSkippedBody(false), WillHaveBody(false),
-        EndRangeLoc(NameInfo.getEndLoc()), TemplateOrSpecialization(),
-        DNLoc(NameInfo.getInfo()) {}
+        IsMetaprogram(false), EndRangeLoc(NameInfo.getEndLoc()), 
+        TemplateOrSpecialization(), DNLoc(NameInfo.getInfo()) {}
 
   typedef Redeclarable<FunctionDecl> redeclarable_base;
   FunctionDecl *getNextRedeclarationImpl() override {
