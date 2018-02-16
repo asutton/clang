@@ -516,6 +516,10 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc,
 
   if (Reflection->isTypeDependent() || Reflection->isValueDependent()) {
     Decl *D = CXXInjectionDecl::Create(Context, CurContext, Loc, Reflection);
+    // FIXME: Actually use the current access specifier. For now, simply
+    // assume that public was meant.
+    if (isa<CXXRecordDecl>(CurContext))
+      D->setAccess(AS_public);
     CurContext->addDecl(D);
     return DeclGroupPtrTy::make(DeclGroupRef(D));
   }
@@ -858,7 +862,7 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
       if (Class->isInjectedClassName())
         continue;
 
-    // llvm::outs() << "BEFORE\n";
+    // llvm::outs() << "BEFORE INJECT\n";
     // D->dump();
     
     MultiLevelTemplateArgumentList Args;
@@ -872,7 +876,7 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
 
     Decls.push_back(R);
     
-    // llvm::outs() << "AFTER\n";
+    // llvm::outs() << "AFTER INJECT\n";
     // R->dump();
   }
 
@@ -982,9 +986,9 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   assert(Storage != Automatic && "Can't make declarations automatic");
   assert(Storage != ThreadLocal && "Thread local storage not implemented");
 
-  // llvm::outs() << "BEFORE\n";
+  // llvm::outs() << "BEFORE CLONE\n";
   // Injection->dump();
-  // // Injectee->dump();
+  // Injectee->dump();
 
   // Build the declaration. If there was a request to make field static, we'll
   // need to build a new declaration.
@@ -1026,8 +1030,7 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
     }
   } else {
     // FIXME: In some cases (nested classes?) member access specifiers
-    // are not inherited from the fragments. Force this to be public for
-    // now.
+    // are not inherited from the fragments. Force this to be public for now.
     if (isa<CXXRecordDecl>(InjecteeDC)) {
       if (Result->getAccess() == AS_none)
         Result->setAccess(AS_public);
@@ -1233,22 +1236,21 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,
                                                      IdentifierInfo *Id,
                                                      Expr* Generator,
                                                      Expr *Reflection) {
-  // FIXME: This is a terrible, terrible hack. It looks like the
-  // constexpr code is messing up the scope stack by overwriting the
-  // entity in PushDeclContext. This is because we don't have a unique
-  // scope when we enter this context. I'm not sure why ConstexprDecl
-  // actions don't break in other contexts.
-  DeclContext *Prev = CurScope->getEntity();
-
   // Create the generated type.
   TagTypeKind TTK = IsClass ? TTK_Class : TTK_Struct;
   CXXRecordDecl *Class = CXXRecordDecl::Create(Context, TTK, CurContext, 
                                                IdLoc, IdLoc, Id);
   Class->setImplicit(true);
-  CurContext->addDecl(Class);
 
-  PushDeclContext(CurScope, Class);
+  // FIXME: Actually use the current access specifier.
+  if (isa<CXXRecordDecl>(CurContext))
+    Class->setAccess(AS_public);
+
+  CurContext->addDecl(Class);
   StartDefinition(Class);
+
+  // PushDeclContext(CurScope, Class);
+  ContextRAII ClassContext(*this, Class);
 
   // Insert 'using prototype = typename(ref)'
   IdentifierInfo *ProtoId = &Context.Idents.get("prototype");
@@ -1262,11 +1264,11 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,
 
   // Add 'constexpr { <gen>($<id>, <ref>); }' to the class.
   unsigned ScopeFlags;
-  Decl *CD = ActOnConstexprDecl(CurScope, UsingLoc, ScopeFlags);
+  Decl *CD = ActOnConstexprDecl(nullptr, UsingLoc, ScopeFlags);
   CD->setImplicit(true);
   CD->setAccess(AS_public);
   
-  ActOnStartConstexprDecl(CurScope, CD);
+  ActOnStartConstexprDecl(nullptr, CD);
   SourceLocation Loc;
 
   // Build the expression $<id>.
@@ -1276,18 +1278,13 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,
 
   // Build the call to <gen>($<id>, <ref>)
   Expr *Args[] {Output.get(), Reflection};
-  ExprResult Call = ActOnCallExpr(CurScope, Generator, IdLoc, Args, IdLoc);
+  ExprResult Call = ActOnCallExpr(nullptr, Generator, IdLoc, Args, IdLoc);
 
   Stmt* Body = new (Context) CompoundStmt(Context, Call.get(), IdLoc, IdLoc);
-  ActOnFinishConstexprDecl(CurScope, CD, Body);
+  ActOnFinishConstexprDecl(nullptr, CD, Body);
 
   CompleteDefinition(Class);
   PopDeclContext();
-
-  // Restore the original entity.
-  //
-  // FIXME: See the comments above about ConstexprDecl breaking the scope.
-  CurScope->setEntity(Prev);
 
   return DeclGroupPtrTy::make(DeclGroupRef(Class));
 }

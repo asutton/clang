@@ -2424,11 +2424,17 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
 void Sema::ActOnStartConstexprDecl(Scope *S, Decl *D) {
   ConstexprDecl *CD = cast<ConstexprDecl>(D);
 
-  if (CD->hasFunctionRepresentation())
-    PushDeclContext(S, CD->getFunctionDecl());
-  else {
+  if (CD->hasFunctionRepresentation()) {
+    if (S)
+      PushDeclContext(S, CD->getFunctionDecl());
+    else
+      CurContext = CD->getFunctionDecl();
+  } else {
     LambdaScopeInfo *LSI = cast<LambdaScopeInfo>(FunctionScopes.back());
-    PushDeclContext(S, LSI->CallOperator);
+    if (S)
+      PushDeclContext(S, LSI->CallOperator);
+    else
+      CurContext = LSI->CallOperator;
     PushExpressionEvaluationContext(
         ExpressionEvaluationContext::PotentiallyEvaluated);
   }
@@ -2454,13 +2460,17 @@ void Sema::ActOnFinishConstexprDecl(Scope *S, Decl *D, Stmt *Body) {
     if (!CurContext->isDependentContext())
       EvaluateConstexprDecl(CD, Lambda);
   }
+
+  // If we didn't have a scope when building this, we need to restore the
+  // current context.
+  if (!S)
+    CurContext = CD->getDeclContext();
 }
 
 /// Called when an error occurs while parsing the constexpr-declaration body.
 void Sema::ActOnConstexprDeclError(Scope *S, Decl *D) {
   ConstexprDecl *CD = cast<ConstexprDecl>(D);
   CD->setInvalidDecl();
-
   if (CD->hasFunctionRepresentation())
     ActOnFinishFunctionBody(CD->getFunctionDecl(), nullptr);
   else
