@@ -1079,6 +1079,23 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
     }
   }
 
+  // If, for some reason, we didn't instantiate a definition, do that now.
+  // Note that we already have some logic in place that tries to do this
+  // correctly, but it's failing in certain circumstances.
+  //
+  // FIXME: We probably need to do the same for variable initializers. Also,
+  // beware that fields may change to vars.
+  if (FunctionDecl *OldFn = dyn_cast<FunctionDecl>(Injection)) {
+    FunctionDecl *NewFn = cast<FunctionDecl>(Result);
+    if (OldFn->isThisDeclarationADefinition() && 
+        !NewFn->isThisDeclarationADefinition())
+      SemaRef.InstantiateFunctionDefinition(POI, NewFn, true, true, false);
+  } else if (CXXRecordDecl *OldClass = dyn_cast<CXXRecordDecl>(Injection)) {
+    // FIXME: Actually instantiate the class?
+    CXXRecordDecl *NewClass = cast<CXXRecordDecl>(Result);
+    assert(OldClass->hasDefinition() ? NewClass->hasDefinition() : true);
+  }
+
   // Finally, update the owning context.
   Result->getDeclContext()->updateDecl(Result);
 
@@ -1165,76 +1182,11 @@ bool Sema::ApplyEffects(SourceLocation POI,
   return Ok;
 }
 
-/// Copy, by way of transforming, the members of the given C++ metaclass into
-/// the target class.
-///
-/// The \p Fields parameter is used to store injected fields for subsequent
-/// analysis by ActOnFields().
-///
-/// Note that this is always called within the scope of the receiving class,
-/// as if the declarations were being written in-place.
-void Sema::ApplyMetaclass(MetaclassDecl *Meta, 
-                          CXXRecordDecl *ProtoArg,
-                          CXXRecordDecl *Final,
-                          SmallVectorImpl<Decl *> &Fields) {
-  
-#if 0
-  CXXRecordDecl *Def = Meta->getDefinition();
-
-  // Recursively inject base classes.
-  for (CXXBaseSpecifier &B : Def->bases()) {
-    QualType T = B.getType();
-    CXXRecordDecl *BaseClass = T->getAsCXXRecordDecl();
-    assert(BaseClass->isMetaclassDefinition() && 
-           "Metaclass inheritance from regular class");
-    MetaclassDecl *BaseMeta = cast<MetaclassDecl>(BaseClass->getDeclContext());
-    ApplyMetaclass(BaseMeta, ProtoArg, Final, Fields);
-  }
-
-  // Note that we are synthesizing code.
-  //
-  // FIXME: The point of instantiation/injection is incorrect.
-  InstantiatingTemplate Inst(*this, Final->getLocation());
-  ContextRAII SavedContext(*this, Final);
-  SourceCodeInjector& Injector = MakeInjector(Def, Final);
-
-  // When injecting replace references to the metaclass definition with
-  // references to the final class.
-  Injector.AddSubstitution(Def, Final);
-
-  // Also replace references to the prototype parameter with references to
-  // the final class.
-  Decl *ProtoParm = *Def->decls_begin();
-  assert(isa<TemplateTypeParmDecl>(ProtoParm) && "Expected prototype");
-  Injector.AddSubstitution(ProtoParm, ProtoArg);
-
-  // Propagate attributes on a metaclass to the final class.
-  Injector.TransformAttributes(Def, Final);
-
-  // Inject each member in turn.
-  for (Decl *D : Def->decls()) {
-    // Don't transform the prototype parameter. 
-    //
-    // FIXME: Handle this separately by creating a type alias in the
-    // final class.
-    if (D == ProtoParm)
-      continue;
-
-    Decl *R = Injector.TransformLocalDecl(D);
-    if (!R) 
-      Final->setInvalidDecl(true);
-  }
-  
-  if (Final->isInvalidDecl())
-    return;
-#endif
-}
-
 Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,
                                                      bool IsClass,
                                                      SourceLocation IdLoc,
                                                      IdentifierInfo *Id,
-                                                     Expr* Generator,
+                                                     Expr *Generator,
                                                      Expr *Reflection) {
   // Create the generated type.
   TagTypeKind TTK = IsClass ? TTK_Class : TTK_Struct;
@@ -1251,6 +1203,9 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,
 
   // PushDeclContext(CurScope, Class);
   ContextRAII ClassContext(*this, Class);
+
+  // FIXME: If the reflection (ref) is a fragment DO NOT insert the
+  // prototype. A fragment is NOT a type.
 
   // Insert 'using prototype = typename(ref)'
   IdentifierInfo *ProtoId = &Context.Idents.get("prototype");

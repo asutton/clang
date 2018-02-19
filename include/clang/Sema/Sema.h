@@ -8564,11 +8564,6 @@ public:
   // Source code injection/modification
   bool ApplyEffects(SourceLocation POI, SmallVectorImpl<EvalEffect> &Injections);
 
-  void ApplyMetaclass(MetaclassDecl *Meta, 
-                      CXXRecordDecl *Proto, 
-                      CXXRecordDecl *Final,
-                      SmallVectorImpl<Decl *> &Fields);
-
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
   //
