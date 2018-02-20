@@ -852,8 +852,7 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
   // Establish injectee as the current context.
   Sema::ContextRAII Switch(SemaRef, InjecteeDC, isa<CXXRecordDecl>(Injectee));
 
-  // llvm::outs() << "=============================================\n";
-  // llvm::outs() << "INJECTING\n";
+  // llvm::outs() << "BEFORE INJECTION\n";
   // Fragment->dump();
 
   for (Decl *D : InjectionDC->decls()) {
@@ -880,7 +879,6 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
     // R->dump();
   }
 
-  // llvm::outs() << "*************************************\n";
   // llvm::outs() << "FINAL\n";
   // Injectee->dump();
 
