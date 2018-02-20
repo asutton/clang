@@ -2261,9 +2261,9 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
   // If we injected a method, we need to also instantiate the definition.
   // See the comments in VisitFunctionDecl.
   //
-  // FIXME: I'm not at all convinced that this is the right way to
-  // handle this.
-  if (SemaRef.CurrentInjectionContext && D->isThisDeclarationADefinition()) {
+  // FIXME: I'm not at all convinced that this is the right way to handle this.
+  if (SemaRef.CurrentInjectionContext && D->isInFragment() &&
+      D->isThisDeclarationADefinition()) {
     SemaRef.InstantiateFunctionDefinition(D->getLocation(), Method, 
                                           /*Recursive=*/false, 
                                           /*DefinitionRequired=*/true, 
