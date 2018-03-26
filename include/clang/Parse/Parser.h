@@ -1191,6 +1191,13 @@ private:
       P.PopParsingClass(State);
     }
 
+    /// \brief Pop this class of the stack, but save the 
+    ParsingClass& Steal() {
+      assert(!Popped && "Nested class has already been popped");
+      Popped = true;
+      return P.StealParsingClass(State);
+    }
+
     ~ParsingClassDefinition() {
       if (!Popped)
         P.PopParsingClass(State);
@@ -1257,6 +1264,7 @@ private:
   PushParsingClass(Decl *TagOrTemplate, bool TopLevelClass, bool IsInterface);
   void DeallocateParsedClasses(ParsingClass *Class);
   void PopParsingClass(Sema::ParsingClassState);
+  ParsingClass& StealParsingClass(Sema::ParsingClassState);
 
   enum CachedInitKind {
     CIK_DefaultArgument,

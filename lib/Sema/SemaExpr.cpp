@@ -1876,7 +1876,6 @@ Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
                           TemplateArgumentListInfo *ExplicitTemplateArgs,
                           ArrayRef<Expr *> Args, TypoExpr **Out) {
   DeclarationName Name = R.getLookupName();
-
   unsigned diagnostic = diag::err_undeclared_var_use;
   unsigned diagnostic_suggest = diag::err_undeclared_var_use_suggest;
   if (Name.getNameKind() == DeclarationName::CXXOperatorName ||
@@ -2230,6 +2229,13 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
   // Determine whether this name might be a candidate for
   // argument-dependent lookup.
   bool ADL = UseArgumentDependentLookup(SS, R, HasTrailingLParen);
+
+  if (R.empty() && Decl::castFromDeclContext(CurContext)->isInFragment()) {
+    // Lookup failed because there is no such name in this context. W
+    // generally expect the name to be found later.
+    return ActOnDependentIdExpression(SS, TemplateKWLoc, NameInfo,
+                                      IsAddressOfOperand, TemplateArgs);
+  }
 
   if (R.empty() && !ADL) {
     if (SS.isEmpty() && getLangOpts().MSVCCompat) {

@@ -32,6 +32,11 @@ InjectionContext::InjectionContext(Sema &SemaRef, DeclContext *Injectee)
   SemaRef.CurrentInjectionContext = this;
 }
 
+InjectionContext::InjectionContext(const InjectionContext& Cxt)
+  : SemaRef(Cxt.SemaRef), Prev(nullptr), Injectee(Cxt.Injectee),
+    DeclSubsts(Cxt.DeclSubsts), PlaceholderSubsts(Cxt.PlaceholderSubsts)
+{ }
+
 InjectionContext::~InjectionContext() {
   SemaRef.CurrentInjectionContext = Prev;
 }
@@ -88,6 +93,179 @@ Expr *InjectionContext::GetPlaceholderReplacement(DeclRefExpr *E) {
   }
 }
 
+DeferredGenerationContext::DeferredGenerationContext(Sema &S)
+  : SemaRef(S), Prev(S.DeferredGenerations)
+{
+  SemaRef.DeferredGenerations = this;
+}
+
+DeferredGenerationContext::~DeferredGenerationContext()
+{
+  SemaRef.DeferredGenerations = Prev;
+}
+
+// -------------------------------------------------------------------------- //
+// Injection
+
+static inline ASTContext& getASTContext(InjectionContext &Cxt) {
+  return Cxt.SemaRef.getASTContext();
+}
+
+static DeclarationName InjectName(InjectionContext &Cxt, const DeclarationName &N);
+static DeclarationNameInfo InjectDeclName(InjectionContext &Cxt, NamedDecl *D);
+
+static QualType InjectType(InjectionContext &Cxt, QualType T);
+static TypeSourceInfo *InjectType(InjectionContext &Cxt, TypeSourceInfo *TSI);
+static TypeSourceInfo *InjectDeclType(InjectionContext &Cxt, NamedDecl *D);
+static TypeSourceInfo *InjectDeclType(InjectionContext &Cxt, DeclaratorDecl *D);
+
+static Decl *InjectDecl(InjectionContext &Cxt, Decl *D);
+
+// FIXME: Implement me. In general, we just need to be sure to apply
+// transformations to idexprs. Otherwise, these things don't change too
+// much.
+//
+// FIXME: What if the declaration name is qualified?
+static DeclarationName InjectName(InjectionContext &Cxt, const DeclarationName &N) {
+  return N;
+}
+
+static DeclarationNameInfo InjectDeclName(InjectionContext &Cxt, NamedDecl *D) {
+  DeclarationName N = InjectName(Cxt, D->getDeclName());
+  return DeclarationNameInfo(N, D->getLocation());  
+}
+
+// FIXME: Implement me. Also, we're probably going to need to use the
+// TLB facility to do this "correctly".
+QualType InjectType(InjectionContext &Cxt, QualType T)
+{
+  return T;
+}
+
+// FIXME: Actually build the TypeLoc correctly.
+TypeSourceInfo *InjectType(InjectionContext &Cxt, TypeSourceInfo *TSI)
+{
+  if (!TSI)
+    return TSI;
+  QualType T = InjectType(Cxt, TSI->getType());
+  if (T.isNull())
+    return nullptr;
+  TypeLoc TL = TSI->getTypeLoc();
+  return getASTContext(Cxt).getTrivialTypeSourceInfo(T, TL.getLocStart());
+}
+
+TypeSourceInfo *InjectDeclType(InjectionContext &Cxt, ValueDecl *D) {
+  QualType T = InjectType(Cxt, D->getType());
+  return getASTContext(Cxt).getTrivialTypeSourceInfo(T);
+}
+
+TypeSourceInfo *InjectDeclType(InjectionContext &Cxt, DeclaratorDecl *D) {
+  return InjectType(Cxt, D->getTypeSourceInfo());
+}
+
+static Decl *InjectFieldDecl(InjectionContext &Cxt, FieldDecl *D)
+{
+  bool Invalid = false;
+
+  // FIXME: Rebuild the nested-name-specifier in the D? That would only
+  // happen if we were injecting members of a namespace fragment that
+  // included external definitions.
+  DeclarationNameInfo DNI = InjectDeclName(Cxt, D);
+  if (!DNI.getName())
+    Invalid = true;
+
+  // Rebuild the type.
+  TypeSourceInfo *TSI = InjectDeclType(Cxt, D);
+  if (!TSI) {
+    TSI = D->getTypeSourceInfo();
+    Invalid = true;
+  }
+
+  // FIXME: Substitute through the bit width.
+  Expr *BitWidth = nullptr;
+
+  CXXRecordDecl *Owner = cast<CXXRecordDecl>(Cxt.SemaRef.CurContext);
+
+  // Build and check the field.
+  FieldDecl *Field = Cxt.SemaRef.CheckFieldDecl(DNI.getName(), TSI->getType(), 
+                                                TSI, Owner, D->getLocation(),
+                                                 D->isMutable(), BitWidth,
+                                                 D->getInClassInitStyle(),
+                                                 D->getInnerLocStart(),
+                                                 D->getAccess(),
+                                                 nullptr);
+  // FIXME: Propagate attributes
+
+  // FIXME: In general, see VisitFieldDecl in the template instantiatior.
+  // There are some interesting cases we probably need to handle.
+
+  // Propagate semantic properties.
+  //
+  // FIXME: Inherit access as a semantic attribute or trace it through the
+  // injection as if parsing?
+  Field->setImplicit(D->isImplicit());
+  Field->setAccess(D->getAccess());
+  Owner->addDecl(Field);
+
+  return Field;
+}
+
+static Decl *InjectCXXMethodDecl(InjectionContext &Cxt, CXXMethodDecl *D)
+{
+  return nullptr;
+}
+
+static Decl *InjectCXXConstructorDecl(InjectionContext &Cxt, CXXConstructorDecl *D)
+{
+  return nullptr;
+}
+
+static Decl *InjectCXXDestructorDecl(InjectionContext &Cxt, CXXDestructorDecl *D)
+{
+  return nullptr;
+}
+
+static Decl *InjectCXXConversionDecl(InjectionContext &Cxt, CXXConversionDecl *D)
+{
+  return nullptr;
+}
+
+static Decl *InjectAccessSpecDecl(InjectionContext &Cxt, AccessSpecDecl *D)
+{
+  return nullptr;
+}
+
+
+Decl *InjectDecl(InjectionContext& Cxt, Decl *D) {
+  // If there is a known substitution, use that.
+  if (Decl *R = Cxt.GetDeclReplacement(D))
+    return R;
+
+  // If the declaration does not appear in the context, then it need
+  // not be resolved.
+  if (!D->isInFragment())
+    return D;
+
+  switch (D->getKind()) {
+  case Decl::Field:
+    return InjectFieldDecl(Cxt, cast<FieldDecl>(D));
+  case Decl::CXXMethod:
+    return InjectCXXMethodDecl(Cxt, cast<CXXMethodDecl>(D));
+  case Decl::CXXConstructor:
+    return InjectCXXConstructorDecl(Cxt, cast<CXXConstructorDecl>(D));
+  case Decl::CXXDestructor:
+    return InjectCXXDestructorDecl(Cxt, cast<CXXDestructorDecl>(D));
+  case Decl::CXXConversion:
+    return InjectCXXConversionDecl(Cxt, cast<CXXConversionDecl>(D));
+  case Decl::AccessSpec:
+    return InjectAccessSpecDecl(Cxt, cast<AccessSpecDecl>(D));
+  default:
+    llvm_unreachable("unknown declaration");
+  }
+}
+
+// -------------------------------------------------------------------------- //
+// Semantic analysis
 
 // FIXME: Make these members of Sema.
 static bool InjectFragment(Sema &SemaRef, SourceLocation POI, 
@@ -250,7 +428,6 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc,
                                       Decl *Fragment) {
   CXXFragmentDecl *FD = cast<CXXFragmentDecl>(Fragment);
 
-
   // If the fragment appears in a context that depends on template parameters,
   // then the expression is dependent.
   //
@@ -398,6 +575,13 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc,
   return new (Context) CXXFragmentExpr(Context, Loc, ClassTy, Captures, FD, Init);
 }
 
+/// Associates the parse state of the class fragment with the fragment itself.
+void Sema::ActOnLateParsedClassFragment(Scope *S, void *P) {
+  assert(S && isa<CXXFragmentDecl>(S->getEntity()));
+  CXXFragmentDecl *Fragment = cast<CXXFragmentDecl>(S->getEntity());
+  Fragment->setParsingInfo(P);
+}
+
 /// Returns an injection statement.
 StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) { 
   return BuildCXXInjectionStmt(Loc, Reflection);
@@ -428,12 +612,14 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) {
 StmtResult Sema::ActOnCXXExtensionStmt(SourceLocation Loc, 
                                        Expr *Target,
                                        Expr *Reflection) { 
-  return BuildCXXExtensionStmt(Loc, Target, Reflection);
+  llvm_unreachable("extension not supported");
+  // return BuildCXXExtensionStmt(Loc, Target, Reflection);
 }
 
-StmtResult Sema::BuildCXXExtensionStmt(SourceLocation Loc, 
-                                       Expr *Target,
+StmtResult Sema::BuildCXXExtensionStmt(SourceLocation Loc, Expr *Target,
                                        Expr *Reflection) { 
+  llvm_unreachable("extension not supported");
+#if 0
   // Check the glvalue.
   if (!Target->isTypeDependent()) {
     // FIXEM: This isn't strictly *required* since even prvalues are just
@@ -481,8 +667,8 @@ StmtResult Sema::BuildCXXExtensionStmt(SourceLocation Loc,
 
   // Build an extension statement that can be evaluated when executed.
   return new (Context) CXXExtensionStmt(Loc, Target, Reflection);
+#endif
 }
-
 
 static Decl *
 GetDeclFromReflection(Sema &SemaRef, QualType Ty, SourceLocation Loc)
@@ -501,6 +687,8 @@ GetDeclFromReflection(Sema &SemaRef, QualType Ty, SourceLocation Loc)
   return Injection;
 }
 
+// Not used.
+#if 0
 static Decl *
 GetDeclFromReflection(Sema &SemaRef, Expr *Reflection)
 {
@@ -508,12 +696,14 @@ GetDeclFromReflection(Sema &SemaRef, Expr *Reflection)
                                Reflection->getType(),
                                Reflection->getExprLoc());
 }
+#endif
 
 /// An injection declaration injects its fragment members at this point
 /// in the program. 
 Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc, 
                                                  Expr *Reflection) { 
-
+  llvm_unreachable("injection declarations not supported");
+  #if 0
   if (Reflection->isTypeDependent() || Reflection->isValueDependent()) {
     Decl *D = CXXInjectionDecl::Create(Context, CurContext, Loc, Reflection);
     // FIXME: Actually use the current access specifier. For now, simply
@@ -569,6 +759,7 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXInjectionDecl(SourceLocation Loc,
     DeclGroup *DG = DeclGroup::Create(Context, Decls.data(), Decls.size());
     return DeclGroupPtrTy::make(DeclGroupRef(DG));
   }
+  #endif
 }
 
 static ClassTemplateSpecializationDecl *ReferencedReflectionClass(Sema &SemaRef, 
@@ -714,7 +905,6 @@ bool Sema::ActOnCXXInjectedParameter(SourceLocation Loc, Expr *Reflection,
   return false;
 }
 
-
 QualType Sema::BuildInjectedParmType(SourceLocation Loc, Expr *E) {
   if (E->isTypeDependent())
     return Context.getInjectedParmType(E);
@@ -825,7 +1015,7 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
   assert(isa<CXXRecordDecl>(Injection) || isa<NamespaceDecl>(Injection));
   DeclContext *InjecteeDC = Decl::castToDeclContext(Injectee);
   DeclContext *InjectionDC = Decl::castToDeclContext(Injection);
-  
+
   if (!CheckInjectionContexts(SemaRef, POI, InjectionDC, InjecteeDC))
     return false;
 
@@ -840,6 +1030,36 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
   CXXRecordDecl *Class = ReflectionTy->getAsCXXRecordDecl();
   CXXFragmentDecl *Fragment = cast<CXXFragmentDecl>(Injection->getDeclContext());
 
+  // FIXME: What do we do with the late parsed declarations? We would need
+  // to propagate those back toward the parser so that they can be added to
+  // the ParsingClass at the point of injection (harder said than done?).
+
+  InjectionContext Ctx(SemaRef, InjecteeDC);
+  Sema::ContextRAII Switch(SemaRef, InjecteeDC, isa<CXXRecordDecl>(Injectee));
+
+  for (Decl *D : InjectionDC->decls()) {
+    // Never inject injected class names.
+    if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D))
+      if (Class->isInjectedClassName())
+        continue;
+
+    llvm::outs() << "BEFORE INJECT\n";
+    D->dump();
+    
+    Decl *R = InjectDecl(Ctx, D);
+    if (!R || R->isInvalidDecl()) {
+      Injectee->setInvalidDecl(true);
+      continue;
+    }
+
+    llvm::outs() << "AFTER INJECT\n";
+    D->dump();
+
+    // If we're injecting into a class, inject members with the 
+    Decls.push_back(R);
+  }
+
+  #if 0
   // Set up a bunch of context for the injection. The local instantiation
   // scope stores (for the duration of injection) the new members created
   // by expanding the injection into the current context.
@@ -881,6 +1101,7 @@ bool InjectFragment(Sema &SemaRef, SourceLocation POI, QualType ReflectionTy,
 
   // llvm::outs() << "FINAL\n";
   // Injectee->dump();
+  #endif
 
   return true;
 }
@@ -1077,23 +1298,6 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
     }
   }
 
-  // If, for some reason, we didn't instantiate a definition, do that now.
-  // Note that we already have some logic in place that tries to do this
-  // correctly, but it's failing in certain circumstances.
-  //
-  // FIXME: We probably need to do the same for variable initializers. Also,
-  // beware that fields may change to vars.
-  if (FunctionDecl *OldFn = dyn_cast<FunctionDecl>(Injection)) {
-    FunctionDecl *NewFn = cast<FunctionDecl>(Result);
-    if (OldFn->isThisDeclarationADefinition() && 
-        !NewFn->isThisDeclarationADefinition())
-      SemaRef.InstantiateFunctionDefinition(POI, NewFn, true, true, false);
-  } else if (CXXRecordDecl *OldClass = dyn_cast<CXXRecordDecl>(Injection)) {
-    // FIXME: Actually instantiate the class?
-    CXXRecordDecl *NewClass = cast<CXXRecordDecl>(Result);
-    assert(OldClass->hasDefinition() ? NewClass->hasDefinition() : true);
-  }
-
   // Finally, update the owning context.
   Result->getDeclContext()->updateDecl(Result);
 
@@ -1133,31 +1337,38 @@ ApplyInjection(Sema &SemaRef, SourceLocation POI, InjectionInfo &II) {
     return CopyDeclaration(SemaRef, POI, Ty, Val, Injectee, Injection, Decls);
 }
 
-static void
-PrintDecl(Sema &SemaRef, Decl *D) {
-  PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
-  PP.TerseOutput = false;
-  D->print(llvm::errs(), PP);
-  llvm::errs() << '\n';
-}
+// static void
+// PrintDecl(Sema &SemaRef, Decl *D) {
+//   PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
+//   PP.TerseOutput = false;
+//   D->print(llvm::errs(), PP);
+//   llvm::errs() << '\n';
+// }
 
-static void
-PrintType(Sema &SemaRef, Type *T) {
-  if (TagDecl *TD = T->getAsTagDecl())
-    return PrintDecl(SemaRef, TD);
-  PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
-  QualType QT(T, 0);
-  QT.print(llvm::errs(), PP);
-  llvm::errs() << '\n';
-}
+// static void
+// PrintType(Sema &SemaRef, Type *T) {
+//   if (TagDecl *TD = T->getAsTagDecl())
+//     return PrintDecl(SemaRef, TD);
+//   PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
+//   QualType QT(T, 0);
+//   QT.print(llvm::errs(), PP);
+//   llvm::errs() << '\n';
+// }
 
 static bool
 ApplyDiagnostic(Sema &SemaRef, SourceLocation Loc, const APValue &Arg) {
   ReflectedConstruct R(Arg.getInt().getExtValue());
-  if (Decl *D = R.getAsDeclaration())
-    PrintDecl(SemaRef, D);
-  else if (Type *T = R.getAsType())
-    PrintType(SemaRef, T);
+  if (Decl *D = R.getAsDeclaration()) {
+    D->dump();
+    // PrintDecl(SemaRef, D);
+  }
+  else if (Type *T = R.getAsType()) {
+    if (TagDecl *TD = T->getAsTagDecl())
+      TD->dump();
+    else
+      T->dump();
+    // PrintType(SemaRef, T);
+  }
   else
     llvm_unreachable("printing invalid reflection");
   return true;
@@ -1232,12 +1443,46 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,
   // Build the call to <gen>($<id>, <ref>)
   Expr *Args[] {Output.get(), Reflection};
   ExprResult Call = ActOnCallExpr(nullptr, Generator, IdLoc, Args, IdLoc);
-
   Stmt* Body = new (Context) CompoundStmt(Context, Call.get(), IdLoc, IdLoc);
+
+  DeferredGenerationContext Gens(*this);
   ActOnFinishConstexprDecl(nullptr, CD, Body);
 
   CompleteDefinition(Class);
   PopDeclContext();
+  
+  ProcessDeferredGenerations(IdLoc);
 
   return DeclGroupPtrTy::make(DeclGroupRef(Class));
+}
+
+static bool NeedsFnDef(FunctionDecl *O, FunctionDecl *N) {
+  return O->isThisDeclarationADefinition() && !N->isThisDeclarationADefinition();
+}
+
+void
+Sema::ProcessDeferredGenerations(SourceLocation Loc)
+{
+  if (!DeferredGenerations)
+    return;
+  
+  // If any deferred instantiations were requested, process these now.
+  for (DeferredGenerationRequest Req : DeferredGenerations->GetRequests()) {
+    // FIXME: We probably need to do the same for variable initializers. 
+    // Also, beware that fields may change to vars.
+    if (FunctionDecl *OldFn = dyn_cast<FunctionDecl>(Req.Old)) {
+      FunctionDecl *NewFn = cast<FunctionDecl>(Req.New);
+      if (NeedsFnDef(OldFn, NewFn)) {
+        llvm::outs() << "INST DEF\n";
+        InstantiateFunctionDefinition(Loc, NewFn, true, true, false);
+        OldFn->dump();
+        NewFn->dump();
+      }
+    } else if (CXXRecordDecl *OldClass = dyn_cast<CXXRecordDecl>(Req.Old)) {
+      // FIXME: Actually instantiate the class? Use the same logic above,
+      // probably.
+      CXXRecordDecl *NewClass = cast<CXXRecordDecl>(Req.New);
+      assert(OldClass->hasDefinition() ? NewClass->hasDefinition() : true);
+    }
+  }
 }

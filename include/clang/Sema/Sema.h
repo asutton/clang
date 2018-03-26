@@ -285,6 +285,7 @@ class InjectionContext
 {
 public:
   InjectionContext(Sema &SemaRef, DeclContext *Injectee);
+  InjectionContext(const InjectionContext& Cxt);
   ~InjectionContext();
 
   /// \brief Adds a substitution from one declaration to another.
@@ -323,6 +324,43 @@ public:
   /// values. This is used by TreeTransformer to replace references with
   /// constant expressions.
   llvm::DenseMap<Decl *, TypedValue> PlaceholderSubsts;
+};
+
+/// Represents a request to generate a declaration's definition.
+struct DeferredGenerationRequest
+{
+  DeferredGenerationRequest(const InjectionContext& C, Decl *D, Decl *R)
+    : Cxt(C), Old(D), New(R)
+  { }
+
+  InjectionContext Cxt;
+  Decl *Old;
+  Decl *New;
+};
+
+/// Manages the context of deferred instantiations. This is typically created
+/// whever a metaprogram is constructed to define a class (i.e., before we
+/// create a metaclass, generated type, etc).
+class DeferredGenerationContext
+{
+public:
+  DeferredGenerationContext(Sema &SemaRef);
+  ~DeferredGenerationContext();
+
+  /// \brief Add a request to generate information for D.
+  void MakeRequest(const InjectionContext& Cxt, Decl *O, Decl *D) {
+    Reqs.emplace_back(Cxt, O, D);
+  }
+
+  /// \brief Returns the list of current requests.
+  const SmallVectorImpl<DeferredGenerationRequest>& GetRequests() {
+    return Reqs;
+  }
+
+private:
+  Sema &SemaRef;
+  DeferredGenerationContext *Prev;
+  llvm::SmallVector<DeferredGenerationRequest, 16> Reqs;
 };
 
 /// Sema - This implements semantic analysis and AST building for C.
@@ -7474,6 +7512,12 @@ public:
   /// \brief The current injection context. Defined in SemaInject.cpp.
   InjectionContext *CurrentInjectionContext;
 
+  /// \brief The current deferred generation context, or null.
+  DeferredGenerationContext *DeferredGenerations;
+
+  /// \brief Process deferred generations.
+  void ProcessDeferredGenerations(SourceLocation Loc);
+
   /// \brief Tracks whether we are in a context where typo correction is
   /// disabled.
   bool DisableTypoCorrection;
@@ -8537,6 +8581,7 @@ public:
   ExprResult BuildCXXFragmentExpr(SourceLocation Loc,
                                   SmallVectorImpl<Expr *> &Captures,
                                   Decl *Fragment);
+  void ActOnLateParsedClassFragment(Scope *S, void *P);
 
   StmtResult ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);
   StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);

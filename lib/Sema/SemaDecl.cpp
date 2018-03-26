@@ -916,6 +916,13 @@ Corrected:
       }
     }
 
+    // Within a fragment, an unresolved id is potentially bound. Treat this 
+    // as a dependent id-expression.
+    if (Decl::castFromDeclContext(CurContext)->isInFragment()) {
+      return ActOnDependentIdExpression(SS, SourceLocation(), NameInfo,
+                                        IsAddressOfOperand, nullptr);
+    }
+
     // In C, we first see whether there is a tag type by the same name, in
     // which case it's likely that the user just forgot to write "enum",
     // "struct", or "union".
@@ -13343,7 +13350,18 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, Expr *Generator,
   // there's a shadow friend decl.
   if (Name && Previous.empty() &&
       (TUK == TUK_Reference || TUK == TUK_Friend)) {
-    if (Invalid) goto CreateNewDecl;
+
+    // If we have a name and an empty lookup for a reference, then we want
+    // to emit a new dependent type with that name. Just don't make this
+    // invalid.
+    //
+    // FIXME: We actually want the type to be dependent.
+    if (Decl::castFromDeclContext(CurContext)->isInFragment())
+      goto CreateNewDecl;
+
+    if (Invalid) 
+      goto CreateNewDecl;
+    
     assert(SS.isEmpty());
 
     if (TUK == TUK_Reference) {
@@ -13701,6 +13719,10 @@ CreateNewDecl:
   TagDecl *PrevDecl = nullptr;
   if (Previous.isSingleResult())
     PrevDecl = cast<TagDecl>(Previous.getFoundDecl());
+
+  // FIXME: If we're inside of a fragment and creating a new type, make
+  // that a template type parameter with the given name. That might actually
+  // do what we want.
 
   // If there is an identifier, use the location of the identifier as the
   // location of the decl, otherwise use the location of the struct/union
@@ -14080,9 +14102,16 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
   // Exit this scope of this tag's definition.
   PopDeclContext();
 
+  // If this was a class fragment, we're done. Don't process this as if
+  // it were a metaclass, and don't notify the consumer.
+  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(TagD))
+    if (isa<CXXFragmentDecl>(Class->getDeclContext()))
+      return;
+
   if (getCurLexicalContext()->isObjCContainer() &&
       Tag->getDeclContext()->isFileContext())
     Tag->setTopLevelDeclInObjCContainer();
+
 
   // If we just finished a prototype, apply it's metaclass to create the
   // final class.
@@ -14150,6 +14179,8 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
       ExprResult Call = ActOnCallExpr(CurScope, Generator, Loc, Args, Loc);
 
       Stmt* Body = new (Context) CompoundStmt(Context, Call.get(), Loc, Loc);
+
+      DeferredGenerationContext Gens(*this);
       ActOnFinishConstexprDecl(CurScope, CD, Body);
 
       // Finally, re-analyze the fields of the fields the class to instantiate
@@ -14158,44 +14189,13 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
       ActOnFields(S, Class->getLocation(), Class, Fields, 
                   BraceRange.getBegin(), BraceRange.getEnd(), nullptr);
 
+      assert(Class->isCompleteDefinition() && "Generated class not complete");
+
+      ProcessDeferredGenerations(Loc);
+
       // Replace the closed tag with this class.
       Tag = Class;
     }
-
-    // // We get here when we finish a metaclass. Adjust the tag so that we finish
-    // // the right class.
-    // if (Expr *Meta = Class->getMetaclass()) {
-    //   assert(Class->isFragment() && "Expected class fragment");
-
-    //   CXXRecordDecl *Final = cast<CXXRecordDecl>(Class->getDeclContext());
-
-    //   // Remove the prototype so it doesn't appear in the final AST, nor
-    //   // will it be reflected by a metafunction.
-    //   Class->setLexicalDeclContext(Final);
-    //   Final->removeDecl(Class);
-
-    //   // Make the final class available in its declaring scope.
-    //   PushOnScopeChains(Final, getCurScope()->getParent(), false);
-
-    //   // Apply the metaclass. Re-enter a member xform context. We've already 
-    //   // finished the metaclass, but haven't injected anything.
-    //   //
-    //   // FIXME: This seems out of order. It might be nice to perform injections
-    //   // prior to completion, but I seem to remember that there were some
-    //   // issues doing this. I don't remember what...
-    //   SmallVector<Decl *, 32> InjectedFields;
-    //   ApplyMetaclass(Meta, Class, Final, InjectedFields);
-
-    //   // Perform a final analysis on the members of the resulting class.
-    //   S->setEntity(Final);
-    //   ActOnFields(S, Final->getLocation(), Final, InjectedFields, 
-    //               BraceRange.getBegin(), BraceRange.getEnd(),
-    //               /*Attr=*/nullptr);
-    //   S->setEntity(Class);
-
-    //   // Replace the tag so the consumer doesn't see the prototype.
-    //   Tag = cast<CXXRecordDecl>(Class->getDeclContext());
-    // }
   }
 
   // Notify the consumer that we've defined a tag.

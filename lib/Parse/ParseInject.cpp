@@ -36,7 +36,7 @@ Decl* Parser::ParseCXXFragment(SmallVectorImpl<Expr *> &Captures) {
 
   // A name declared in the the fragment is not leaked into the enclosing
   // scope. That is, fragments names are only accessible from within.
-  ParseScope FragmentScope(this, Scope::DeclScope);
+  ParseScope FragmentScope(this, Scope::DeclScope | Scope::FragmentScope);
 
   // Start the fragment. The fragment is finished in one of the 
   // ParseCXX*Fragment functions.

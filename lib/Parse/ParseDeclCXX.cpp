@@ -2038,7 +2038,7 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
 ///         attribute-specifier-seq[opt] access-specifier 'virtual'[opt]
 ///                 base-type-specifier
 BaseResult Parser::ParseBaseSpecifier(Decl *ClassDecl) {
-  const bool IsMetaclassBaseSpecifier = getCurScope()->isMetaclassScope();
+  const bool IsMetaclassBaseSpecifier = getCurScope()->isFragmentScope();
 
   bool IsVirtual = false;
   SourceLocation StartLoc = Tok.getLocation();
@@ -2574,10 +2574,6 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     return ParseUsingDeclaration(Declarator::MemberContext, TemplateInfo,
                                  UsingLoc, DeclEnd, AS);
   }
-
-  // [Meta] injection-declaration
-  if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw___inject))
-    return ParseCXXInjectionDeclaration();
 
   // [Meta] constexpr-declaration
   if (getLangOpts().CPlusPlus1z && Tok.is(tok::kw_constexpr) &&
@@ -3179,11 +3175,6 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
 
   unsigned ScopeFlags = Scope::ClassScope | Scope::DeclScope;
 
-  // Determine whether this is the definition of a metaclass.
-  if (CXXRecordDecl *RD = dyn_cast_or_null<CXXRecordDecl>(TagDecl))
-    if (RD->isMetaclassDefinition())
-      ScopeFlags |= Scope::MetaclassScope;
-
   // Enter a scope for the class.
   ParseScope ClassScope(this, ScopeFlags);
 
@@ -3330,6 +3321,23 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   //   brace-or-equal-initializers for non-static data members (including such
   //   things in nested classes).
   if (TagDecl && NonNestedClass) {
+    // If the class is defined within fragment scope, then this is the
+    // fragment itself. In those cases, we need to defer late parsing even
+    // longer--until the fragment is injected.
+    Scope *EnclosingScope = getCurScope()->getParent();
+    if (EnclosingScope->isFragmentScope()) {
+      ParsingClass& Class = ParsingDef.Steal();
+
+      // Register late-parsed declarations with the fragment.
+      Actions.ActOnLateParsedClassFragment(EnclosingScope, &Class);
+
+      // Finish the fragment definition.
+      Actions.ActOnTagFinishDefinition(getCurScope(), TagDecl, T.getRange());
+
+      ClassScope.Exit();
+      return;
+    }
+
     // We are not inside a nested class. This class and its nested classes
     // are complete and we can parse the delayed portions of method
     // declarations and the lexed inline method definitions, along with any
@@ -3811,6 +3819,28 @@ void Parser::PopParsingClass(Sema::ParsingClassState state) {
   assert(getCurScope()->isClassScope() && "Nested class outside of class scope?");
   ClassStack.top()->LateParsedDeclarations.push_back(new LateParsedClass(this, Victim));
   Victim->TemplateScope = getCurScope()->getParent()->isTemplateParamScope();
+}
+
+/// \brief Pop the top class of the stack of classes that are
+/// currently being parsed, but do not destroy it. The parsing class
+/// is intended to be saved for future analysis.
+///
+/// This routine should be called when we have finished parsing the
+/// definition of a class, but have not yet popped the Scope
+/// associated with the class's definition.
+Parser::ParsingClass &Parser::StealParsingClass(Sema::ParsingClassState State)
+{
+  assert(!ClassStack.empty() && "Mismatched push/pop for class parsing");
+
+  // Reset the diagnostic state.
+  Actions.PopParsingClass(State);
+
+  // This can only be called on a top-level class; this should have accrued
+  // any and all late-parsed information from nested classes.
+  ParsingClass *Top = ClassStack.top();
+  assert(Top->TopLevelClass);
+
+  return *Top;
 }
 
 /// \brief Try to parse an 'identifier' which appears within an attribute-token.

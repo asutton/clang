@@ -1085,6 +1085,7 @@ bool Sema::CppLookupName(LookupResult &R, Scope *S) {
   for (; S && !isNamespaceOrTranslationUnitScope(S); S = S->getParent()) {
     DeclContext *Ctx = S->getEntity();
     bool SearchNamespaceScope = true;
+
     // Check whether the IdResolver has anything in this scope.
     for (; I != IEnd && S->isDeclScope(*I); ++I) {
       if (NamedDecl *ND = R.getAcceptableDecl(*I)) {
@@ -1301,9 +1302,9 @@ bool Sema::CppLookupName(LookupResult &R, Scope *S) {
         // template parameter scope for an out-of-line definition, also
         // look into that context.
         if (!(Found && S->isTemplateParamScope())) {
-          // If we run into a fragment, then we're almost certainly still
-          // inside of a function. Resume the search locally, from within
-          // the fragment (trying to find a captured name).
+          // If we've escaped a fragment, restart the search in its
+          // enclosing context. This allows e.g. names in namespace
+          // fragments to be resolved.
           if (isa<CXXFragmentDecl>(Ctx))
             return CppLookupName(R, S);
 
@@ -2775,10 +2776,6 @@ Sema::SpecialMemberOverloadResult Sema::LookupSpecialMember(CXXRecordDecl *RD,
                                                            bool RValueThis,
                                                            bool ConstThis,
                                                            bool VolatileThis) {
-  if (!CanDeclareSpecialMemberFunction(RD)) {
-    llvm::outs() << "SAD\n";
-    RD->dump();
-  }
   assert(CanDeclareSpecialMemberFunction(RD) &&
          "doing special member lookup into record that isn't fully complete");
   RD = RD->getDefinition();

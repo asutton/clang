@@ -3895,8 +3895,12 @@ class CXXFragmentDecl : public Decl, public DeclContext {
   /// The source code fragment.
   Decl* Content;
 
+  /// Information about late parsed declarations, entities, etc.
+  void* ParsingInfo;
+
   CXXFragmentDecl(DeclContext *DC, SourceLocation IntroLoc)
-      : Decl(CXXFragment, DC, IntroLoc), DeclContext(CXXFragment), Content() {}
+      : Decl(CXXFragment, DC, IntroLoc), DeclContext(CXXFragment), Content(),
+        ParsingInfo() {}
 public:
   static CXXFragmentDecl *Create(ASTContext &CXT, DeclContext *DC,
                                  SourceLocation IntroLoc);
@@ -3910,6 +3914,15 @@ public:
   void setContent(Decl *D) { 
     assert(!Content && "Content already set");
     Content = D;
+  }
+
+  /// \brief Information needed to parse definitions within the fragment.
+  void* getParsingInfo() const { return ParsingInfo; }
+
+  /// \brief Sets the parsing information.
+  void setParsingInfo(void* PI) { 
+    assert(!ParsingInfo && "Parsing info already set");
+    ParsingInfo = PI; 
   }
 
   /// brief True if the fragment has dynamic type T.
