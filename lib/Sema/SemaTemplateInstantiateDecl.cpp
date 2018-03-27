@@ -2258,30 +2258,30 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     Owner->addDecl(Method);
   }
 
-  // If we injected a method, we need to also instantiate the definition.
-  // See the comments in VisitFunctionDecl.
-  if (SemaRef.CurrentInjectionContext && D->isThisDeclarationADefinition()) {
-    llvm::outs() << "MAYBE INSTANTIATE\n";
-      D->dump();
-      Method->dump();
-    if (!D->isInFragment()) {
-      llvm::outs() << "BUT DON'T\n";
-      goto out;
-    }
-    if (SemaRef.DeferredGenerations) {
-      llvm::outs() << "REQUEST FOR\n";
-      SemaRef.DeferredGenerations->MakeRequest(*SemaRef.CurrentInjectionContext,
-                                               D, Method);
-    }
-    else  {
-      llvm::outs() << "INSTANTIATE NOW\n";
-      SemaRef.InstantiateFunctionDefinition(D->getLocation(), Method, 
-                                            /*Recursive=*/false, 
-                                            /*DefinitionRequired=*/true, 
-                                            /*AtEndOfTU=*/false, 
-                                            /*Injection=*/ D);
-    }
-  }
+  // // If we injected a method, we need to also instantiate the definition.
+  // // See the comments in VisitFunctionDecl.
+  // if (SemaRef.CurrentInjectionContext && D->isThisDeclarationADefinition()) {
+  //   llvm::outs() << "MAYBE INSTANTIATE\n";
+  //     D->dump();
+  //     Method->dump();
+  //   if (!D->isInFragment()) {
+  //     llvm::outs() << "BUT DON'T\n";
+  //     goto out;
+  //   }
+  //   if (SemaRef.DeferredGenerations) {
+  //     llvm::outs() << "REQUEST FOR\n";
+  //     SemaRef.DeferredGenerations->MakeRequest(*SemaRef.CurrentInjectionContext,
+  //                                              D, Method);
+  //   }
+  //   else  {
+  //     llvm::outs() << "INSTANTIATE NOW\n";
+  //     SemaRef.InstantiateFunctionDefinition(D->getLocation(), Method, 
+  //                                           /*Recursive=*/false, 
+  //                                           /*DefinitionRequired=*/true, 
+  //                                           /*AtEndOfTU=*/false, 
+  //                                           /*Injection=*/ D);
+  //   }
+  // }
 
 out:
   return Method;
