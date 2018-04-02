@@ -982,6 +982,10 @@ private:
     virtual void ParseLexedMemberInitializers();
     virtual void ParseLexedMethodDefs();
     virtual void ParseLexedAttributes();
+
+    /// Process the late parsed declaration in in the context of an injection.
+    /// These functions are implemented in ParseInject.cpp.
+    virtual void ParseAfterInjection(void *Cxt);
   };
 
   /// Inner node of the LateParsedDeclaration tree that parses
@@ -995,6 +999,8 @@ private:
     void ParseLexedMemberInitializers() override;
     void ParseLexedMethodDefs() override;
     void ParseLexedAttributes() override;
+
+    void ParseAfterInjection(void *Cxt) override;
 
   private:
     Parser *Self;
@@ -1019,6 +1025,8 @@ private:
       : Self(P), AttrName(Name), AttrNameLoc(Loc) {}
 
     void ParseLexedAttributes() override;
+
+    void ParseAfterInjection(void *Cxt) override;
 
     void addDecl(Decl *D) { Decls.push_back(D); }
   };
@@ -1051,6 +1059,8 @@ private:
       : Self(P), D(MD), TemplateScope(false) {}
 
     void ParseLexedMethodDefs() override;
+
+    void ParseAfterInjection(void *Cxt) override;
   };
 
   /// LateParsedDefaultArgument - Keeps track of a parameter that may
@@ -1083,6 +1093,8 @@ private:
 
     void ParseLexedMethodDeclarations() override;
 
+    void ParseAfterInjection(void *Cxt) override;
+
     Parser* Self;
 
     /// Method - The method declaration.
@@ -1113,6 +1125,8 @@ private:
       : Self(P), Field(FD) { }
 
     void ParseLexedMemberInitializers() override;
+
+    void ParseAfterInjection(void *Cxt) override;
 
     Parser *Self;
 
@@ -2627,6 +2641,17 @@ private:
   Decl *ParseNamespaceFragment(Decl *Fragment);
   Decl *ParseClassFragment(Decl *Fragment);
   Decl *ParseEnumFragment(Decl *Fragment);
+
+  static void LateClassFragmentParserCallback(void *Parser, void *CXt, void *Class);
+
+public:
+  /// Parse any late-parsed entities in the late-parsed tree denoted by
+  /// the ParsingClass C.
+  void LateParseClassFragment(void *Cxt, void *Class);
+private:
+  void ParseInjectedMethodDefinition(LexedMethod &Method, void *Cxt);
+  void ParseInjectedMethodDeclaration(LateParsedMethodDeclaration &Method, void *Cxt);
+  void ParseInjectedMemberInitializer(LateParsedMemberInitializer &Init, void *CXt);
 
   StmtResult ParseCXXInjectionStatement();
   StmtResult ParseCXXExtensionStatement();

@@ -284,9 +284,12 @@ struct TypedValue
 class InjectionContext
 {
 public:
-  InjectionContext(Sema &SemaRef, DeclContext *Injectee);
+  InjectionContext(Sema &SemaRef, CXXFragmentDecl *Frag, DeclContext *Injectee);
   InjectionContext(const InjectionContext& Cxt);
   ~InjectionContext();
+
+  /// Detach the context from the semantics object. Returns this object.
+  InjectionContext *Detach();
 
   /// \brief Adds a substitution from one declaration to another.
   void AddDeclSubstitution(Decl *Orig, Decl *New);
@@ -313,7 +316,10 @@ public:
   /// \brief The previous injection context.
   InjectionContext *Prev;
 
-  /// \brief The Injectee declaration context.
+  /// \brief The fragment being injected.
+  CXXFragmentDecl *Fragment;
+
+  /// \brief The context into which the fragment is injected
   DeclContext *Injectee;
 
   /// \brief A mapping from declarations in an injection to those in the
@@ -324,43 +330,6 @@ public:
   /// values. This is used by TreeTransformer to replace references with
   /// constant expressions.
   llvm::DenseMap<Decl *, TypedValue> PlaceholderSubsts;
-};
-
-/// Represents a request to generate a declaration's definition.
-struct DeferredGenerationRequest
-{
-  DeferredGenerationRequest(const InjectionContext& C, Decl *D, Decl *R)
-    : Cxt(C), Old(D), New(R)
-  { }
-
-  InjectionContext Cxt;
-  Decl *Old;
-  Decl *New;
-};
-
-/// Manages the context of deferred instantiations. This is typically created
-/// whever a metaprogram is constructed to define a class (i.e., before we
-/// create a metaclass, generated type, etc).
-class DeferredGenerationContext
-{
-public:
-  DeferredGenerationContext(Sema &SemaRef);
-  ~DeferredGenerationContext();
-
-  /// \brief Add a request to generate information for D.
-  void MakeRequest(const InjectionContext& Cxt, Decl *O, Decl *D) {
-    Reqs.emplace_back(Cxt, O, D);
-  }
-
-  /// \brief Returns the list of current requests.
-  const SmallVectorImpl<DeferredGenerationRequest>& GetRequests() {
-    return Reqs;
-  }
-
-private:
-  Sema &SemaRef;
-  DeferredGenerationContext *Prev;
-  llvm::SmallVector<DeferredGenerationRequest, 16> Reqs;
 };
 
 /// Sema - This implements semantic analysis and AST building for C.
@@ -686,6 +655,16 @@ public:
     LateTemplateParserCleanup = LTPCleanup;
     OpaqueParser = P;
   }
+
+  using LateClassFragmentParserCB = void (*)(void *Parser, void *Cxt, void *Class);
+
+  /// \brief The parser object. This is distinct from the OpaqueParser
+  /// above, because they are set at different times.
+  void *OpaqueFragmentParser;
+
+  /// The late class fragment parser refers opaquely to the parser P and a 
+  /// ParsingClass object from the Parser.
+  LateClassFragmentParserCB LateClassFragmentParser;
 
   class DelayedDiagnostics;
 
@@ -7512,12 +7491,6 @@ public:
   /// \brief The current injection context. Defined in SemaInject.cpp.
   InjectionContext *CurrentInjectionContext;
 
-  /// \brief The current deferred generation context, or null.
-  DeferredGenerationContext *DeferredGenerations;
-
-  /// \brief Process deferred generations.
-  void ProcessDeferredGenerations(SourceLocation Loc);
-
   /// \brief Tracks whether we are in a context where typo correction is
   /// disabled.
   bool DisableTypoCorrection;
@@ -8568,7 +8541,7 @@ public:
   void ActOnConstexprDeclError(Scope *S, Decl *D);
 
   bool EvaluateConstexprDecl(ConstexprDecl *CD, FunctionDecl *D);
-  bool EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E);
+  bool EvaluateConstexprDecl(ConstexprDecl *CD, Expr *E);
   bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
 
   void ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures);
@@ -8582,6 +8555,10 @@ public:
                                   SmallVectorImpl<Expr *> &Captures,
                                   Decl *Fragment);
   void ActOnLateParsedClassFragment(Scope *S, void *P);
+  void ActOnFinishLateParsedFragment(void *Cxt);
+
+  Decl *RebindMethodDefinition(Decl *Method, void *Cxt);
+  Decl *RebindFieldDeclaration(Decl *Field, void *Cxt);
 
   StmtResult ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);
   StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);

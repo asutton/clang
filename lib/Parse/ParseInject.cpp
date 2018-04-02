@@ -405,4 +405,74 @@ Parser::ParseCXXGeneratedTypeDeclaration(SourceLocation UsingLoc)
   return DeclGroupPtrTy();
 }
 
+void Parser::LateClassFragmentParserCallback(void *P,
+                                             void *Cxt,
+                                             void *Cls) {
+  Parser* This = reinterpret_cast<Parser *>(P);
+  This->LateParseClassFragment(Cxt, Cls);
+}
+
+void Parser::LateParseClassFragment(void *Cxt, void *Cls) {
+  ParsingClass *Class = reinterpret_cast<ParsingClass *>(Cls);
+  for (LateParsedDeclaration* LPD : Class->LateParsedDeclarations)
+    LPD->ParseAfterInjection(Cxt);
+  Actions.ActOnFinishLateParsedFragment(Cxt);
+}
+
+void Parser::LateParsedDeclaration::ParseAfterInjection(void *Cxt) {
+
+}
+
+void Parser::LateParsedClass::ParseAfterInjection(void *Cxt) {
+  
+}
+
+void Parser::LateParsedAttribute::ParseAfterInjection(void *Cxt) {
+  
+}
+
+void Parser::LexedMethod::ParseAfterInjection(void *Cxt) {
+  Self->ParseInjectedMethodDefinition(*this, Cxt);
+}
+
+void Parser::LateParsedMethodDeclaration::ParseAfterInjection(void *Cxt) {
+  Self->ParseInjectedMethodDeclaration(*this, Cxt);
+}
+
+void Parser::LateParsedMemberInitializer::ParseAfterInjection(void *Cxt) {
+  Self->ParseInjectedMemberInitializer(*this, Cxt);
+}
+
+void
+Parser::ParseInjectedMethodDefinition(LexedMethod &Method, 
+                                      void *Cxt) {
+  // FIXME: What do we do with captured names? They're no longer in scope
+  // at this point; we'd need to somehow re-introduce them?
+  Method.D = Actions.RebindMethodDefinition(Method.D, Cxt);
+  Method.ParseLexedMethodDefs();
+}
+
+void
+Parser::ParseInjectedMethodDeclaration(LateParsedMethodDeclaration &Method, 
+                                       void *Cxt) {
+  // FIXME: Implement me.
+  llvm_unreachable("not implemented");
+}
+
+void
+Parser::ParseInjectedMemberInitializer(LateParsedMemberInitializer &Init,
+                                       void *Cxt) {
+  // FIXME: See comments above.
+
+  // Save the current token (almost certainly a ;) so we can re-add it
+  // to the stream after lexing the initializer.
+  Token Saved = Tok;
+
+  Init.Field = Actions.RebindFieldDeclaration(Init.Field, Cxt);
+  Init.ParseLexedMemberInitializers();
+
+  // Restore the last token.
+  PP.EnterToken(Saved);
+  Tok.setKind(Saved.getKind());
+}
 

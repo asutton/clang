@@ -69,13 +69,8 @@ Parser::Parser(Preprocessor &pp, Sema &actions, bool skipFunctionBodies)
   PP.setCodeCompletionHandler(*this);
 
   // Initialize injection parsing callbacks.
-  //
-  // FIXME: This probably goes away.
-  //
-  // Actions.InjectionParser = this;
-  // Actions.NamespaceInjectionParser = InjectedNamespaceMemberCB;
-  // Actions.ClassInjectionParser = InjectedClassMemberCB;
-  // Actions.BlockInjectionParser = InjectedStatementCB;
+  Actions.OpaqueFragmentParser = this;
+  Actions.LateClassFragmentParser = LateClassFragmentParserCallback;
 }
 
 DiagnosticBuilder Parser::Diag(SourceLocation Loc, unsigned DiagID) {

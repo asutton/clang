@@ -264,6 +264,11 @@ public:
   TypeSourceInfo *getTypeSourceInfo() const { return BaseTypeInfo; }
 };
 
+struct UnparsedClassFragment {
+  void *Cxt;
+  void *Class;
+};
+
 /// \brief Represents a C++ struct/union/class.
 class CXXRecordDecl : public RecordDecl {
 
@@ -526,6 +531,11 @@ class CXXRecordDecl : public RecordDecl {
     ArrayRef<CXXBaseSpecifier> vbases() const {
       return llvm::makeArrayRef(getVBases(), NumVBases);
     }
+
+    /// \brief Stores a list of member definitions within fragments that have
+    /// not yet been parsed. When the class is completed (semantically), these
+    /// are parsed as if definitions of the containing class.
+    SmallVector<UnparsedClassFragment, 8> UnparsedFragments;
 
   private:
     CXXBaseSpecifier *getBasesSlowCase() const;
@@ -1774,6 +1784,16 @@ public:
   /// \brief The expression used to generate a final class from a prototype.
   /// This is always an unresolved id expression. 
   Expr *getGenerator() const { return Generator; }
+
+  /// \brief Adds an unparsed fragment to this class.
+  void addUnparsedFragment(void *Cxt, void *P) { 
+    data().UnparsedFragments.push_back({Cxt, P}); 
+  }
+
+  /// \brief The list of unparsed fragments in the class.
+  const SmallVectorImpl<UnparsedClassFragment> &getUnparsedFragments() const {
+    return data().UnparsedFragments;
+  }
 
   /// \brief Associates a generating function with with a class.
   void setGenerator(Expr *E) { Generator = E; }
@@ -3895,12 +3915,14 @@ class CXXFragmentDecl : public Decl, public DeclContext {
   /// The source code fragment.
   Decl* Content;
 
-  /// Information about late parsed declarations, entities, etc.
-  void* ParsingInfo;
+  /// A ParsingClass object from the parser. If this is a class fragment,
+  /// then this will contain the late-parsed declarations associated with
+  /// the class fragment's definition.
+  void* ParsedClass;
 
   CXXFragmentDecl(DeclContext *DC, SourceLocation IntroLoc)
       : Decl(CXXFragment, DC, IntroLoc), DeclContext(CXXFragment), Content(),
-        ParsingInfo() {}
+        ParsedClass() {}
 public:
   static CXXFragmentDecl *Create(ASTContext &CXT, DeclContext *DC,
                                  SourceLocation IntroLoc);
@@ -3917,12 +3939,12 @@ public:
   }
 
   /// \brief Information needed to parse definitions within the fragment.
-  void* getParsingInfo() const { return ParsingInfo; }
+  void* getParsedClass() const { return ParsedClass; }
 
   /// \brief Sets the parsing information.
-  void setParsingInfo(void* PI) { 
-    assert(!ParsingInfo && "Parsing info already set");
-    ParsingInfo = PI; 
+  void setParsedClass(void* PC) { 
+    assert(!ParsedClass && "Parsing info already set");
+    ParsedClass = PC; 
   }
 
   /// brief True if the fragment has dynamic type T.

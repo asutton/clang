@@ -2448,17 +2448,12 @@ void Sema::ActOnFinishConstexprDecl(Scope *S, Decl *D, Stmt *Body) {
   if (CD->hasFunctionRepresentation()) {
     FunctionDecl *Fn = CD->getFunctionDecl();
     ActOnFinishFunctionBody(Fn, Body);
-
-    // Only evaluate in dependent contexts.
     if (!CurContext->isDependentContext())
       EvaluateConstexprDecl(CD, Fn);
   } else {
-    LambdaExpr *Lambda =
-        cast<LambdaExpr>(ActOnLambdaExpr(CD->getLocation(), Body, S).get());
-
-    // Only evaluate in dependent contexts.
+    ExprResult Lambda = ActOnLambdaExpr(CD->getLocation(), Body, S);
     if (!CurContext->isDependentContext())
-      EvaluateConstexprDecl(CD, Lambda);
+      EvaluateConstexprDecl(CD, Lambda.get());
   }
 
   // If we didn't have a scope when building this, we need to restore the
@@ -2505,8 +2500,9 @@ bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, FunctionDecl *D) {
 ///
 /// This builds an unnamed \c constexpr \c void function whose body is that of
 /// the constexpr-delaration, and evaluates a call to that function.
-bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E) {
-  CXXMethodDecl *Method = E->getCallOperator();
+bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, Expr *E) {
+  LambdaExpr *Lambda = cast<LambdaExpr>(E);
+  CXXMethodDecl *Method = Lambda->getCallOperator();
   QualType MethodTy = Method->getType();
   DeclRefExpr *Ref = new (Context)
       DeclRefExpr(Method, /*RefersToEnclosingVariableOrCapture=*/false,
@@ -2516,7 +2512,8 @@ bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, LambdaExpr *E) {
       ImplicitCastExpr::Create(Context, PtrTy, CK_FunctionToPointerDecay, Ref,
                                /*BasePath=*/nullptr, VK_RValue);
   CallExpr *Call = new (Context) CXXOperatorCallExpr(Context, OO_Call,
-                                                     Cast, {E}, Context.VoidTy, 
+                                                     Cast, {Lambda}, 
+                                                     Context.VoidTy, 
                                                      VK_RValue, 
                                                      SourceLocation(),
                                                      FPOptions());
@@ -2571,7 +2568,6 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
 
   // Apply any modifications, and if successful, remove the declaration from
   // the class; it shouldn't be visible in the output code.
-  //
   SourceLocation POI = CD->getSourceRange().getEnd();
   ApplyEffects(POI, Effects);
 

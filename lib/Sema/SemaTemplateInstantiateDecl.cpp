@@ -965,8 +965,12 @@ Decl *TemplateDeclInstantiator::VisitConstexprDecl(ConstexprDecl *D) {
     Owner->addDecl(CD); // FIXME: OWner or CurContext?
 
     // And evaluate it if needed.
-    if (!NewFn->isDependentContext())
+    if (!NewFn->isDependentContext()) {
+      // FIXME: What the hell are we going to do with late parsed
+      // declarations during template instantiation?
+      SmallVector<void *, 8> LateParsedDecls;
       SemaRef.EvaluateConstexprDecl(CD, NewFn);
+    }
     
     return CD;
   } else if (CXXRecordDecl *Class = D->getClosureDecl()) {
@@ -2283,7 +2287,6 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
   //   }
   // }
 
-out:
   return Method;
 }
 

@@ -96,7 +96,7 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
       TUKind(TUKind), NumSFINAEErrors(0), AccessCheckingSFINAE(false),
       InNonInstantiationSFINAEContext(false), NonInstantiationEntries(0),
       ArgumentPackSubstitutionIndex(-1), CurrentInstantiationScope(nullptr),
-      CurrentInjectionContext(nullptr), DeferredGenerations(nullptr),
+      CurrentInjectionContext(nullptr),
       DisableTypoCorrection(false), TyposCorrected(0), AnalysisWarnings(*this),
       ThreadSafetyDeclCache(nullptr), VarDataSharingAttributesStack(nullptr),
       CurScope(nullptr), Ident_super(nullptr), Ident___float128(nullptr) {

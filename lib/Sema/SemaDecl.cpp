@@ -14012,12 +14012,31 @@ void Sema::StartDefinition(TagDecl *D) {
   D->startDefinition();
 }
 
+/// If there are any unprocessed fragments associated with the class, then
+/// we need to parse them now. Note that this happens after the class is
+/// completed.
+static void ProcessUnparsedFragments(Sema &SemaRef, CXXRecordDecl *D) {
+  if (!D)
+    return;
+  
+  CXXRecordDecl *Class = cast<CXXRecordDecl>(D);
+  const SmallVectorImpl<UnparsedClassFragment> &UnparsedFrags = 
+      Class->getUnparsedFragments();
+  if (UnparsedFrags.empty())
+    return;
+
+  for (UnparsedClassFragment UCF : UnparsedFrags)
+    SemaRef.LateClassFragmentParser(SemaRef.OpaqueFragmentParser, UCF.Cxt, UCF.Class);
+}
+
 void Sema::CompleteDefinition(RecordDecl *D) {
   D->completeDefinition();
+  ProcessUnparsedFragments(*this, dyn_cast<CXXRecordDecl>(D));
 }
 
 void Sema::CompleteDefinition(CXXRecordDecl *D, CXXFinalOverriderMap *Map) {
   D->completeDefinition(Map);
+  ProcessUnparsedFragments(*this, dyn_cast<CXXRecordDecl>(D));
 }
 
 void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {
@@ -14180,7 +14199,7 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
 
       Stmt* Body = new (Context) CompoundStmt(Context, Call.get(), Loc, Loc);
 
-      DeferredGenerationContext Gens(*this);
+      // FIXME: How do we process late-parsed declarations here. 
       ActOnFinishConstexprDecl(CurScope, CD, Body);
 
       // Finally, re-analyze the fields of the fields the class to instantiate
@@ -14190,8 +14209,6 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
                   BraceRange.getBegin(), BraceRange.getEnd(), nullptr);
 
       assert(Class->isCompleteDefinition() && "Generated class not complete");
-
-      ProcessDeferredGenerations(Loc);
 
       // Replace the closed tag with this class.
       Tag = Class;
