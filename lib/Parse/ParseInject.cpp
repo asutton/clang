@@ -466,6 +466,9 @@ Parser::ParseInjectedMemberInitializer(LateParsedMemberInitializer &Init,
 
   // Save the current token (almost certainly a ;) so we can re-add it
   // to the stream after lexing the initializer.
+  //
+  // FIXME: this seems like a bit of hack. I'm not sure why we lose
+  // semicolons here.
   Token Saved = Tok;
 
   Init.Field = Actions.RebindFieldDeclaration(Init.Field, Cxt);

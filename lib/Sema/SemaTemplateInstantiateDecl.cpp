@@ -878,11 +878,23 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
   Field->setAccess(D->getAccess());
   Owner->addDecl(Field);
 
-  // If this is part of a fragment, instantiate the initializer.
-  if (SemaRef.CurrentInjectionContext && D->isInFragment() && 
-      D->hasInClassInitializer())
-    SemaRef.InstantiateInClassInitializer(Field->getLocation(), Field, D, 
-                                          TemplateArgs);
+  // Transfer the late-parsed initializer to the new field.
+  if (D->isInFragment() && D->hasInClassInitializer()) {
+    assert(D->getInClassInitializer() == nullptr && "Pre-parsed initializer");
+
+    // FIXME: This sucks. We need to construct an object that lets us re-parse
+    // the initializer much later, but to do so as if it were in the original
+    // template context. This means need to associate, with the fragment 
+    // (probably?) the fact that we have a late-parsed initializer (where
+    // do we get the tokens?) and the levels of template arguments that have
+    // been applied.
+    //
+    // Later -- after injection even, we need to rebuild the original template
+    // context, parse the initializer, and THEN, we can instantiate the 
+    // expression with the template argument lists.
+    //
+    // This does not seem sane.
+  }
 
   return Field;
 }
@@ -1618,6 +1630,7 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
 
   Record->setImplicit(D->isImplicit());
   Record->setFragment(D->isFragment());
+  
   // FIXME: Check against AS_none is an ugly hack to work around the issue that
   // the tag decls introduced by friend class declarations don't have an access
   // specifier. Remove once this area of the code gets sorted out.
@@ -1661,13 +1674,15 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
   if (D->isCompleteDefinition() && (D->isLocalClass() || D->isInFragment())) {
     Sema::LocalEagerInstantiationScope LocalInstantiations(SemaRef);
 
+    llvm::outs() << "SUBST CLASS DEF\n";
     SemaRef.InstantiateClass(D->getLocation(), Record, D, TemplateArgs,
                              TSK_ImplicitInstantiation,
                              /*Complain=*/true);
 
-    // For nested local classes, we will instantiate the members when we
-    // reach the end of the outermost (non-nested) local class.
-    if (!D->isCXXClassMember())
+    // For nested local classes only, we will instantiate the members when we
+    // reach the end of the outermost (non-nested) local class. Members of
+    // fragments are considered separately.
+    if (!D->isCXXClassMember() && !D->isInFragment())
       SemaRef.InstantiateClassMembers(D->getLocation(), Record, TemplateArgs,
                                       TSK_ImplicitInstantiation);
 

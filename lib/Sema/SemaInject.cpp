@@ -35,13 +35,13 @@ InjectionContext::InjectionContext(Sema &SemaRef,
 }
 
 InjectionContext::~InjectionContext() {
-  if (Prev)
+  if (Prev != (InjectionContext *)0x1)
     SemaRef.CurrentInjectionContext = Prev;
 }
 
 InjectionContext *InjectionContext::Detach() {
   SemaRef.CurrentInjectionContext = Prev;
-  Prev = nullptr;
+  Prev = (InjectionContext *)0x1;
   return this;
 }
 
@@ -1390,7 +1390,7 @@ bool InjectFragment(Sema &SemaRef,
     }
 
     // llvm::outs() << "AFTER INJECT\n";
-    R->dump();
+    // R->dump();
   }
 
   // If we're injecting into a class and the fragment has late-parsed

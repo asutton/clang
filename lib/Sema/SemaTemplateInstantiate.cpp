@@ -1023,10 +1023,6 @@ Decl *TemplateInstantiator::TransformDecl(SourceLocation Loc, Decl *D) {
     // template parameter.
   }
 
-  // The declaration may have be replaced by injection.
-  if (Decl *R = FindSubstitutedDecl(D))
-    return R;
-
   return SemaRef.FindInstantiatedDecl(Loc, cast<NamedDecl>(D), TemplateArgs);
 }
 

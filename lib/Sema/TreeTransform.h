@@ -408,26 +408,6 @@ public:
                       SmallVectorImpl<Expr *> &Outputs,
                       bool *ArgChanged = nullptr);
 
-  /// \brief During injection, a declaration referring to an injected entity
-  /// may be substituted for its context. In that case, return the substituted
-  /// declaration. Otherwise, returns null.
-  Decl *FindSubstitutedDecl(Decl *D) {
-    if (InjectionContext *Injection = getSema().CurrentInjectionContext) {
-      if (Decl *R = Injection->GetDeclReplacement(D))
-        return R;
-
-      // There are also cases where substitution short-circuits because we
-      // may not be in a dependent context. (see FindInstantiatedDecl).
-      if (LocalInstantiationScope *S = getSema().CurrentInstantiationScope) {
-        if (auto Found = S->lookupInstantiationOf(D)) {
-          if (Decl *FD = Found->dyn_cast<Decl *>())
-            return FD;
-        }
-      }
-    }
-    return nullptr;
-  }
-
   /// \brief Transform the given declaration.
   Decl *TransformDecl(Decl *D) {
     return getDerived().TransformDecl(D->getLocation(), D);
@@ -436,8 +416,6 @@ public:
   /// \brief Transform the given declaration, which is referenced from a type
   /// or expression.
   Decl *TransformDecl(SourceLocation Loc, Decl *D) {
-    if (Decl *R = FindSubstitutedDecl(D))
-      return R;
     llvm::DenseMap<Decl *, Decl *>::iterator Known
       = TransformedLocalDecls.find(D);
     if (Known != TransformedLocalDecls.end())
@@ -7479,6 +7457,8 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
     NamedDecl *Owner = dyn_cast<NamedDecl>(getSema().CurContext);
     MultiLevelTemplateArgumentList Args =
         getSema().getTemplateInstantiationArgs(Owner);
+    llvm::outs() << "CLONE DECL\n";
+    OldFragment->getContent()->dump();
     Decl *NewContent = 
         getSema().SubstDecl(OldFragment->getContent(), NewFragment, Args);
     if (!NewContent)
@@ -9213,13 +9193,6 @@ TreeTransform<Derived>::TransformPredefinedExpr(PredefinedExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformDeclRefExpr(DeclRefExpr *E) {
-  // When injecting code, E may refer to a placeholder. In that case, replace
-  // it with a constant expression. If not, fall through.
-  if (InjectionContext *Injection = getSema().CurrentInjectionContext) {
-    if (Expr *R = Injection->GetPlaceholderReplacement(E))
-      return R;
-  }
-
   NestedNameSpecifierLoc QualifierLoc;
   if (E->getQualifierLoc()) {
     QualifierLoc
