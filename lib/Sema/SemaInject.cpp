@@ -45,6 +45,12 @@ InjectionContext *InjectionContext::Detach() {
   return this;
 }
 
+void InjectionContext::Attach() {
+  assert((Prev == (InjectionContext *)0x1) && "Context not detached");
+  Prev = SemaRef.CurrentInjectionContext;
+  SemaRef.CurrentInjectionContext = this;
+}
+
 void InjectionContext::AddDeclSubstitution(Decl *Orig, Decl *New) {
   assert(DeclSubsts.count(Orig) == 0 && "Overwriting substitution");
   DeclSubsts.try_emplace(Orig, New);
@@ -104,7 +110,22 @@ static inline ASTContext& getASTContext(InjectionContext &Cxt) {
   return Cxt.SemaRef.getASTContext();
 }
 
-static DeclarationName InjectName(InjectionContext &Cxt, const DeclarationName &N);
+/// Try to find a replacement for the given declaration.
+///
+/// FIXME: We really want a resolve or lookup operation. If the declaration
+/// cannot be resolved, then we need to lookup the use of the name in the
+/// current context.
+static Decl* ResolveDecl(InjectionContext &Cxt, Decl *D) {
+  return Cxt.GetDeclReplacement(D);
+}
+
+static DeclarationName InjectName(InjectionContext &Cxt, 
+                                  const DeclarationName &N);
+static NestedNameSpecifierLoc InjectNameSpecifier(InjectionContext &Cxt, 
+                                                  const NestedNameSpecifierLoc& NNS,
+                                                  Decl *FirstDecl = nullptr);
+static DeclarationNameInfo InjectDeclName(InjectionContext &Cxt, 
+                                          const DeclarationNameInfo& DNI);
 static DeclarationNameInfo InjectDeclName(InjectionContext &Cxt, NamedDecl *D);
 
 static QualType InjectType(InjectionContext &Cxt, QualType T);
@@ -113,20 +134,57 @@ static TypeSourceInfo *InjectType(InjectionContext &Cxt, TypeSourceInfo *TSI);
 static TypeSourceInfo *InjectDeclType(InjectionContext &Cxt, NamedDecl *D);
 static TypeSourceInfo *InjectDeclType(InjectionContext &Cxt, DeclaratorDecl *D);
 
+static StmtResult InjectStmt(InjectionContext &Cxt, Stmt *S);
+static StmtResult InjectStmt(InjectionContext &Cxt, StmtResult S);
+
 static ExprResult InjectExpr(InjectionContext &Cxt, Expr *E);
 static ExprResult InjectExpr(InjectionContext &Cxt, ExprResult E);
 
 static Decl *InjectDecl(InjectionContext &Cxt, Decl *D);
 
+// Transform template arguments in the range [First, Last).
+template<typename InputIterator>
+static bool InjectTemplateArguments(InjectionContext &Cxt, 
+                                    InputIterator First, 
+                                    InputIterator Last, 
+                                    TemplateArgumentListInfo& Output) {
+  llvm_unreachable("not implemented");
+}
+
+// Transform template arguments in the range [Input, Input + Count).
+static bool InjectTemplateArguments(InjectionContext &Cxt, 
+                                    const TemplateArgumentLoc *Input, 
+                                    unsigned Count,
+                                    TemplateArgumentListInfo& Output) {
+  return InjectTemplateArguments(Cxt, Input, Input + Count, Output);
+}
+
+
 // FIXME: Implement me. In general, we just need to be sure to apply
 // transformations to idexprs. Otherwise, these things don't change too
 // much.
-//
-// FIXME: What if the declaration name is qualified?
-static DeclarationName InjectName(InjectionContext &Cxt, const DeclarationName &N) {
+static DeclarationName InjectName(InjectionContext &Cxt, 
+                                  const DeclarationName &N) {
   return N;
 }
 
+// Note that FirstDecl is the first qualifier in scope for certain kinds
+// of member declarations. This can be null.
+static NestedNameSpecifierLoc InjectNameSpecifier(InjectionContext &Cxt, 
+                                                  const NestedNameSpecifierLoc &NNS,
+                                                  Decl *FirstDecl) {
+  llvm_unreachable("not implemented");
+}
+
+/// Returns a transformed version of the declaration name.
+static DeclarationNameInfo InjectDeclName(InjectionContext &Cxt, 
+                                          const DeclarationNameInfo& DNI) {
+  assert(DNI.getName() && "Injection of absent name");
+  DeclarationName N = InjectName(Cxt, DNI.getName());
+  return DeclarationNameInfo(N, DNI.getLoc());  
+}
+
+/// Returns a transformed version of the declared name of D.
 static DeclarationNameInfo InjectDeclName(InjectionContext &Cxt, NamedDecl *D) {
   DeclarationName N = InjectName(Cxt, D->getDeclName());
   return DeclarationNameInfo(N, D->getLocation());  
@@ -272,34 +330,30 @@ static QualType InjectFunctionType(InjectionContext &Cxt, const FunctionProtoTyp
 
 static QualType InjectUnresolvedUsingType(InjectionContext &Cxt,
                                           const UnresolvedUsingType *T) {
-  Decl *D = InjectDecl(Cxt, T->getDecl());
-  if (!D)
-    return QualType();
+  Decl *D = ResolveDecl(Cxt, T->getDecl());
+  assert(D); // FIXME: May entail lookup.
   if (TypeDecl *TD = dyn_cast<TypeDecl>(D))
     return getASTContext(Cxt).getTypeDeclType(TD);
   llvm_unreachable("unknown using type");
 }
 
 static QualType InjectTypedefType(InjectionContext &Cxt, const TypedefType *T) {
-  Decl *D = InjectDecl(Cxt, T->getDecl());
-  if (!D)
-    return QualType();
+  Decl *D = ResolveDecl(Cxt, T->getDecl());
+  assert(D); // FIXME: May entail lookup.
   if (TypedefNameDecl *TD = dyn_cast<TypedefNameDecl>(D))
     return getASTContext(Cxt).getTypedefType(TD);
   llvm_unreachable("unknown typedef type");
 }
 
 static QualType InjectRecordType(InjectionContext &Cxt, const RecordType *T) {
-  RecordDecl *D = cast<RecordDecl>(InjectDecl(Cxt, T->getDecl()));
-  if (!D)
-    return QualType();
+  RecordDecl *D = cast_or_null<RecordDecl>(ResolveDecl(Cxt, T->getDecl()));
+  assert(D); // FIXME: May entail lookup.
   return getASTContext(Cxt).getRecordType(D);
 }
 
 static QualType InjectEnumType(InjectionContext &Cxt, const EnumType *T) {
-  EnumDecl *D = cast<EnumDecl>(InjectDecl(Cxt, T->getDecl()));
-  if (!D)
-    return QualType();
+  EnumDecl *D = cast_or_null<EnumDecl>(ResolveDecl(Cxt, T->getDecl()));
+  assert(D); // FIXME: May entail lookup.
   return getASTContext(Cxt).getEnumType(D);
 }
 
@@ -371,13 +425,505 @@ TypeSourceInfo *InjectDeclType(InjectionContext &Cxt, DeclaratorDecl *D) {
   return InjectType(Cxt, D->getTypeSourceInfo());
 }
 
+// Statements
+
+StmtResult InjectCompoundStmt(InjectionContext &Cxt, CompoundStmt *S) {
+  Sema::CompoundScopeRAII CompoundScope(Cxt.SemaRef);
+  SmallVector<Stmt*, 8> Statements;
+  for (auto *B : S->body()) {
+    StmtResult Result = InjectStmt(Cxt, B);
+    if (Result.isInvalid())
+      return StmtError();
+    Statements.push_back(Result.get());
+  }
+  return Cxt.SemaRef.ActOnCompoundStmt(S->getLocStart(), 
+                                       S->getLocEnd(), 
+                                       Statements, 
+                                       false);
+}
+
+static Sema::ConditionResult InjectCondition(InjectionContext &Cxt,
+                                             SourceLocation Loc,
+                                             VarDecl *Var,
+                                             Expr *Cond,
+                                             Sema::ConditionKind Kind) {
+  if (Var) {
+    VarDecl *CondVar = cast_or_null<VarDecl>(InjectDecl(Cxt, Var));
+    if (!CondVar)
+      return Sema::ConditionError();
+    return Cxt.SemaRef.ActOnConditionVariable(CondVar, Loc, Kind);
+  }
+
+  if (Cond) {
+    ExprResult CondExpr = InjectExpr(Cxt, Cond);
+    if (CondExpr.isInvalid())
+      return Sema::ConditionError();
+    return Cxt.SemaRef.ActOnCondition(nullptr, Loc, CondExpr.get(), Kind);
+  }
+
+  return Sema::ConditionResult();
+}
+
+StmtResult InjectIfStmt(InjectionContext &Cxt, IfStmt *S) {
+  // Transform the initialization statement
+  StmtResult Init = InjectStmt(Cxt, S->getInit());
+  if (Init.isInvalid())
+    return StmtError();
+
+  // Transform the condition
+  Sema::ConditionKind Kind = S->isConstexpr() ? 
+      Sema::ConditionKind::ConstexprIf :
+      Sema::ConditionKind::Boolean;
+  Sema::ConditionResult Cond = InjectCondition(Cxt, S->getIfLoc(),
+                                               S->getConditionVariable(),
+                                               S->getCond(),
+                                               Kind);
+  if (Cond.isInvalid())
+    return StmtError();
+
+  // If this is a constexpr if, determine which arm we should instantiate.
+  llvm::Optional<bool> ConstexprConditionValue;
+  if (S->isConstexpr())
+    ConstexprConditionValue = Cond.getKnownValue();
+
+  // Transform the "then" branch.
+  StmtResult Then;
+  if (!ConstexprConditionValue || *ConstexprConditionValue) {
+    Then = InjectStmt(Cxt, S->getThen());
+    if (Then.isInvalid())
+      return StmtError();
+  } else {
+    Then = new (Cxt.SemaRef.Context) NullStmt(S->getThen()->getLocStart());
+  }
+
+  // Transform the "else" branch.
+  StmtResult Else;
+  if (!ConstexprConditionValue || !*ConstexprConditionValue) {
+    Else = InjectStmt(Cxt, S->getElse());
+    if (Else.isInvalid())
+      return StmtError();
+  }
+
+  return Cxt.SemaRef.ActOnIfStmt(S->getIfLoc(), S->isConstexpr(), Init.get(), 
+                                 Cond, Then.get(), S->getElseLoc(), Else.get());
+
+}
+
+StmtResult InjectWhileStmt(InjectionContext &Cxt, WhileStmt *S) {
+  llvm_unreachable("not implemented");
+}
+
+StmtResult InjectDoStmt(InjectionContext &Cxt, DoStmt *S) {
+  llvm_unreachable("not implemented");
+}
+
+StmtResult InjectReturnStmt(InjectionContext &Cxt, ReturnStmt *S) {
+  // FIXME: This is wrong. We need an InjectInitializer to handle case
+  // where initializers are allowed.
+  ExprResult Return = InjectExpr(Cxt, S->getRetValue());
+  if (Return.isInvalid())
+    return StmtError();
+  return Cxt.SemaRef.BuildReturnStmt(S->getLocStart(), Return.get());
+}
+
+StmtResult InjectExprStmt(InjectionContext &Cxt, Expr *E) {
+  ExprResult Result = InjectExpr(Cxt, E);
+  if (Result.isInvalid())
+    return StmtError();
+  return StmtResult(Result.get());
+}
+
+StmtResult InjectStmt(InjectionContext &Cxt, Stmt *S) {
+  if (!S)
+    return StmtResult();
+  switch (S->getStmtClass()) {
+  case Stmt::NullStmtClass:
+  case Stmt::BreakStmtClass:
+  case Stmt::ContinueStmtClass:
+    return S;
+
+  case Stmt::CompoundStmtClass:
+    return InjectCompoundStmt(Cxt, cast<CompoundStmt>(S));
+  
+  // case Stmt::LabelStmtClass:
+  // case Stmt::GotoStmtClass:
+  // case Stmt::IndirectGotoStmtClass:
+
+  // case Stmt::AttributedStmtClass:
+  
+  case Stmt::IfStmtClass:
+    return InjectIfStmt(Cxt, cast<IfStmt>(S));
+  case Stmt::WhileStmtClass:
+    return InjectWhileStmt(Cxt, cast<WhileStmt>(S));
+  case Stmt::DoStmtClass:
+    return InjectDoStmt(Cxt, cast<DoStmt>(S));
+
+  // case Stmt::ForStmtClass:
+  
+  // case Stmt::SwitchStmtClass:
+  // case Stmt::SwitchCaseClass:
+  // case Stmt::CaseStmtClass:
+  // case Stmt::DefaultStmtClass:
+
+
+  case Stmt::ReturnStmtClass:
+    return InjectReturnStmt(Cxt, cast<ReturnStmt>(S));
+  
+  // case Stmt::DeclStmtClass:
+
+  // case Stmt::CapturedStmtClass:
+
+  default: {
+    if (Expr *E = dyn_cast<Expr>(S))
+      return InjectExprStmt(Cxt, E);
+
+    S->dump();
+    llvm_unreachable("Unknown statement");
+  }
+  }
+}
+
+StmtResult InjectStmt(InjectionContext &Cxt, StmtResult S) {
+  return InjectStmt(Cxt, S.get());
+}
+
 // Expressions
+
+ExprResult InjectDeclRefExpr(InjectionContext &Cxt, DeclRefExpr *E) {
+  llvm_unreachable("not implemented");
+}
+
+// Transforms the explicit template arguments for the given type expression,
+// filling Args with template arguments (if any). The Output pointer is 
+// assigned to &Args if arguments are present, otherwise nullptr. Returns
+// true if no errors are encountered.
+template<typename ExprType>
+static bool InjectExplicitTemplateArgs(InjectionContext &Cxt, ExprType *E, 
+                                       TemplateArgumentListInfo &Args,
+                                       TemplateArgumentListInfo *&Output,
+                                       SourceLocation &TemplateLoc) {
+  if (E->hasExplicitTemplateArgs()) {
+    Args.setLAngleLoc(E->getLAngleLoc());
+    Args.setRAngleLoc(E->getRAngleLoc());
+    const TemplateArgumentLoc *Input = E->getTemplateArgs();
+    unsigned Count = E->getNumTemplateArgs();
+    if (!InjectTemplateArguments(Cxt, Input, Count, Args))
+      return false;
+    Output = &Args;
+  } else {
+    Output = nullptr;
+  }
+  TemplateLoc = E->getTemplateKeywordLoc();
+  return true;
+}
+
+ExprResult InjectDeclRefExpr(InjectionContext &Cxt, DependentScopeDeclRefExpr *E) {
+  // Transform the nested name specifier (if any).
+  NestedNameSpecifierLoc QualifierLoc;
+  if (E->getQualifier()) {
+    QualifierLoc = InjectNameSpecifier(Cxt, E->getQualifierLoc());
+    if (!QualifierLoc)
+      return ExprError();
+  }
+
+  // Transform the member name (if present).
+  DeclarationNameInfo NameInfo = E->getNameInfo();
+  if (NameInfo.getName()) {
+    NameInfo = InjectDeclName(Cxt, NameInfo);
+    if (!NameInfo.getName())
+      return ExprError();
+  }
+
+  // Transform explicit template arguments, if any.
+  TemplateArgumentListInfo TemplateArgs;
+  TemplateArgumentListInfo *ExplicitArgs;
+  SourceLocation TemplateLoc;
+  if (!InjectExplicitTemplateArgs(Cxt, E, TemplateArgs, ExplicitArgs, TemplateLoc))
+    return ExprError();
+
+  CXXScopeSpec SS;
+  SS.Adopt(QualifierLoc);
+
+  if (!ExplicitArgs)
+    return Cxt.SemaRef.BuildQualifiedDeclarationNameExpr(
+        SS, NameInfo, /*IsAddressOf=*/false, /*Scope=*/nullptr);
+  else
+    return Cxt.SemaRef.BuildQualifiedTemplateIdExpr(
+        SS, TemplateLoc, NameInfo, &TemplateArgs);
+}
+
+ExprResult InjectParenExpr(InjectionContext &Cxt, ParenExpr *E) {
+  ExprResult Inner = InjectExpr(Cxt, E->getSubExpr());
+  if (Inner.isInvalid())
+    return ExprError();
+  return Cxt.SemaRef.ActOnParenExpr(E->getLocStart(), 
+                                    E->getLocEnd(), 
+                                    Inner.get());
+}
+
+ExprResult InjectMemberExpr(InjectionContext &Cxt, MemberExpr *E) {
+  // Transform the base expression.
+  ExprResult Base = InjectExpr(Cxt, E->getBase());
+  if (Base.isInvalid())
+    return ExprError();
+
+  // Transform the NNS in the case we have e.g., x.A::B::C.
+  NestedNameSpecifierLoc QualifierLoc;
+  if (E->hasQualifier()) {
+    QualifierLoc = InjectNameSpecifier(Cxt, E->getQualifierLoc());
+    if (!QualifierLoc)
+      return ExprError();
+  }
+
+  // Transform the member name (if present).
+  DeclarationNameInfo NameInfo = E->getMemberNameInfo();
+  if (NameInfo.getName()) {
+    NameInfo = InjectDeclName(Cxt, NameInfo);
+    if (!NameInfo.getName())
+      return ExprError();
+  }
+
+  // Transform explicit template args in the case we have e.g., x.f<5>;
+  TemplateArgumentListInfo TemplateArgs;
+  TemplateArgumentListInfo* ExplicitArgs;
+  SourceLocation TemplateLoc;
+  if (!InjectExplicitTemplateArgs(Cxt, E, TemplateArgs, ExplicitArgs, TemplateLoc))
+    return ExprError();
+
+  // Resolve the found declaration (although, we may)
+  NamedDecl *Member = cast_or_null<NamedDecl>(ResolveDecl(Cxt, E->getMemberDecl()));
+  if (!Member) {
+    // FIXME: If we can't re-bind the identifier, then (and only then), we
+    // need to re-do the lookup. We'll update FoundDecl with the result,
+    // if any.
+    llvm_unreachable("no prior declaration");
+  }
+
+  CXXScopeSpec SS;
+  SS.Adopt(QualifierLoc);
+
+  Expr *BaseExpr = Base.get();
+  QualType BaseType = BaseExpr->getType();
+  if (E->isArrow() && !BaseType->isPointerType())
+    return ExprError();
+
+  // FIXME: this involves duplicating earlier analysis in a lot of
+  // cases; we should avoid this when possible.
+  LookupResult R(Cxt.SemaRef, NameInfo, Sema::LookupMemberName);
+  R.addDecl(Member);
+  R.resolveKind();
+
+  return Cxt.SemaRef.BuildMemberReferenceExpr(
+      BaseExpr, BaseType, E->getOperatorLoc(), E->isArrow(), SS, TemplateLoc, 
+      /*FirstQualifierInScope=*/nullptr, R, ExplicitArgs, /*Scope=*/nullptr);
+}
+
+ExprResult InjectMemberExpr(InjectionContext &Cxt, CXXDependentScopeMemberExpr *E) {
+  // Transform the base expression.
+  ExprResult Base = InjectExpr(Cxt, E->getBase());
+  if (Base.isInvalid())
+    return ExprError();
+
+  QualType BaseType;
+  QualType ObjectType;
+  if (!E->isImplicitAccess()) {
+    // Start the member reference and compute the object's type, separately
+    // from the initial transformation.
+    ParsedType ObjectTy;
+    bool MayBePseudoDestructor = false;
+    Base = Cxt.SemaRef.ActOnStartCXXMemberReference(nullptr, Base.get(),
+                                                    E->getOperatorLoc(),
+                                                    E->isArrow() ? 
+                                                      tok::arrow : tok::period,
+                                                    ObjectTy,
+                                                    MayBePseudoDestructor);
+    if (Base.isInvalid())
+      return ExprError();
+
+    ObjectType = ObjectTy.get();
+    BaseType = Base.get()->getType();
+  } else {
+    BaseType = Base.get()->getType();
+    ObjectType = BaseType->getAs<PointerType>()->getPointeeType();
+  }
+
+  // Transform the member name (if present).
+  DeclarationNameInfo NameInfo = InjectDeclName(Cxt, E->getMemberNameInfo());
+  if (!NameInfo.getName())
+    return ExprError();
+
+  // Transform the NNS in the case we have e.g., x.A::B::C.
+  //
+  // FIXME: Probably try resolving first qualifier in the NNS. That will
+  // probably have the effect of "rebasing" the lookup below.
+  NestedNameSpecifierLoc QualifierLoc;
+  if (E->getQualifier()) {
+    QualifierLoc = InjectNameSpecifier(Cxt, E->getQualifierLoc(), nullptr);
+    if (!QualifierLoc)
+      return ExprError();
+  }
+
+  // Transform explicit template args in the case we have e.g., x.f<5>;
+  TemplateArgumentListInfo TemplateArgs;
+  TemplateArgumentListInfo* ExplicitArgs;
+  SourceLocation TemplateLoc;
+  if (!InjectExplicitTemplateArgs(Cxt, E, TemplateArgs, ExplicitArgs, TemplateLoc))
+    return ExprError();
+
+  CXXScopeSpec SS;
+  SS.Adopt(QualifierLoc);
+
+  // Note that this will re-do the lookup given transformed args.
+  return Cxt.SemaRef.BuildMemberReferenceExpr(
+      Base.get(), BaseType, E->getOperatorLoc(), E->isArrow(), SS, 
+      TemplateLoc, nullptr, NameInfo, ExplicitArgs, /*Scope=*/nullptr);
+}
+
+ExprResult InjectUnaryOperator(InjectionContext &Cxt, UnaryOperator *E) {
+  ExprResult Sub = InjectExpr(Cxt, E->getSubExpr());
+  if (Sub.isInvalid())
+    return ExprError();
+  return Cxt.SemaRef.BuildUnaryOp(
+      nullptr, E->getOperatorLoc(), E->getOpcode(), Sub.get());
+}
+
+ExprResult InjectBinaryOperator(InjectionContext &Cxt, BinaryOperator *E) {
+  ExprResult LHS = InjectExpr(Cxt, E->getLHS());
+  if (LHS.isInvalid())
+    return ExprError();
+  ExprResult RHS = InjectExpr(Cxt, E->getRHS());
+  if (RHS.isInvalid())
+    return ExprError();
+  return Cxt.SemaRef.BuildBinOp(
+      nullptr, E->getOperatorLoc(), E->getOpcode(), LHS.get(), RHS.get());
+}
+
+ExprResult InjectCXXThisExpr(InjectionContext &Cxt, CXXThisExpr *E) {
+  QualType T = Cxt.SemaRef.getCurrentThisType();
+  SourceLocation Loc = E->getLocStart();
+  Cxt.SemaRef.CheckCXXThisCapture(Loc);
+  return new (Cxt.SemaRef.Context) CXXThisExpr(Loc, T, E->isImplicit());
+}
 
 ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   if (!E)
-    return ExprError();
+    return ExprResult();
+  switch (E->getStmtClass()) {
+  // case Stmt::PredefinedExpr:
+  case Stmt::DeclRefExprClass:
+    return InjectDeclRefExpr(Cxt, cast<DeclRefExpr>(E));
+  
+  case Stmt::IntegerLiteralClass:
+  case Stmt::FloatingLiteralClass:
+  case Stmt::ImaginaryLiteralClass:
+  case Stmt::StringLiteralClass:
+  case Stmt::CharacterLiteralClass:
+    // Just return the literal.
+    return E;
+  case Stmt::ParenExprClass:
+    return InjectParenExpr(Cxt, cast<ParenExpr>(E));
+  case Stmt::UnaryOperatorClass:
+    return InjectUnaryOperator(Cxt, cast<UnaryOperator>(E));
+  // case Stmt::OffsetOfExprClass:
+  // case Stmt::UnaryExprOrTypeTraitExprClass:
+  // case Stmt::ArraySubscriptExprClass:
+  // case Stmt::CallExprClass:
+  case Stmt::MemberExprClass:
+    return InjectMemberExpr(Cxt, cast<MemberExpr>(E));
+  // case Stmt::CastExprClass:
+  case Stmt::BinaryOperatorClass:
+    return InjectBinaryOperator(Cxt, cast<BinaryOperator>(E));
+  // case Stmt::CompoundAssignOperatorClass:
+  // case Stmt::AbstractConditionalOperatorClass:
+  // case Stmt::ConditionalOperatorClass:
+  // case Stmt::BinaryConditionalOperatorClass:
+  // case Stmt::ImplicitCastExprClass:
+  // case Stmt::ExplicitCastExprClass:
+  // case Stmt::CStyleCastExprClass:
+  // case Stmt::CompoundLiteralExprClass:
+  // case Stmt::ExtVectorElementExprClass:
+  // case Stmt::InitListExprClass:
+  // case Stmt::DesignatedInitExprClass:
+  // case Stmt::DesignatedInitUpdateExprClass:
+  // case Stmt::ImplicitValueInitExprClass:
+  // case Stmt::NoInitExprClass:
+  // case Stmt::ArrayInitLoopExprClass:
+  // case Stmt::ArrayInitIndexExprClass:
+  // case Stmt::ParenListExprClass:
+  // case Stmt::VAArgExprClass:
+  // case Stmt::GenericSelectionExprClass:
+  // case Stmt::PseudoObjectExprClass:
+  
+  // Atomic expressions.
+  // case Stmt::AtomicExprClass:
 
-  // FIXME: Actually implement this.
+  // C++ Expressions.
+  // case Stmt::CXXOperatorCallExprClass:
+  // case Stmt::CXXMemberCallExprClass:
+  // case Stmt::CXXNamedCastExprClass:
+  // case Stmt::CXXStaticCastExprClass:
+  // case Stmt::CXXDynamicCastExprClass:
+  // case Stmt::CXXReinterpretCastExprClass:
+  // case Stmt::CXXConstCastExprClass:
+  // case Stmt::CXXFunctionalCastExprClass:
+  // case Stmt::CXXTypeidExprClass:
+  // case Stmt::UserDefinedLiteralClass:
+  // case Stmt::CXXBoolLiteralExprClass:
+  // case Stmt::CXXNullPtrLiteralExprClass:
+  case Stmt::CXXThisExprClass:
+    return InjectCXXThisExpr(Cxt, cast<CXXThisExpr>(E));
+  // case Stmt::CXXThrowExprClass:
+  // case Stmt::CXXDefaultArgExprClass:
+  // case Stmt::CXXDefaultInitExprClass:
+  // case Stmt::CXXScalarValueInitExprClass:
+  // case Stmt::CXXStdInitializerListExprClass:
+  // case Stmt::CXXNewExprClass:
+  // case Stmt::CXXDeleteExprClass:
+  // case Stmt::CXXPseudoDestructorExprClass:
+  // case Stmt::TypeTraitExprClass:
+  // case Stmt::ArrayTypeTraitExprClass:
+  // case Stmt::ExpressionTraitExprClass:
+  case Stmt::DependentScopeDeclRefExprClass:
+    return InjectDeclRefExpr(Cxt, cast<DependentScopeDeclRefExpr>(E));
+  // case Stmt::CXXConstructExprClass:
+  // case Stmt::CXXInheritedCtorInitExprClass:
+  // case Stmt::CXXBindTemporaryExprClass:
+  // case Stmt::ExprWithCleanupsClass:
+  // case Stmt::CXXTemporaryObjectExprClass:
+  // case Stmt::CXXUnresolvedConstructExprClass:
+  case Stmt::CXXDependentScopeMemberExprClass:
+    return InjectMemberExpr(Cxt, cast<CXXDependentScopeMemberExpr>(E));
+  // case Stmt::OverloadExprClass:
+  // case Stmt::UnresolvedLookupExprClass:
+  // case Stmt::UnresolvedMemberExprClass:
+  // case Stmt::CXXNoexceptExprClass:
+  // case Stmt::PackExpansionExprClass:
+  // case Stmt::SizeOfPackExprClass:
+  // case Stmt::SubstNonTypeTemplateParmExprClass:
+  // case Stmt::SubstNonTypeTemplateParmPackExprClass:
+  // case Stmt::FunctionParmPackExprClass:
+  // case Stmt::MaterializeTemporaryExprClass:
+  // case Stmt::LambdaExprClass:
+  // case Stmt::CXXFoldExprClass:
+  // case Stmt::CXXDependentIdExprClass:
+  // case Stmt::CXXFragmentExprClass:
+
+  // C++ Coroutines TS expressions
+  // case Stmt::CoroutineSuspendExprClass:
+  // case Stmt::CoawaitExprClass:
+  // case Stmt::DependentCoawaitExprClass:
+  // case Stmt::CoyieldExprClass:
+
+  // C++ Reflection Expressions
+  // case Stmt::ReflectionExprClass:
+  // case Stmt::ReflectionTraitExprClass:
+  // case Stmt::CXXConstantExprClass:
+  // case Stmt::CompilerErrorExprClass:
+
+  default:
+    E->dump();
+    llvm_unreachable("Unknown expression");
+  }
   return E;
 }
 
@@ -453,6 +999,11 @@ static Decl *InjectFieldDecl(InjectionContext &Cxt, FieldDecl *D)
   Field->setInvalidDecl(Invalid);
   Owner->addDecl(Field);
 
+  // If the field has an initializer, add it to the Fragment so that we
+  // can process it later.
+  if (D->hasInClassInitializer())
+    Cxt.InjectedDefinitions.push_back(InjectedDef(D, Field));
+
   return Field;
 }
 
@@ -500,15 +1051,22 @@ static Decl *InjectCXXMethodDecl(InjectionContext &Cxt, CXXMethodDecl *D)
 
   // FIXME: Check for redeclarations
 
-
   // Propagate semantic properties.
   //
   // FIXME: Inherit access as a semantic attribute or trace it through the
   // injection as if parsing?
   Method->setImplicit(D->isImplicit());
   Method->setAccess(D->getAccess());
+  Method->setDeletedAsWritten(D->isDeletedAsWritten());
+  Method->setDefaulted(D->isDefaulted());
   Method->setInvalidDecl(Invalid);
   Owner->addDecl(Method);
+
+  // If the method is has a body, add it to the context so that we can 
+  // process it later. Note that deleted/defaulted definitions are just
+  // flags processed above.
+  if (D->hasBody())
+    Cxt.InjectedDefinitions.push_back(InjectedDef(D, Method));
 
   return Method;
 }
@@ -554,11 +1112,11 @@ static Decl *InjectDeclImpl(InjectionContext &Cxt, Decl *D) {
   }
 }
 
+/// \brief Injects a new version of the declaration. Do not use this to
+/// resolve references to declarations; use ResolveDecl instead.
 Decl *InjectDecl(InjectionContext& Cxt, Decl *D) {
-  // If there is a known substitution, use that.
-  if (Decl *R = Cxt.GetDeclReplacement(D))
-    return R;
-
+  assert(!Cxt.GetDeclReplacement(D) && "Declaration already injected");
+  
   // If the declaration does not appear in the context, then it need
   // not be resolved.
   if (!D->isInFragment())
@@ -873,42 +1431,6 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc,
 
   // Finally, build the fragment expression.
   return new (Context) CXXFragmentExpr(Context, Loc, ClassTy, Captures, FD, Init);
-}
-
-/// Associates the parse state of the class fragment with the fragment itself.
-void Sema::ActOnLateParsedClassFragment(Scope *S, void *P) {
-  assert(S && isa<CXXFragmentDecl>(S->getEntity()));
-  CXXFragmentDecl *Fragment = cast<CXXFragmentDecl>(S->getEntity());
-  Fragment->setParsedClass(P);
-}
-
-/// Clean up memory used by the context.
-void Sema::ActOnFinishLateParsedFragment(void *Cxt) {
-  delete reinterpret_cast<InjectionContext *>(Cxt);
-}
-
-
-Decl *Sema::RebindMethodDefinition(Decl *Method, void *P) {
-  InjectionContext *Cxt = (InjectionContext *)P;
-  
-  Decl *Rep = Cxt->GetDeclReplacement(Method);
-
-  // FIXME: This should be a diagnostic, not an assertion.
-  assert(Rep && Method->getKind() == Rep->getKind() && 
-         "Fragment definition rebound to incompatible entity");
-
-  return Rep;
-}
-
-Decl *Sema::RebindFieldDeclaration(Decl *Field, void *P) {
-  InjectionContext *Cxt = (InjectionContext *)P;
-  Decl *Rep = Cxt->GetDeclReplacement(Field);
-  
-  // FIXME: This should be a diagnostic, not an assertion.
-  assert(Field->getKind() == Rep->getKind() && 
-         "Fragment definition rebound to incompatible entity");
-
-  return Rep;
 }
 
 /// Returns an injection statement.
@@ -1338,17 +1860,16 @@ static bool CheckInjectionKind(Sema &SemaRef, SourceLocation POI,
 }
 
 /// Inject a fragment into the current context.
-bool InjectFragment(Sema &SemaRef, 
-                    SourceLocation POI, 
-                    QualType ReflectionTy,
-                    const APValue &ReflectionVal, 
-                    Decl *Injectee,
-                    Decl *Injection) {
+bool Sema::InjectFragment(SourceLocation POI, 
+                          QualType ReflectionTy, 
+                          const APValue &ReflectionVal, 
+                          Decl *Injectee, 
+                          Decl *Injection) {
   assert(isa<CXXRecordDecl>(Injection) || isa<NamespaceDecl>(Injection));
   DeclContext *InjecteeDC = Decl::castToDeclContext(Injectee);
   DeclContext *InjectionDC = Decl::castToDeclContext(Injection);
 
-  if (!CheckInjectionContexts(SemaRef, POI, InjectionDC, InjecteeDC))
+  if (!CheckInjectionContexts(*this, POI, InjectionDC, InjecteeDC))
     return false;
 
   // Extract the captured values for replacement.
@@ -1362,10 +1883,10 @@ bool InjectFragment(Sema &SemaRef,
   CXXRecordDecl *Class = ReflectionTy->getAsCXXRecordDecl();
   CXXFragmentDecl *Fragment = cast<CXXFragmentDecl>(Injection->getDeclContext());
 
-  Sema::ContextRAII Switch(SemaRef, InjecteeDC, isa<CXXRecordDecl>(Injectee));
+  ContextRAII Switch(*this, InjecteeDC, isa<CXXRecordDecl>(Injectee));
 
   // Establish the injection context and register the substitutions.
-  InjectionContext *Cxt = new InjectionContext(SemaRef, Fragment, InjecteeDC);
+  InjectionContext *Cxt = new InjectionContext(*this, Fragment, InjecteeDC);
   Cxt->AddDeclSubstitution(Injection, Injectee);
   Cxt->AddPlaceholderSubstitutions(Fragment, Class, Captures);
 
@@ -1376,8 +1897,8 @@ bool InjectFragment(Sema &SemaRef,
       if (Class->isInjectedClassName())
         continue;
 
-    // llvm::outs() << "BEFORE INJECT\n";
-    // D->dump();
+    llvm::outs() << "BEFORE INJECT\n";
+    D->dump();
     
     Decl *R = InjectDecl(*Cxt, D);
     if (!R || R->isInvalidDecl()) {
@@ -1389,21 +1910,17 @@ bool InjectFragment(Sema &SemaRef,
       continue;
     }
 
-    // llvm::outs() << "AFTER INJECT\n";
-    // R->dump();
+    llvm::outs() << "AFTER INJECT\n";
+    R->dump();
   }
 
-  // If we're injecting into a class and the fragment has late-parsed
-  // content, attach that to the class. Detach the context from the
-  // stack and bind it to the injected class.
-  if (CXXRecordDecl *ClassInjectee = dyn_cast<CXXRecordDecl>(Injectee)) {
-    if (!Injectee->isInvalidDecl()) {
-      if (void *PC = Fragment->getParsedClass()) {
-        ClassInjectee->addUnparsedFragment(Cxt->Detach(), PC);
-        return true;
-      }
+  // If we're injecting into a class and have pending definitions, attach
+  // those to the class for subsequent analysis. 
+  if (CXXRecordDecl *ClassInjectee = dyn_cast<CXXRecordDecl>(Injectee))
+    if (!Injectee->isInvalidDecl() && !Cxt->InjectedDefinitions.empty()) {
+      PendingClassMemberInjections.push_back(Cxt->Detach());
+      return true;
     }
-  }
 
   delete Cxt;
   return !Injectee->isInvalidDecl();
@@ -1455,9 +1972,11 @@ static Decl *RewriteAsStaticMemberVariable(Sema &SemaRef,
 }
 
 /// Clone a declaration into the current context.
-static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI, 
-                            QualType ReflectionTy, const APValue &ReflectionVal, 
-                            Decl *Injectee, Decl *Injection) {
+bool Sema::CopyDeclaration(SourceLocation POI, 
+                           QualType ReflectionTy, 
+                           const APValue &ReflectionVal,
+                           Decl *Injectee, 
+                           Decl *Injection) {
   DeclContext *InjectionDC = Injection->getDeclContext();
   Decl *InjectionOwner = Decl::castFromDeclContext(InjectionDC);
   DeclContext *InjecteeDC = Decl::castToDeclContext(Injectee);
@@ -1467,26 +1986,26 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
     if (Class->isInjectedClassName())
       return true;
 
-  if (!CheckInjectionContexts(SemaRef, POI, InjectionDC, InjecteeDC))
+  if (!CheckInjectionContexts(*this, POI, InjectionDC, InjecteeDC))
     return false;
 
-  if (!CheckInjectionKind(SemaRef, POI, Injection, InjecteeDC))
+  if (!CheckInjectionKind(*this, POI, Injection, InjecteeDC))
     return false;
 
   // Set up the injection context. There are no placeholders for copying.
   // Within the copied declaration, references to the enclosing context are 
   // replaced with references to the destination context.
-  LocalInstantiationScope Locals(SemaRef);
-  InjectionContext InjectionCxt(SemaRef, nullptr, InjecteeDC);
-  Sema::InstantiatingTemplate Inst(SemaRef, POI, &InjectionCxt);
+  LocalInstantiationScope Locals(*this);
+  InjectionContext InjectionCxt(*this, nullptr, InjecteeDC);
+  Sema::InstantiatingTemplate Inst(*this, POI, &InjectionCxt);
   InjectionCxt.AddDeclSubstitution(InjectionOwner, Injectee);
 
   // Establish injectee as the current context.
-  Sema::ContextRAII Switch(SemaRef, InjecteeDC, isa<CXXRecordDecl>(Injectee));
+  ContextRAII Switch(*this, InjecteeDC, isa<CXXRecordDecl>(Injectee));
 
   // Unpack the modification traits so we can apply them after generating
   // the declaration.
-  DeclarationName Name(&SemaRef.Context.Idents.get("mods"));
+  DeclarationName Name(&Context.Idents.get("mods"));
   const APValue &Traits = GetModifications(ReflectionVal, ReflectionTy, Name);
 
   enum StorageMod { NoStorage, Static, Automatic, ThreadLocal };
@@ -1515,12 +2034,12 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   // need to build a new declaration.
   Decl* Result;
   if (isa<FieldDecl>(Injection) && Storage == Static) {
-    Result = RewriteAsStaticMemberVariable(SemaRef, 
+    Result = RewriteAsStaticMemberVariable(*this, 
                                            cast<FieldDecl>(Injection), 
                                            InjecteeDC);
   } else {
     MultiLevelTemplateArgumentList Args;
-    Result = SemaRef.SubstDecl(Injection, InjecteeDC, Args);
+    Result = SubstDecl(Injection, InjecteeDC, Args);
   }
   if (!Result || Result->isInvalidDecl()) {
     Injectee->setInvalidDecl(true);
@@ -1533,7 +2052,7 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   // Update access specifiers.
   if (Access) {
     if (!Result->getDeclContext()->isRecord()) {
-      SemaRef.Diag(POI, diag::err_modifies_mem_spec_of_non_member) << 0;
+      Diag(POI, diag::err_modifies_mem_spec_of_non_member) << 0;
       return false;
     }
     switch (Access) {
@@ -1561,25 +2080,25 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   if (Constexpr) {
     if (VarDecl *Var = dyn_cast<VarDecl>(Result)) {
       Var->setConstexpr(true);
-      SemaRef.CheckVariableDeclarationType(Var);
+      CheckVariableDeclarationType(Var);
     }
     else if (isa<CXXDestructorDecl>(Result)) {
-      SemaRef.Diag(POI, diag::err_declration_cannot_be_made_constexpr);
+      Diag(POI, diag::err_declration_cannot_be_made_constexpr);
       return false;
     }
     else if (FunctionDecl *Fn = dyn_cast<FunctionDecl>(Result)) {
       Var->setConstexpr(true);
-      SemaRef.CheckConstexprFunctionDecl(Fn);
+      CheckConstexprFunctionDecl(Fn);
     } else {
       // Non-members cannot be virtual.
-      SemaRef.Diag(POI, diag::err_virtual_non_function);
+      Diag(POI, diag::err_virtual_non_function);
       return false;
     }
   }
 
   if (Virtual) {
     if (!isa<CXXMethodDecl>(Result)) {
-      SemaRef.Diag(POI, diag::err_virtual_non_function);
+      Diag(POI, diag::err_virtual_non_function);
       return false;
     }
     
@@ -1593,10 +2112,10 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
       else if (Method->isDeleted()) Err = 3;
       else if (Method->isDefined()) Err = 1;
       if (Err) {
-        SemaRef.Diag(POI, diag::err_cannot_make_pure_virtual) << (Err - 1);
+        Diag(POI, diag::err_cannot_make_pure_virtual) << (Err - 1);
         return false;
       }
-      SemaRef.CheckPureMethod(Method, Method->getSourceRange());
+      CheckPureMethod(Method, Method->getSourceRange());
     }
   }
 
@@ -1608,18 +2127,17 @@ static bool CopyDeclaration(Sema &SemaRef, SourceLocation POI,
   return !Injectee->isInvalidDecl(); 
 }
 
-static bool
-ApplyInjection(Sema &SemaRef, SourceLocation POI, InjectionInfo &II) {
+bool Sema::ApplyInjection(SourceLocation POI, InjectionInfo &II) {
   // Get the injection declaration.
-  Decl *Injection = GetDeclFromReflection(SemaRef, II.ReflectionType, POI);
+  Decl *Injection = GetDeclFromReflection(*this, II.ReflectionType, POI);
 
   /// Get the injectee declaration. This is either the one specified or
   /// the current context.
   Decl *Injectee = nullptr;
   if (!II.InjecteeType.isNull())
-    Injectee = GetDeclFromReflection(SemaRef, II.InjecteeType, POI);
+    Injectee = GetDeclFromReflection(*this, II.InjecteeType, POI);
   else
-    Injectee = Decl::castFromDeclContext(SemaRef.CurContext);
+    Injectee = Decl::castFromDeclContext(CurContext);
   if (!Injectee)
     return false;
 
@@ -1633,9 +2151,9 @@ ApplyInjection(Sema &SemaRef, SourceLocation POI, InjectionInfo &II) {
   const APValue &Val = II.ReflectionValue;
   CXXRecordDecl *Class = Ty->getAsCXXRecordDecl();
   if (Class->isFragment())
-    return InjectFragment(SemaRef, POI, Ty, Val, Injectee, Injection);
+    return InjectFragment(POI, Ty, Val, Injectee, Injection);
   else
-    return CopyDeclaration(SemaRef, POI, Ty, Val, Injectee, Injection);
+    return CopyDeclaration(POI, Ty, Val, Injectee, Injection);
 }
 
 // static void
@@ -1685,11 +2203,57 @@ bool Sema::ApplyEffects(SourceLocation POI,
   bool Ok = true;
   for (EvalEffect &Effect : Effects) {
     if (Effect.Kind == EvalEffect::InjectionEffect)
-      Ok &= ApplyInjection(*this, POI, *Effect.Injection);
+      Ok &= ApplyInjection(POI, *Effect.Injection);
     else
       Ok &= ApplyDiagnostic(*this, POI, *Effect.DiagnosticArg);
   }
   return Ok;
+}
+
+void Sema::InjectPendingDefinitions() {
+  while (!PendingClassMemberInjections.empty()) {
+    InjectionContext *Cxt = PendingClassMemberInjections.back();
+    PendingClassMemberInjections.pop_back();
+    InjectPendingDefinitions(Cxt);
+  }
+}
+
+void Sema::InjectPendingDefinitions(InjectionContext *Cxt) {
+  Cxt->Attach();
+  for (InjectedDef Def : Cxt->InjectedDefinitions)
+    InjectPendingDefinition(Cxt, Def.Fragment, Def.Injected);
+  delete Cxt;
+}
+
+void Sema::InjectPendingDefinition(InjectionContext *Cxt, 
+                                   Decl *Frag, 
+                                   Decl *New) {
+  // FIXME: Invalidate the declaration on error.
+  // Decl *Injectee = Cxt->GetInjecteeDecl();
+  ContextRAII ClassCxt (*this, Cxt->Injectee);
+
+  if (FieldDecl *OldField = dyn_cast<FieldDecl>(Frag)) {
+    FieldDecl *NewField = cast<FieldDecl>(New);
+    ExprResult Init = InjectExpr(*Cxt, OldField->getInClassInitializer());
+    if (Init.isInvalid())
+      NewField->setInvalidDecl();
+    else
+      NewField->setInClassInitializer(Init.get());
+  }
+  else if (CXXMethodDecl *OldMethod = dyn_cast<CXXMethodDecl>(Frag)) {
+    CXXMethodDecl *NewMethod = cast<CXXMethodDecl>(New);
+    llvm::outs() << "INJECT BODY\n";
+    OldMethod->getBody()->dump();
+    ContextRAII MethodCxt (*this, NewMethod);
+    StmtResult Body = InjectStmt(*Cxt, OldMethod->getBody());
+    if (Body.isInvalid())
+      NewMethod->setInvalidDecl();
+    else {
+      llvm::outs() << "GOT BODY\n";
+      Body.get()->dump();
+      NewMethod->setBody(Body.get());
+    }
+  }
 }
 
 Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,

@@ -14015,28 +14015,25 @@ void Sema::StartDefinition(TagDecl *D) {
 /// If there are any unprocessed fragments associated with the class, then
 /// we need to parse them now. Note that this happens after the class is
 /// completed.
-static void ProcessUnparsedFragments(Sema &SemaRef, CXXRecordDecl *D) {
-  if (!D)
+///
+/// Note that this is (apparently) called multiple times on the class.
+/// I don't know why.
+static void ProcessInjections(Sema &SemaRef, CXXRecordDecl *D) {
+  if (!D) // Not a class
     return;
-  
-  CXXRecordDecl *Class = cast<CXXRecordDecl>(D);
-  const SmallVectorImpl<UnparsedClassFragment> &UnparsedFrags = 
-      Class->getUnparsedFragments();
-  if (UnparsedFrags.empty())
+  if (isa<CXXRecordDecl>(D->getDeclContext())) // Not an outermost class
     return;
-
-  for (UnparsedClassFragment UCF : UnparsedFrags)
-    SemaRef.LateClassFragmentParser(SemaRef.OpaqueFragmentParser, UCF.Cxt, UCF.Class);
+  SemaRef.InjectPendingDefinitions();
 }
 
 void Sema::CompleteDefinition(RecordDecl *D) {
   D->completeDefinition();
-  ProcessUnparsedFragments(*this, dyn_cast<CXXRecordDecl>(D));
+  ProcessInjections(*this, dyn_cast<CXXRecordDecl>(D));
 }
 
 void Sema::CompleteDefinition(CXXRecordDecl *D, CXXFinalOverriderMap *Map) {
   D->completeDefinition(Map);
-  ProcessUnparsedFragments(*this, dyn_cast<CXXRecordDecl>(D));
+  ProcessInjections(*this, dyn_cast<CXXRecordDecl>(D));
 }
 
 void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {

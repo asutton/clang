@@ -413,10 +413,6 @@ void Parser::LateClassFragmentParserCallback(void *P,
 }
 
 void Parser::LateParseClassFragment(void *Cxt, void *Cls) {
-  ParsingClass *Class = reinterpret_cast<ParsingClass *>(Cls);
-  for (LateParsedDeclaration* LPD : Class->LateParsedDeclarations)
-    LPD->ParseAfterInjection(Cxt);
-  Actions.ActOnFinishLateParsedFragment(Cxt);
 }
 
 void Parser::LateParsedDeclaration::ParseAfterInjection(void *Cxt) {
@@ -446,36 +442,15 @@ void Parser::LateParsedMemberInitializer::ParseAfterInjection(void *Cxt) {
 void
 Parser::ParseInjectedMethodDefinition(LexedMethod &Method, 
                                       void *Cxt) {
-  // FIXME: What do we do with captured names? They're no longer in scope
-  // at this point; we'd need to somehow re-introduce them?
-  Method.D = Actions.RebindMethodDefinition(Method.D, Cxt);
-  Method.ParseLexedMethodDefs();
 }
 
 void
 Parser::ParseInjectedMethodDeclaration(LateParsedMethodDeclaration &Method, 
                                        void *Cxt) {
-  // FIXME: Implement me.
-  llvm_unreachable("not implemented");
 }
 
 void
 Parser::ParseInjectedMemberInitializer(LateParsedMemberInitializer &Init,
                                        void *Cxt) {
-  // FIXME: See comments above.
-
-  // Save the current token (almost certainly a ;) so we can re-add it
-  // to the stream after lexing the initializer.
-  //
-  // FIXME: this seems like a bit of hack. I'm not sure why we lose
-  // semicolons here.
-  Token Saved = Tok;
-
-  Init.Field = Actions.RebindFieldDeclaration(Init.Field, Cxt);
-  Init.ParseLexedMemberInitializers();
-
-  // Restore the last token.
-  PP.EnterToken(Saved);
-  Tok.setKind(Saved.getKind());
 }
 

@@ -2230,12 +2230,19 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
   // argument-dependent lookup.
   bool ADL = UseArgumentDependentLookup(SS, R, HasTrailingLParen);
 
-  if (R.empty() && Decl::castFromDeclContext(CurContext)->isInFragment()) {
-    // Lookup failed because there is no such name in this context. W
-    // generally expect the name to be found later.
-    return ActOnDependentIdExpression(SS, TemplateKWLoc, NameInfo,
-                                      IsAddressOfOperand, TemplateArgs);
-  }
+  // FIXME: This is something to consider (from a previous experiment).
+  // If we can't find the name then we just make it a dependent id-expression.
+  // The pros are is that it makes programming easier. The downside is that
+  // you can accidentally find names in enclosing scopes when you meant for
+  // them to be local. For now, we require writing this->member to force
+  // dependent resolution.
+  //
+  // if (R.empty() && Decl::castFromDeclContext(CurContext)->isInFragment()) {
+  //   // Lookup failed because there is no such name in this context. We expect 
+  //   // the name to be resolved during injection.
+  //   return ActOnDependentIdExpression(SS, TemplateKWLoc, NameInfo,
+  //                                     IsAddressOfOperand, TemplateArgs);
+  // }
 
   if (R.empty() && !ADL) {
     if (SS.isEmpty() && getLangOpts().MSVCCompat) {

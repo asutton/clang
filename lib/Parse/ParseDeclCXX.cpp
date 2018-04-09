@@ -3321,23 +3321,6 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   //   brace-or-equal-initializers for non-static data members (including such
   //   things in nested classes).
   if (TagDecl && NonNestedClass) {
-    // If the class is defined within fragment scope, then this is the
-    // fragment itself. In those cases, we need to defer late parsing even
-    // longer--until the fragment is injected.
-    Scope *EnclosingScope = getCurScope()->getParent();
-    if (EnclosingScope->isFragmentScope()) {
-      ParsingClass& Class = ParsingDef.Steal();
-
-      // Register late-parsed declarations with the fragment.
-      Actions.ActOnLateParsedClassFragment(EnclosingScope, &Class);
-
-      // Finish the fragment definition.
-      Actions.ActOnTagFinishDefinition(getCurScope(), TagDecl, T.getRange());
-
-      ClassScope.Exit();
-      return;
-    }
-
     // We are not inside a nested class. This class and its nested classes
     // are complete and we can parse the delayed portions of method
     // declarations and the lexed inline method definitions, along with any

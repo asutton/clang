@@ -279,6 +279,19 @@ struct TypedValue
   APValue Value;
 };
 
+/// Records information about a definition inside a fragment that must be
+/// processed later. These are typically fields and methods.
+struct InjectedDef
+{
+  InjectedDef(Decl *F, Decl *I) : Fragment(F), Injected(I) { }
+  
+  /// The declaration within the fragment.
+  Decl *Fragment;
+
+  /// The injected declaration.
+  Decl *Injected;
+};
+
 /// \brief An injection context. This is declared to establish a set of
 /// substitutions during an injection.
 class InjectionContext
@@ -288,8 +301,12 @@ public:
   InjectionContext(const InjectionContext& Cxt);
   ~InjectionContext();
 
-  /// Detach the context from the semantics object. Returns this object.
+  /// Detach the context from the semantics object. Returns this object for
+  /// convenience.
   InjectionContext *Detach();
+
+  /// Re-attach the context to the context stack.
+  void Attach();
 
   /// \brief Adds a substitution from one declaration to another.
   void AddDeclSubstitution(Decl *Orig, Decl *New);
@@ -311,6 +328,11 @@ public:
   /// Returns a replacement expression if E refers to a placeholder.
   Expr *GetPlaceholderReplacement(DeclRefExpr *E);
 
+  /// Returns the declaration for the injectee.
+  Decl *GetInjecteeDecl() const { 
+    return Decl::castFromDeclContext(Injectee); 
+  }
+
   Sema &SemaRef;
 
   /// \brief The previous injection context.
@@ -330,6 +352,11 @@ public:
   /// values. This is used by TreeTransformer to replace references with
   /// constant expressions.
   llvm::DenseMap<Decl *, TypedValue> PlaceholderSubsts;
+
+  /// \brief A list of declarations whose definitions have not yet been
+  /// injected. These are processed when a class receiving injections is
+  /// completed.
+  llvm::SmallVector<InjectedDef, 8> InjectedDefinitions;
 };
 
 /// Sema - This implements semantic analysis and AST building for C.
@@ -656,6 +683,8 @@ public:
     OpaqueParser = P;
   }
 
+
+  // FIXME: All of this stuff is going to go away.
   using LateClassFragmentParserCB = void (*)(void *Parser, void *Cxt, void *Class);
 
   /// \brief The parser object. This is distinct from the OpaqueParser
@@ -665,6 +694,13 @@ public:
   /// The late class fragment parser refers opaquely to the parser P and a 
   /// ParsingClass object from the Parser.
   LateClassFragmentParserCB LateClassFragmentParser;
+
+  /// When injecting class fragments, definitions of member functions are
+  /// not injected immediately. They are deferred, just as they are during
+  /// parsing. These injections are processed when the outermost class is
+  /// completed.
+  std::deque<InjectionContext *> PendingClassMemberInjections;
+
 
   class DelayedDiagnostics;
 
@@ -8554,11 +8590,6 @@ public:
   ExprResult BuildCXXFragmentExpr(SourceLocation Loc,
                                   SmallVectorImpl<Expr *> &Captures,
                                   Decl *Fragment);
-  void ActOnLateParsedClassFragment(Scope *S, void *P);
-  void ActOnFinishLateParsedFragment(void *Cxt);
-
-  Decl *RebindMethodDefinition(Decl *Method, void *Cxt);
-  Decl *RebindFieldDeclaration(Decl *Field, void *Cxt);
 
   StmtResult ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);
   StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);
@@ -8583,8 +8614,22 @@ public:
                                  IdentifierInfo *II,
                         SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);
 
-  // Source code injection/modification
+  // Source code injection.
   bool ApplyEffects(SourceLocation POI, SmallVectorImpl<EvalEffect> &Injections);
+  bool ApplyInjection(SourceLocation POI, InjectionInfo &II);
+  bool InjectFragment(SourceLocation POI, 
+                      QualType ReflectionTy, 
+                      const APValue &ReflectionVal, 
+                      Decl *Injectee, 
+                      Decl *Injection);
+  bool CopyDeclaration(SourceLocation POI, 
+                       QualType ReflectionTy, 
+                       const APValue &ReflectionVal, 
+                       Decl *Injectee, 
+                       Decl *Injection);
+  void InjectPendingDefinitions();
+  void InjectPendingDefinitions(InjectionContext *Cxt);
+  void InjectPendingDefinition(InjectionContext *Cxt, Decl *Frag, Decl *New);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

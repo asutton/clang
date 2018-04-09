@@ -6704,12 +6704,6 @@ TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S,
                                           Statements,
                                           S->getRBracLoc(),
                                           IsStmtExpr);
-
-  auto X = getDerived().RebuildCompoundStmt(S->getLBracLoc(),
-                                          Statements,
-                                          S->getRBracLoc(),
-                                          IsStmtExpr);
-  return X;
 }
 
 template<typename Derived>

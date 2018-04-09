@@ -264,11 +264,6 @@ public:
   TypeSourceInfo *getTypeSourceInfo() const { return BaseTypeInfo; }
 };
 
-struct UnparsedClassFragment {
-  void *Cxt;
-  void *Class;
-};
-
 /// \brief Represents a C++ struct/union/class.
 class CXXRecordDecl : public RecordDecl {
 
@@ -531,11 +526,6 @@ class CXXRecordDecl : public RecordDecl {
     ArrayRef<CXXBaseSpecifier> vbases() const {
       return llvm::makeArrayRef(getVBases(), NumVBases);
     }
-
-    /// \brief Stores a list of member definitions within fragments that have
-    /// not yet been parsed. When the class is completed (semantically), these
-    /// are parsed as if definitions of the containing class.
-    SmallVector<UnparsedClassFragment, 8> UnparsedFragments;
 
   private:
     CXXBaseSpecifier *getBasesSlowCase() const;
@@ -1784,16 +1774,6 @@ public:
   /// \brief The expression used to generate a final class from a prototype.
   /// This is always an unresolved id expression. 
   Expr *getGenerator() const { return Generator; }
-
-  /// \brief Adds an unparsed fragment to this class.
-  void addUnparsedFragment(void *Cxt, void *P) { 
-    data().UnparsedFragments.push_back({Cxt, P}); 
-  }
-
-  /// \brief The list of unparsed fragments in the class.
-  const SmallVectorImpl<UnparsedClassFragment> &getUnparsedFragments() const {
-    return data().UnparsedFragments;
-  }
 
   /// \brief Associates a generating function with with a class.
   void setGenerator(Expr *E) { Generator = E; }
