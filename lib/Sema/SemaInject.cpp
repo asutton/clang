@@ -884,12 +884,9 @@ ExprResult InjectDeclRefExpr(InjectionContext &Cxt, DeclRefExpr *E) {
     return ExprError();
 
   // Try resolving the reference.
-  E->getDecl()->dump();
   ValueDecl *Value = cast_or_null<ValueDecl>(ResolveDecl(Cxt, E->getDecl()));
-  if (!Value) {
+  if (!Value)
     llvm_unreachable("FAIL");
-  }
-  Value->dump();
 
   CXXScopeSpec SS;
   SS.Adopt(QualifierLoc);
@@ -941,6 +938,39 @@ ExprResult InjectParenExpr(InjectionContext &Cxt, ParenExpr *E) {
   return Cxt.SemaRef.ActOnParenExpr(E->getLocStart(), 
                                     E->getLocEnd(), 
                                     Inner.get());
+}
+
+static bool InjectArgs(InjectionContext &Cxt, 
+                       Expr *const *Args, 
+                       unsigned NumArgs, 
+                       SmallVectorImpl<Expr *> &Out) {
+  for (unsigned I = 0; I != NumArgs; ++I) {
+    ExprResult Arg = InjectExpr(Cxt, Args[I]);
+    if (Arg.isInvalid())
+      return false;
+    Out.push_back(Arg.get());
+  }
+  return true;
+}
+
+ExprResult InjectCallExpr(InjectionContext &Cxt, CallExpr *E) {
+  // Transform the callee.
+  ExprResult Callee = InjectExpr(Cxt, E->getCallee());
+  if (Callee.isInvalid())
+    return ExprError();
+
+  // Transform arguments.
+  SmallVector<Expr*, 8> Args;
+  if (!InjectArgs(Cxt, E->getArgs(), E->getNumArgs(), Args))
+    return ExprError();
+
+  CallExpr *CalleeExpr = cast<CallExpr>(Callee.get());
+  SourceLocation LParenLoc = CalleeExpr->getLocStart();
+  SourceLocation RParenLoc = CalleeExpr->getRParenLoc();
+
+  return Cxt.SemaRef.ActOnCallExpr(
+      /*Scope=*/nullptr, CalleeExpr, LParenLoc, Args, RParenLoc, 
+      /*ExecConfig*/nullptr);
 }
 
 ExprResult InjectMemberExpr(InjectionContext &Cxt, MemberExpr *E) {
@@ -1115,7 +1145,8 @@ ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   // case Stmt::OffsetOfExprClass:
   // case Stmt::UnaryExprOrTypeTraitExprClass:
   // case Stmt::ArraySubscriptExprClass:
-  // case Stmt::CallExprClass:
+  case Stmt::CallExprClass:
+    return InjectCallExpr(Cxt, cast<CallExpr>(E));
   case Stmt::MemberExprClass:
     return InjectMemberExpr(Cxt, cast<MemberExpr>(E));
   // case Stmt::CastExprClass:
@@ -1225,6 +1256,152 @@ ExprResult InjectExpr(InjectionContext &Cxt, ExprResult E)
 
 // Declarations
 
+static bool InjectEnumDefinition(InjectionContext &Cxt, 
+                                 EnumDecl *OldEnum,
+                                 EnumDecl *NewEnum) {
+  SmallVector<Decl*, 4> Enumerators;
+  
+  EnumConstantDecl *LastConst = nullptr;
+  for (auto *OldConst : OldEnum->enumerators()) {
+    // The specified value for the enumerator.
+    ExprResult Value;
+    if (Expr *OldValue = OldConst->getInitExpr()) {
+      // The enumerator's value expression is a constant expression.
+      EnterExpressionEvaluationContext Unevaluated(
+          Cxt.SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+      Value = InjectExpr(Cxt, OldValue);
+    }
+
+    // Drop the initial value and continue.
+    bool Invalid = false;
+    if (Value.isInvalid()) {
+      Value = nullptr;
+      Invalid = true;
+    }
+
+    // Create the new enum.
+    EnumConstantDecl *Const = Cxt.SemaRef.CheckEnumConstant(
+        NewEnum, LastConst, OldConst->getLocation(), 
+        OldConst->getIdentifier(), Value.get());
+    if (!Const) {
+      NewEnum->setInvalidDecl();
+      continue;
+    }
+
+    if (Invalid) {
+      Const->setInvalidDecl();
+      NewEnum->setInvalidDecl();
+    }
+
+    Const->setAccess(OldConst->getAccess());
+    NewEnum->addDecl(Const);
+
+    Enumerators.push_back(Const);
+    LastConst = Const;
+  }
+
+  Cxt.SemaRef.ActOnEnumBody(
+      NewEnum->getLocation(), NewEnum->getBraceRange(), NewEnum,
+      Enumerators, /*Scope=*/nullptr, /*AttributeList=*/nullptr);
+
+  return !NewEnum->isInvalidDecl();
+}
+
+static Decl* InjectEnumDecl(InjectionContext &Cxt, EnumDecl *D) {
+  DeclContext *Owner = Cxt.SemaRef.CurContext;
+
+  // FIXME: Transform the name and nested name specifier.
+
+  // FIXME: If there's a previous decl, be sure to link that with this
+  // enum.
+
+  // Start by creating the new enumeration.
+  EnumDecl *Enum = EnumDecl::Create(
+      getASTContext(Cxt), Owner, D->getLocStart(), D->getLocation(), 
+      D->getIdentifier(), /*PrevDecl*/nullptr, D->isScoped(), 
+      D->isScopedUsingClassTag(), D->isFixed());
+  
+  if (D->isFixed()) {
+    if (TypeSourceInfo *TSI = D->getIntegerTypeSourceInfo()) {
+      // If we have type source information for the underlying type, it means it
+      // has been explicitly set by the user. Perform substitution on it before
+      // moving on.
+      TSI = InjectType(Cxt, TSI);
+      if (!TSI || Cxt.SemaRef.CheckEnumUnderlyingType(TSI))
+        Enum->setIntegerType(Cxt.SemaRef.Context.IntTy);
+      else
+        Enum->setIntegerTypeSourceInfo(TSI);
+    } else {
+      assert(!D->getIntegerType()->isDependentType()
+             && "Dependent type without type source info");
+      Enum->setIntegerType(D->getIntegerType());
+    }
+  }
+
+  Enum->setAccess(D->getAccess());
+
+  // Forward the mangling number from the template to the instantiated decl.
+  getASTContext(Cxt).setManglingNumber(Enum, getASTContext(Cxt).getManglingNumber(D));
+  
+  // See if the old tag was defined along with a declarator.
+  // If it did, mark the new tag as being associated with that declarator.
+  if (DeclaratorDecl *DD = getASTContext(Cxt).getDeclaratorForUnnamedTagDecl(D))
+    getASTContext(Cxt).addDeclaratorForUnnamedTagDecl(Enum, DD);
+  
+  // See if the old tag was defined along with a typedef.
+  // If it did, mark the new tag as being associated with that typedef.
+  if (TypedefNameDecl *TD = getASTContext(Cxt).getTypedefNameForUnnamedTagDecl(D))
+    getASTContext(Cxt).addTypedefNameForUnnamedTagDecl(Enum, TD);
+
+  // FIXME: Substitute through the nested name specifier, if any.  
+  // if (SubstQualifier(D, Enum))
+  //   return nullptr;
+  
+  Owner->addDecl(Enum);
+
+  // If the enum is defined, inject it.
+  EnumDecl *Def = D->getDefinition();
+  if (Def == D)
+    InjectEnumDefinition(Cxt, D, Enum);
+
+  return D;
+}
+
+static Decl* InjectEnumConstantDecl(InjectionContext &Cxt, EnumConstantDecl *D) {
+}
+
+
+static Decl* InjectTypedefNameDecl(InjectionContext &Cxt, TypedefNameDecl *D) {
+  bool Invalid = false;
+
+  DeclContext *Owner = Cxt.SemaRef.CurContext;
+
+  // Transform the type. If this fails, just retain the original, but
+  // invalidate the declaration later.
+  TypeSourceInfo *TSI = InjectType(Cxt, D->getTypeSourceInfo());
+  if (!TSI) {
+    TSI = D->getTypeSourceInfo();
+    Invalid = true;
+  }
+  
+  // Create the new typedef
+  TypedefNameDecl *Typedef;
+  if (isa<TypeAliasDecl>(D))
+    Typedef = TypeAliasDecl::Create(
+        getASTContext(Cxt), Owner, D->getLocStart(), D->getLocation(), 
+        D->getIdentifier(), TSI);
+  else
+    Typedef = TypedefDecl::Create(
+        getASTContext(Cxt), Owner, D->getLocStart(), D->getLocation(), 
+        D->getIdentifier(), TSI);
+
+  Typedef->setAccess(D->getAccess());
+  Typedef->setInvalidDecl(Invalid);
+  Owner->addDecl(Typedef);
+  
+  return Typedef;
+}
+
 // Inject the name and the type of a declarator declaration. Sets the
 // declaration name info, type, and owner. Returns true if the declarator
 // is invalid.
@@ -1300,7 +1477,6 @@ static bool InjectBaseSpecifiers(InjectionContext &Cxt,
   for (const CXXBaseSpecifier &OldBase : OldClass->bases()) {
     TypeSourceInfo *TSI = InjectType(Cxt, OldBase.getTypeSourceInfo());
     if (!TSI) {
-      llvm::outs() << "INVALID? 1\n";
       Invalid = true;
       continue;
     }
@@ -1309,7 +1485,6 @@ static bool InjectBaseSpecifiers(InjectionContext &Cxt,
         NewClass, OldBase.getSourceRange(), OldBase.isVirtual(), 
         OldBase.getAccessSpecifierAsWritten(), TSI, OldBase.getEllipsisLoc());
     if (!NewBase) {
-      llvm::outs() << "INVALID 2\n";
       Invalid = true;
       continue;
     }
@@ -1317,15 +1492,12 @@ static bool InjectBaseSpecifiers(InjectionContext &Cxt,
     Bases.push_back(NewBase);
   }
 
-  if (!Invalid && Cxt.SemaRef.AttachBaseSpecifiers(NewClass, Bases)) {
-    llvm::outs() << "INVALID 3?\n";
+  if (!Invalid && Cxt.SemaRef.AttachBaseSpecifiers(NewClass, Bases))
     Invalid = true;
-  }
 
   // Invalidate the class if necessary.
   NewClass->setInvalidDecl(Invalid);
 
-  assert(!Invalid && "WTF?");
   return Invalid;
 }
 
@@ -1361,7 +1533,7 @@ static bool InjectClassDefinition(InjectionContext &Cxt,
   return NewClass->isInvalidDecl();
 }
 
-static Decl *InjectClass(InjectionContext &Cxt, CXXRecordDecl *D) {
+static Decl *InjectClassDecl(InjectionContext &Cxt, CXXRecordDecl *D) {
   bool Invalid = false;
   DeclContext *Owner = Cxt.SemaRef.CurContext;
 
@@ -1386,6 +1558,7 @@ static Decl *InjectClass(InjectionContext &Cxt, CXXRecordDecl *D) {
   // FIXME: Inject attributes.
 
   // FIXME: Propagate other properties?
+  Class->setAccess(D->getAccess());
   Class->setImplicit(D->isImplicit());
   Class->setInvalidDecl(Invalid);
   Owner->addDecl(Class);
@@ -1527,10 +1700,17 @@ static Decl *InjectAccessSpecDecl(InjectionContext &Cxt, AccessSpecDecl *D)
 
 static Decl *InjectDeclImpl(InjectionContext &Cxt, Decl *D) {
   switch (D->getKind()) {
+  case Decl::Enum:
+    return InjectEnumDecl(Cxt, cast<EnumDecl>(D));
+  case Decl::EnumConstant:
+    return InjectEnumConstantDecl(Cxt, cast<EnumConstantDecl>(D));
+  case Decl::Typedef:
+  case Decl::TypeAlias:
+    return InjectTypedefNameDecl(Cxt, cast<TypedefNameDecl>(D));
   case Decl::ParmVar:
     return InjectParmVarDecl(Cxt, cast<ParmVarDecl>(D));
   case Decl::CXXRecord:
-    return InjectClass(Cxt, cast<CXXRecordDecl>(D));
+    return InjectClassDecl(Cxt, cast<CXXRecordDecl>(D));
   case Decl::Field:
     return InjectFieldDecl(Cxt, cast<FieldDecl>(D));
   case Decl::CXXMethod:
