@@ -148,6 +148,7 @@ static StmtResult InjectStmt(InjectionContext &Cxt, StmtResult S);
 
 static ExprResult InjectExpr(InjectionContext &Cxt, Expr *E);
 static ExprResult InjectExpr(InjectionContext &Cxt, ExprResult E);
+static ExprResult InjectInit(InjectionContext &Cxt, Expr *E, bool NotCopyInit);
 
 static Decl *InjectDecl(InjectionContext &Cxt, Decl *D);
 
@@ -560,10 +561,8 @@ static QualType InjectRecordType(InjectionContext &Cxt,
   const RecordType *T = TL.getTypePtr();
   
   RecordDecl *Record = cast_or_null<RecordDecl>(ResolveDecl(Cxt, T->getDecl()));
-  if (!Record) {
-    assert(false && "SHIT");
+  if (!Record) 
     return QualType();
-  }
 
   QualType Result = getASTContext(Cxt).getTypeDeclType(Record);
   if (Result.isNull())
@@ -945,6 +944,19 @@ static bool InjectArgs(InjectionContext &Cxt,
                        unsigned NumArgs, 
                        SmallVectorImpl<Expr *> &Out) {
   for (unsigned I = 0; I != NumArgs; ++I) {
+    ExprResult Arg = InjectInit(Cxt, Args[I], /*NotCopyInit=*/false);
+    if (Arg.isInvalid())
+      return false;
+    Out.push_back(Arg.get());
+  }
+  return true;
+}
+
+static bool InjectExprs(InjectionContext &Cxt, 
+                       Expr *const *Args, 
+                       unsigned NumArgs, 
+                       SmallVectorImpl<Expr *> &Out) {
+  for (unsigned I = 0; I != NumArgs; ++I) {
     ExprResult Arg = InjectExpr(Cxt, Args[I]);
     if (Arg.isInvalid())
       return false;
@@ -1091,6 +1103,34 @@ ExprResult InjectMemberExpr(InjectionContext &Cxt, CXXDependentScopeMemberExpr *
       TemplateLoc, nullptr, NameInfo, ExplicitArgs, /*Scope=*/nullptr);
 }
 
+ExprResult InjectUnaryTypeExpr(InjectionContext &Cxt, UnaryExprOrTypeTraitExpr *E) {
+  TypeSourceInfo *TSI = InjectType(Cxt, E->getArgumentTypeInfo());
+  if (!TSI)
+    return ExprError();
+  return Cxt.SemaRef.CreateUnaryExprOrTypeTraitExpr(
+      TSI, E->getOperatorLoc(), E->getKind(), E->getSourceRange());
+}
+
+ExprResult InjectUnaryExpr(InjectionContext &Cxt, UnaryExprOrTypeTraitExpr *E) {
+  if (E->isArgumentType())
+    return InjectUnaryTypeExpr(Cxt, E);
+
+  // C++0x [expr.sizeof]p1:
+  //   The operand is either an expression, which is an unevaluated operand
+  //   [...]
+  EnterExpressionEvaluationContext Unevaluated(
+      Cxt.SemaRef, Sema::ExpressionEvaluationContext::Unevaluated,
+      Sema::ReuseLambdaContextDecl);
+
+  // FIXME: Handle a corner case involving dependent types. See TreeTransform.
+  ExprResult SubExpr = InjectExpr(Cxt, E->getArgumentExpr());
+  if (SubExpr.isInvalid())
+    return ExprError();
+
+  return Cxt.SemaRef.CreateUnaryExprOrTypeTraitExpr(
+    SubExpr.get(), E->getOperatorLoc(), E->getKind());
+}
+
 ExprResult InjectUnaryOperator(InjectionContext &Cxt, UnaryOperator *E) {
   ExprResult Sub = InjectExpr(Cxt, E->getSubExpr());
   if (Sub.isInvalid())
@@ -1110,10 +1150,107 @@ ExprResult InjectBinaryOperator(InjectionContext &Cxt, BinaryOperator *E) {
       nullptr, E->getOperatorLoc(), E->getOpcode(), LHS.get(), RHS.get());
 }
 
+ExprResult InjectConditionalOperator(InjectionContext &Cxt, ConditionalOperator *E) {
+  ExprResult Cond = InjectExpr(Cxt, E->getCond());
+  if (Cond.isInvalid())
+    return ExprError();
+
+  ExprResult LHS = InjectExpr(Cxt, E->getLHS());
+  if (LHS.isInvalid())
+    return ExprError();
+
+  ExprResult RHS = InjectExpr(Cxt, E->getRHS());
+  if (RHS.isInvalid())
+    return ExprError();
+
+  return Cxt.SemaRef.ActOnConditionalOp(
+    E->getQuestionLoc(), E->getColonLoc(), Cond.get(), LHS.get(), RHS.get());
+}
+
+ExprResult InjectBinaryConditionalOperator(InjectionContext &Cxt, BinaryConditionalOperator *E) {
+  ExprResult Cond = InjectExpr(Cxt, E->getCommon());
+  if (Cond.isInvalid())
+    return ExprError();
+
+  ExprResult RHS = InjectExpr(Cxt, E->getFalseExpr());
+  if (RHS.isInvalid())
+    return ExprError();
+
+  return Cxt.SemaRef.ActOnConditionalOp(
+    E->getQuestionLoc(), E->getColonLoc(), Cond.get(), nullptr, RHS.get());
+}
+
+ExprResult InjectSubscriptExpr(InjectionContext &Cxt, ArraySubscriptExpr *E) {
+  ExprResult LHS = InjectExpr(Cxt, E->getLHS());
+  if (LHS.isInvalid())
+    return ExprError();
+
+  ExprResult RHS = InjectExpr(Cxt, E->getRHS());
+  if (RHS.isInvalid())
+    return ExprError();
+
+  SourceLocation Start = E->getLHS()->getLocStart(); // FIXME
+  SourceLocation End = E->getRBracketLoc();
+  return Cxt.SemaRef.ActOnArraySubscriptExpr(
+    /*Scope=*/nullptr, LHS.get(), Start, RHS.get(), End);
+}
+
 ExprResult InjectImplicitCast(InjectionContext &Cxt, ImplicitCastExpr *E) {
   // Implicit casts are eliminated during injection, since they will be 
   // recomputed by semantic analysis.
   return InjectExpr(Cxt, E->getSubExprAsWritten());
+}
+
+ExprResult InjectExplicitCast(InjectionContext &Cxt, CStyleCastExpr *E) {
+  TypeSourceInfo *TSI = InjectType(Cxt, E->getTypeInfoAsWritten());
+  if (!TSI)
+    return ExprError();
+
+  ExprResult SubExpr = InjectExpr(Cxt, E->getSubExprAsWritten());
+  if (SubExpr.isInvalid())
+    return ExprError();
+
+  return Cxt.SemaRef.BuildCStyleCastExpr(
+      E->getLParenLoc(), TSI, E->getRParenLoc(), SubExpr.get());
+}
+
+tok::TokenKind GetCastName(Expr *E) {
+  switch (E->getStmtClass()) {
+  case Stmt::CXXStaticCastExprClass:
+    return tok::kw_static_cast;
+  case Stmt::CXXDynamicCastExprClass:
+    return tok::kw_dynamic_cast;
+  case Stmt::CXXReinterpretCastExprClass:
+    return tok::kw_reinterpret_cast;
+  case Stmt::CXXConstCastExprClass:
+    return tok::kw_const_cast;
+  default:
+    llvm_unreachable("Invalid C++ named cast");
+  }
+}
+
+ExprResult InjectExplicitCast(InjectionContext &Cxt, CXXNamedCastExpr *E) {
+  TypeSourceInfo *TSI = InjectType(Cxt, E->getTypeInfoAsWritten());
+  if (!TSI)
+    return ExprError();
+
+  ExprResult SubExpr = InjectExpr(Cxt, E->getSubExprAsWritten());
+  if (SubExpr.isInvalid())
+    return ExprError();
+
+  SourceRange Angles(E->getAngleBrackets());
+  SourceRange Parens(Angles.getEnd(), E->getRParenLoc());
+  return Cxt.SemaRef.BuildCXXNamedCast(
+      E->getOperatorLoc(), GetCastName(E), TSI, SubExpr.get(), Angles, Parens);
+}
+
+ExprResult InjectParenListExpr(InjectionContext &Cxt, ParenListExpr *E) {
+  SmallVector<Expr*, 4> Inits;
+  if (InjectExprs(Cxt, E->getExprs(), E->getNumExprs(), Inits))
+    return ExprError();
+
+  return Cxt.SemaRef.ActOnParenListExpr(
+      E->getLParenLoc(), E->getRParenLoc(), Inits);
 }
 
 ExprResult InjectCXXThisExpr(InjectionContext &Cxt, CXXThisExpr *E) {
@@ -1143,23 +1280,27 @@ ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   case Stmt::UnaryOperatorClass:
     return InjectUnaryOperator(Cxt, cast<UnaryOperator>(E));
   // case Stmt::OffsetOfExprClass:
-  // case Stmt::UnaryExprOrTypeTraitExprClass:
-  // case Stmt::ArraySubscriptExprClass:
+  case Stmt::UnaryExprOrTypeTraitExprClass:
+    return InjectUnaryExpr(Cxt, cast<UnaryExprOrTypeTraitExpr>(E));
+  case Stmt::ArraySubscriptExprClass:
+    return InjectSubscriptExpr(Cxt, cast<ArraySubscriptExpr>(E));
   case Stmt::CallExprClass:
     return InjectCallExpr(Cxt, cast<CallExpr>(E));
   case Stmt::MemberExprClass:
     return InjectMemberExpr(Cxt, cast<MemberExpr>(E));
-  // case Stmt::CastExprClass:
   case Stmt::BinaryOperatorClass:
     return InjectBinaryOperator(Cxt, cast<BinaryOperator>(E));
-  // case Stmt::CompoundAssignOperatorClass:
-  // case Stmt::AbstractConditionalOperatorClass:
-  // case Stmt::ConditionalOperatorClass:
-  // case Stmt::BinaryConditionalOperatorClass:
+  case Stmt::CompoundAssignOperatorClass:
+    return InjectBinaryOperator(Cxt, cast<BinaryOperator>(E));
+  case Stmt::ConditionalOperatorClass:
+    return InjectConditionalOperator(Cxt, cast<ConditionalOperator>(E));
+  case Stmt::BinaryConditionalOperatorClass:
+    return InjectBinaryConditionalOperator(Cxt, cast<BinaryConditionalOperator>(E));
   case Stmt::ImplicitCastExprClass:
     return InjectImplicitCast(Cxt, cast<ImplicitCastExpr>(E));
-  // case Stmt::ExplicitCastExprClass:
-  // case Stmt::CStyleCastExprClass:
+  case Stmt::CStyleCastExprClass:
+    return InjectExplicitCast(Cxt, cast<CStyleCastExpr>(E));
+  
   // case Stmt::CompoundLiteralExprClass:
   // case Stmt::ExtVectorElementExprClass:
   // case Stmt::InitListExprClass:
@@ -1169,7 +1310,8 @@ ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   // case Stmt::NoInitExprClass:
   // case Stmt::ArrayInitLoopExprClass:
   // case Stmt::ArrayInitIndexExprClass:
-  // case Stmt::ParenListExprClass:
+  case Stmt::ParenListExprClass:
+    return InjectParenListExpr(Cxt, cast<ParenListExpr>(E));
   // case Stmt::VAArgExprClass:
   // case Stmt::GenericSelectionExprClass:
   // case Stmt::PseudoObjectExprClass:
@@ -1181,10 +1323,11 @@ ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   // case Stmt::CXXOperatorCallExprClass:
   // case Stmt::CXXMemberCallExprClass:
   // case Stmt::CXXNamedCastExprClass:
-  // case Stmt::CXXStaticCastExprClass:
-  // case Stmt::CXXDynamicCastExprClass:
-  // case Stmt::CXXReinterpretCastExprClass:
-  // case Stmt::CXXConstCastExprClass:
+  case Stmt::CXXStaticCastExprClass:
+  case Stmt::CXXDynamicCastExprClass:
+  case Stmt::CXXReinterpretCastExprClass:
+  case Stmt::CXXConstCastExprClass:
+    return InjectExplicitCast(Cxt, cast<CXXNamedCastExpr>(E));
   // case Stmt::CXXFunctionalCastExprClass:
   // case Stmt::CXXTypeidExprClass:
   // case Stmt::UserDefinedLiteralClass:
@@ -1252,6 +1395,87 @@ ExprResult InjectExpr(InjectionContext &Cxt, ExprResult E)
   if (E.isInvalid())
     return E;
   return InjectExpr(Cxt, E);
+}
+
+// Initializers are instantiated like expressions, except that various outer
+// layers are stripped.
+ExprResult InjectInit(InjectionContext &Cxt, Expr *Init, bool NotCopyInit) {
+  if (!Init)
+    return Init;
+
+  if (ExprWithCleanups *ExprTemp = dyn_cast<ExprWithCleanups>(Init))
+    Init = ExprTemp->getSubExpr();
+
+  if (ArrayInitLoopExpr *AIL = dyn_cast<ArrayInitLoopExpr>(Init))
+    Init = AIL->getCommonExpr();
+
+  if (MaterializeTemporaryExpr *MTE = dyn_cast<MaterializeTemporaryExpr>(Init))
+    Init = MTE->GetTemporaryExpr();
+
+  while (CXXBindTemporaryExpr *Binder = dyn_cast<CXXBindTemporaryExpr>(Init))
+    Init = Binder->getSubExpr();
+
+  if (ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(Init))
+    Init = ICE->getSubExprAsWritten();
+
+  if (CXXStdInitializerListExpr *ILE = dyn_cast<CXXStdInitializerListExpr>(Init))
+    return InjectInit(Cxt, ILE->getSubExpr(), NotCopyInit);
+
+  // If this is copy-initialization, we only need to reconstruct
+  // InitListExprs. Other forms of copy-initialization will be a no-op if
+  // the initializer is already the right type.
+  CXXConstructExpr *Construct = dyn_cast<CXXConstructExpr>(Init);
+  if (!NotCopyInit && !(Construct && Construct->isListInitialization()))
+    return InjectExpr(Cxt, Init);
+
+  // Revert value-initialization back to empty parens.
+  if (CXXScalarValueInitExpr *VIE = dyn_cast<CXXScalarValueInitExpr>(Init)) {
+    SourceRange Parens = VIE->getSourceRange();
+    return Cxt.SemaRef.ActOnParenListExpr(Parens.getBegin(), Parens.getEnd(), None);
+  }
+
+  // FIXME: We shouldn't build ImplicitValueInitExprs for direct-initialization.
+  if (isa<ImplicitValueInitExpr>(Init)) 
+    return Cxt.SemaRef.ActOnParenListExpr(SourceLocation(), SourceLocation(), None);
+
+  // Revert initialization by constructor back to a parenthesized or braced list
+  // of expressions. Any other form of initializer can just be reused directly.
+  if (!Construct || isa<CXXTemporaryObjectExpr>(Construct))
+    return InjectExpr(Cxt, Init);
+
+  // If the initialization implicitly converted an initializer list to a
+  // std::initializer_list object, unwrap the std::initializer_list too.
+  if (Construct && Construct->isStdInitListInitialization())
+    return InjectInit(Cxt, Construct->getArg(0), NotCopyInit);
+
+  SmallVector<Expr*, 8> NewArgs;
+  if (!InjectExprs(Cxt, Construct->getArgs(), Construct->getNumArgs(), NewArgs))
+    return ExprError();
+
+  // If this was list initialization, revert to list form.
+  if (Construct->isListInitialization()) {
+    QualType ResultType = Construct->getType();
+    SourceLocation LBrace = Construct->getLocStart();
+    SourceLocation RBrace = Construct->getLocEnd();
+    ExprResult Result = Cxt.SemaRef.ActOnInitList(LBrace, NewArgs, RBrace);
+    if (Result.isInvalid() || ResultType->isDependentType())
+      return Result;
+
+    // Patch in the result type we were given, which may have been computed
+    // when the initial InitListExpr was built.
+    InitListExpr *ILE = cast<InitListExpr>(Result.get());
+    ILE->setType(ResultType);
+    return Result;
+  }
+
+  // Build a ParenListExpr to represent anything else.
+  SourceRange Parens = Construct->getParenOrBraceRange();
+  if (Parens.isInvalid()) {
+    assert(NewArgs.empty() && "no parens or braces but have direct init");
+    return ExprEmpty();
+  }
+  
+  return Cxt.SemaRef.ActOnParenListExpr(Parens.getBegin(), Parens.getEnd(), NewArgs);
 }
 
 // Declarations
@@ -1368,6 +1592,8 @@ static Decl* InjectEnumDecl(InjectionContext &Cxt, EnumDecl *D) {
 }
 
 static Decl* InjectEnumConstantDecl(InjectionContext &Cxt, EnumConstantDecl *D) {
+  // NOTE: Enumerators are processed by InjectEnumDefinition.
+  llvm_unreachable("Invalid injection");
 }
 
 
