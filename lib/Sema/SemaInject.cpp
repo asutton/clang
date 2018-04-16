@@ -150,6 +150,15 @@ static ExprResult InjectExpr(InjectionContext &Cxt, Expr *E);
 static ExprResult InjectExpr(InjectionContext &Cxt, ExprResult E);
 static ExprResult InjectInit(InjectionContext &Cxt, Expr *E, bool NotCopyInit);
 
+static bool InjectExprs(InjectionContext &Cxt, 
+                        Expr *const *Args, 
+                        unsigned NumArgs, 
+                        SmallVectorImpl<Expr *> &Out);
+static bool InjectArgs(InjectionContext &Cxt, 
+                       Expr *const *Args, 
+                       unsigned NumArgs, 
+                       SmallVectorImpl<Expr *> &Out);
+
 static Decl *InjectDecl(InjectionContext &Cxt, Decl *D);
 
 // Transform template arguments in the range [First, Last).
@@ -939,10 +948,10 @@ ExprResult InjectParenExpr(InjectionContext &Cxt, ParenExpr *E) {
                                     Inner.get());
 }
 
-static bool InjectArgs(InjectionContext &Cxt, 
-                       Expr *const *Args, 
-                       unsigned NumArgs, 
-                       SmallVectorImpl<Expr *> &Out) {
+bool InjectArgs(InjectionContext &Cxt, 
+                Expr *const *Args, 
+                unsigned NumArgs, 
+                SmallVectorImpl<Expr *> &Out) {
   for (unsigned I = 0; I != NumArgs; ++I) {
     ExprResult Arg = InjectInit(Cxt, Args[I], /*NotCopyInit=*/false);
     if (Arg.isInvalid())
@@ -952,10 +961,10 @@ static bool InjectArgs(InjectionContext &Cxt,
   return true;
 }
 
-static bool InjectExprs(InjectionContext &Cxt, 
-                       Expr *const *Args, 
-                       unsigned NumArgs, 
-                       SmallVectorImpl<Expr *> &Out) {
+bool InjectExprs(InjectionContext &Cxt, 
+                 Expr *const *Args, 
+                 unsigned NumArgs, 
+                 SmallVectorImpl<Expr *> &Out) {
   for (unsigned I = 0; I != NumArgs; ++I) {
     ExprResult Arg = InjectExpr(Cxt, Args[I]);
     if (Arg.isInvalid())
@@ -983,6 +992,178 @@ ExprResult InjectCallExpr(InjectionContext &Cxt, CallExpr *E) {
   return Cxt.SemaRef.ActOnCallExpr(
       /*Scope=*/nullptr, CalleeExpr, LParenLoc, Args, RParenLoc, 
       /*ExecConfig*/nullptr);
+}
+
+ExprResult InjectAddressOfOperand(InjectionContext &Cxt, Expr *E) {
+  if (DependentScopeDeclRefExpr *DRE = dyn_cast<DependentScopeDeclRefExpr>(E))
+    return InjectDeclRefExpr(Cxt, DRE);
+  else
+    return InjectExpr(Cxt, E);
+}
+
+ExprResult
+RebuildCXXOperatorCallExpr(InjectionContext &Cxt,
+                           OverloadedOperatorKind Op, 
+                           SourceLocation OpLoc, 
+                           Expr *OrigCallee, 
+                           Expr *First, 
+                           Expr *Second) {
+  Expr *Callee = OrigCallee->IgnoreParenCasts();
+  QualType FirstTy = First->getType();
+  QualType SecondTy = Second->getType();
+  
+  bool IsPost = Second && (Op == OO_PlusPlus || Op == OO_MinusMinus);
+
+
+  // Determine whether this should be a builtin operation.
+  if (Op == OO_Subscript) {
+    if (!First->getType()->isOverloadableType() && 
+        !Second->getType()->isOverloadableType())
+      return Cxt.SemaRef.CreateBuiltinArraySubscriptExpr(
+            First, Callee->getLocStart(), Second, OpLoc);
+  } else if (Op == OO_Arrow) {
+    // -> is never a builtin operation.
+    return Cxt.SemaRef.BuildOverloadedArrowExpr(nullptr, First, OpLoc);
+  } else if (Second == nullptr || IsPost) {
+    if (!FirstTy->isOverloadableType()) {
+      // The argument is not of overloadable type, so try to create a
+      // built-in unary operation.
+      UnaryOperatorKind Opc = UnaryOperator::getOverloadedOpcode(Op, IsPost);
+      return Cxt.SemaRef.CreateBuiltinUnaryOp(OpLoc, Opc, First);
+    }
+  } else {
+    if (!FirstTy->isOverloadableType() && !SecondTy->isOverloadableType()) {
+      // Neither of the arguments is an overloadable type, so try to
+      // create a built-in binary operation.
+      BinaryOperatorKind Opc = BinaryOperator::getOverloadedOpcode(Op);
+      return Cxt.SemaRef.CreateBuiltinBinOp(OpLoc, Opc, First, Second);
+    }
+  }
+
+  // Compute the transformed set of functions (and function templates) to be
+  // used during overload resolution.
+  UnresolvedSet<16> Functions;
+
+  if (UnresolvedLookupExpr *ULE = dyn_cast<UnresolvedLookupExpr>(Callee)) {
+    assert(ULE->requiresADL());
+    Functions.append(ULE->decls_begin(), ULE->decls_end());
+  } else {
+    // If we've resolved this to a particular non-member function, just call
+    // that function. If we resolved it to a member function,
+    // CreateOverloaded* will find that function for us.
+    NamedDecl *ND = cast<DeclRefExpr>(Callee)->getDecl();
+    if (!isa<CXXMethodDecl>(ND))
+      Functions.addDecl(ND);
+  }
+
+  // Add any functions found via argument-dependent lookup.
+  Expr *Args[2] = { First, Second };
+  unsigned NumArgs = 1 + (Second != nullptr);
+
+  // Create the overloaded operator invocation for unary operators.
+  if (NumArgs == 1 || IsPost) {
+    UnaryOperatorKind Opc = UnaryOperator::getOverloadedOpcode(Op, IsPost);
+    return Cxt.SemaRef.CreateOverloadedUnaryOp(OpLoc, Opc, Functions, First);
+  }
+
+  if (Op == OO_Subscript) {
+    SourceLocation LBrace;
+    SourceLocation RBrace;
+
+    if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Callee)) {
+        DeclarationNameLoc NameLoc = DRE->getNameInfo().getInfo();
+        LBrace = SourceLocation::getFromRawEncoding(
+                    NameLoc.CXXOperatorName.BeginOpNameLoc);
+        RBrace = SourceLocation::getFromRawEncoding(
+                    NameLoc.CXXOperatorName.EndOpNameLoc);
+    } else {
+        LBrace = Callee->getLocStart();
+        RBrace = OpLoc;
+    }
+
+    return Cxt.SemaRef.CreateOverloadedArraySubscriptExpr(
+        LBrace, RBrace, First, Second);
+  }
+
+  // Create the overloaded operator invocation for binary operators.
+  BinaryOperatorKind Opc = BinaryOperator::getOverloadedOpcode(Op);
+  return Cxt.SemaRef.CreateOverloadedBinOp(OpLoc, Opc, Functions, Args[0], Args[1]);
+}
+
+ExprResult InjectOperatorCallExpr(InjectionContext &Cxt, CXXOperatorCallExpr *E) {
+  switch (E->getOperator()) {
+  case OO_New:
+  case OO_Delete:
+  case OO_Array_New:
+  case OO_Array_Delete:
+    llvm_unreachable("new and delete operators cannot use CXXOperatorCallExpr");
+
+  case OO_Call: {
+    // This is a call to an object's operator().
+    assert(E->getNumArgs() >= 1 && "Object call is missing arguments");
+
+    // Transform the object itself.
+    ExprResult Object = InjectExpr(Cxt, E->getArg(0));
+    if (Object.isInvalid())
+      return ExprError();
+
+    // FIXME: Poor location information
+    SourceLocation LParenLoc = 
+        Cxt.SemaRef.getLocForEndOfToken(Object.get()->getLocEnd());
+    SourceLocation RParenLoc = E->getLocEnd();
+
+    // Transform the call arguments.
+    SmallVector<Expr*, 8> Args;
+    if (!InjectArgs(Cxt, E->getArgs() + 1, E->getNumArgs() - 1, Args))
+      return ExprError();
+
+    return Cxt.SemaRef.ActOnCallExpr(
+        /*Scope=*/nullptr, Object.get(), LParenLoc, Args, RParenLoc,
+        /*ExecConfig=*/nullptr);
+  }
+
+#define OVERLOADED_OPERATOR(Name,Spelling,Token,Unary,Binary,MemberOnly) \
+  case OO_##Name:
+#define OVERLOADED_OPERATOR_MULTI(Name,Spelling,Unary,Binary,MemberOnly)
+#include "clang/Basic/OperatorKinds.def"
+
+  case OO_Subscript:
+    // Handled below.
+    break;
+
+  case OO_Conditional:
+    llvm_unreachable("conditional operator is not actually overloadable");
+
+  case OO_None:
+  case NUM_OVERLOADED_OPERATORS:
+    llvm_unreachable("not an overloaded operator?");
+  }
+
+  ExprResult Callee = InjectExpr(Cxt, E->getCallee());
+  if (Callee.isInvalid())
+    return ExprError();
+
+  ExprResult First;
+  if (E->getOperator() == OO_Amp) 
+    First = InjectAddressOfOperand(Cxt, E->getArg(0));
+  else
+    First = InjectExpr(Cxt, E->getArg(0));
+  if (First.isInvalid())
+    return ExprError();
+
+  ExprResult Second;
+  if (E->getNumArgs() == 2) {
+    Second = InjectExpr(Cxt, E->getArg(1));
+    if (Second.isInvalid())
+      return ExprError();
+  }
+
+  Sema::FPContractStateRAII FPContractState(Cxt.SemaRef);
+  Cxt.SemaRef.FPFeatures = E->getFPFeatures();
+
+  SourceLocation OpLoc = E->getOperatorLoc();
+  return RebuildCXXOperatorCallExpr(
+      Cxt, E->getOperator(), OpLoc, Callee.get(), First.get(), Second.get());
 }
 
 ExprResult InjectMemberExpr(InjectionContext &Cxt, MemberExpr *E) {
@@ -1320,9 +1501,10 @@ ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   // case Stmt::AtomicExprClass:
 
   // C++ Expressions.
-  // case Stmt::CXXOperatorCallExprClass:
-  // case Stmt::CXXMemberCallExprClass:
-  // case Stmt::CXXNamedCastExprClass:
+  case Stmt::CXXOperatorCallExprClass:
+    return InjectOperatorCallExpr(Cxt, cast<CXXOperatorCallExpr>(E));
+  case Stmt::CXXMemberCallExprClass:
+    return InjectCallExpr(Cxt, cast<CXXMemberCallExpr>(E));
   case Stmt::CXXStaticCastExprClass:
   case Stmt::CXXDynamicCastExprClass:
   case Stmt::CXXReinterpretCastExprClass:
