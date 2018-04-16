@@ -14021,7 +14021,7 @@ void Sema::StartDefinition(TagDecl *D) {
 static void ProcessInjections(Sema &SemaRef, CXXRecordDecl *D) {
   if (!D) // Not a class
     return;
-  if (isa<CXXRecordDecl>(D->getDeclContext())) // Not an outermost class
+  if (D->isCXXClassMember()) // Not an outermost class
     return;
   SemaRef.InjectPendingDefinitions();
 }

@@ -143,6 +143,9 @@ static TypeSourceInfo *InjectType(InjectionContext &Cxt, TypeSourceInfo *TSI);
 static TypeSourceInfo *InjectDeclType(InjectionContext &Cxt, NamedDecl *D);
 static TypeSourceInfo *InjectDeclType(InjectionContext &Cxt, DeclaratorDecl *D);
 
+static QualType InjectDeducibleType(InjectionContext &Ext, QualType T);
+static TypeSourceInfo *InjectDeducibleType(InjectionContext &Ext, TypeSourceInfo *T);
+
 static StmtResult InjectStmt(InjectionContext &Cxt, Stmt *S);
 static StmtResult InjectStmt(InjectionContext &Cxt, StmtResult S);
 
@@ -602,6 +605,54 @@ static QualType InjectEnumType(InjectionContext &Cxt,
   return Result;
 }
 
+static QualType InjectAutoType(InjectionContext &Cxt,
+                               TypeLocBuilder &TLB,
+                               AutoTypeLoc TL) {
+  const AutoType *T = TL.getTypePtr();
+  QualType OldDeduced = T->getDeducedType();
+  QualType NewDeduced;
+  if (!OldDeduced.isNull()) {
+    NewDeduced = InjectType(Cxt, OldDeduced);
+    if (NewDeduced.isNull())
+      return QualType();
+  }
+
+  QualType Result = getASTContext(Cxt).getAutoType(
+      NewDeduced, T->getKeyword(), /*IsDependent=*/false);
+  if (Result.isNull())
+    return QualType();
+
+  AutoTypeLoc NewTL = TLB.push<AutoTypeLoc>(Result);
+  NewTL.setNameLoc(TL.getNameLoc());
+
+  return Result;
+}
+
+static QualType InjectTemplateTypeParmType(InjectionContext &Cxt,
+                                           TypeLocBuilder &TLB,
+                                           TemplateTypeParmTypeLoc TL) {
+  return InjectTypeSpecType(Cxt, TLB, TL);
+}
+
+static QualType InjectTemplateTypeParmType(InjectionContext &Cxt, 
+                                           TypeLocBuilder &TLB, 
+                                           SubstTemplateTypeParmTypeLoc TL) {
+  const SubstTemplateTypeParmType *T = TL.getTypePtr();
+
+  QualType Replacement = InjectType(Cxt, T->getReplacementType());
+  if (Replacement.isNull())
+    return QualType();
+
+  Replacement = getASTContext(Cxt).getCanonicalType(Replacement);
+  QualType Result = getASTContext(Cxt).getSubstTemplateTypeParmType(
+      T->getReplacedParameter(), Replacement);
+
+  SubstTemplateTypeParmTypeLoc NewTL
+    = TLB.push<SubstTemplateTypeParmTypeLoc>(Result);
+  NewTL.setNameLoc(TL.getNameLoc());
+  return Result;
+}
+
 // FIXME: Implement me. Also, we're probably going to need to use the
 // TLB facility to do this "correctly".
 QualType InjectType(InjectionContext &Cxt, TypeLocBuilder &TLB, TypeLoc TL) {
@@ -640,8 +691,15 @@ QualType InjectType(InjectionContext &Cxt, TypeLocBuilder &TLB, TypeLoc TL) {
     return InjectRecordType(Cxt, TLB, TL.castAs<RecordTypeLoc>());
   case Type::Enum:
     return InjectEnumType(Cxt, TLB, TL.castAs<EnumTypeLoc>());
+  case Type::Auto:
+    return InjectAutoType(Cxt, TLB, TL.castAs<AutoTypeLoc>());
+  case Type::TemplateTypeParm:
+    return InjectTemplateTypeParmType(Cxt, TLB, TL.castAs<TemplateTypeParmTypeLoc>());
+  case Type::SubstTemplateTypeParm:
+    return InjectTemplateTypeParmType(Cxt, TLB, TL.castAs<SubstTemplateTypeParmTypeLoc>());
   default:
-    llvm_unreachable("unknown type");
+    TL.getType()->dump();
+    llvm_unreachable("Unknown type");
   }
 }
 
@@ -678,6 +736,247 @@ TypeSourceInfo *InjectDeclType(InjectionContext &Cxt, ValueDecl *D) {
 TypeSourceInfo *InjectDeclType(InjectionContext &Cxt, DeclaratorDecl *D) {
   return InjectType(Cxt, D->getTypeSourceInfo());
 }
+
+QualType InjectDeducibleType(InjectionContext &Cxt, QualType T) {
+  if (!isa<DependentNameType>(T))
+    return InjectType(Cxt, T);
+
+  TypeSourceInfo *OldTSI = getASTContext(Cxt).getTrivialTypeSourceInfo(T);
+  TypeSourceInfo *NewTSI = InjectDeducibleType(Cxt, OldTSI);
+  if (!NewTSI)
+    return QualType();
+  return NewTSI->getType();
+}
+
+static QualType RebuildDependentNameType(InjectionContext& Cxt, 
+                                         ElaboratedTypeKeyword Keyword, 
+                                         SourceLocation KeywordLoc, 
+                                         NestedNameSpecifierLoc QualifierLoc, 
+                                         const IdentifierInfo *Id, 
+                                         SourceLocation IdLoc, 
+                                         bool DeducedTSTContext) {
+  CXXScopeSpec SS;
+  SS.Adopt(QualifierLoc);
+
+  if (QualifierLoc.getNestedNameSpecifier()->isDependent()) {
+    // If the name is still dependent, just build a new dependent name type.
+    if (!Cxt.SemaRef.computeDeclContext(SS))
+      return getASTContext(Cxt).getDependentNameType(
+          Keyword, QualifierLoc.getNestedNameSpecifier(), Id);
+  }
+
+  if (Keyword == ETK_None || Keyword == ETK_Typename) {
+    QualType T = Cxt.SemaRef.CheckTypenameType(
+        Keyword, KeywordLoc, QualifierLoc, *Id, IdLoc);
+    
+    // If a dependent name resolves to a deduced template specialization type,
+    // check that we're in one of the syntactic contexts permitting it.
+    if (!DeducedTSTContext) {
+      if (auto *Deduced = dyn_cast_or_null<DeducedTemplateSpecializationType>(
+              T.isNull() ? nullptr : T->getContainedDeducedType())) {
+        Cxt.SemaRef.Diag(IdLoc, diag::err_dependent_deduced_tst)
+          << (int)Cxt.SemaRef.getTemplateNameKindForDiagnostics(
+                 Deduced->getTemplateName())
+          << QualType(QualifierLoc.getNestedNameSpecifier()->getAsType(), 0);
+        if (auto *TD = Deduced->getTemplateName().getAsTemplateDecl())
+          Cxt.SemaRef.Diag(TD->getLocation(), diag::note_template_decl_here);
+        return QualType();
+      }
+    }
+    return T;
+  }
+
+  TagTypeKind Kind = TypeWithKeyword::getTagTypeKindForKeyword(Keyword);
+
+  // We had a dependent elaborated-type-specifier that has been transformed
+  // into a non-dependent elaborated-type-specifier. Find the tag we're
+  // referring to.
+  LookupResult Result(Cxt.SemaRef, Id, IdLoc, Sema::LookupTagName);
+  DeclContext *DC = Cxt.SemaRef.computeDeclContext(SS, false);
+  if (!DC)
+    return QualType();
+
+  if (Cxt.SemaRef.RequireCompleteDeclContext(SS, DC))
+    return QualType();
+
+  TagDecl *Tag = nullptr;
+  Cxt.SemaRef.LookupQualifiedName(Result, DC);
+  switch (Result.getResultKind()) {
+    case LookupResult::NotFound:
+    case LookupResult::NotFoundInCurrentInstantiation:
+      break;
+
+    case LookupResult::Found:
+      Tag = Result.getAsSingle<TagDecl>();
+      break;
+
+    case LookupResult::FoundOverloaded:
+    case LookupResult::FoundUnresolvedValue:
+      llvm_unreachable("Tag lookup cannot find non-tags");
+
+    case LookupResult::Ambiguous:
+      // Let the LookupResult structure handle ambiguities.
+      return QualType();
+  }
+
+  if (!Tag) {
+    // Check where the name exists but isn't a tag type and use that to emit
+    // better diagnostics.
+    LookupResult Result(Cxt.SemaRef, Id, IdLoc, Sema::LookupTagName);
+    Cxt.SemaRef.LookupQualifiedName(Result, DC);
+    switch (Result.getResultKind()) {
+      case LookupResult::Found:
+      case LookupResult::FoundOverloaded:
+      case LookupResult::FoundUnresolvedValue: {
+        NamedDecl *SomeDecl = Result.getRepresentativeDecl();
+        Sema::NonTagKind NTK = Cxt.SemaRef.getNonTagTypeDeclKind(SomeDecl, Kind);
+        Cxt.SemaRef.Diag(IdLoc, diag::err_tag_reference_non_tag) << SomeDecl
+                                                                 << NTK 
+                                                                 << Kind;
+        Cxt.SemaRef.Diag(SomeDecl->getLocation(), diag::note_declared_at);
+        break;
+      }
+      default:
+        Cxt.SemaRef.Diag(IdLoc, diag::err_not_tag_in_scope)
+            << Kind << Id << DC << QualifierLoc.getSourceRange();
+        break;
+    }
+    return QualType();
+  }
+
+  if (!Cxt.SemaRef.isAcceptableTagRedeclaration(
+      Tag, Kind, /*isDefinition*/false, IdLoc, Id)) {
+    Cxt.SemaRef.Diag(KeywordLoc, diag::err_use_with_wrong_tag) << Id;
+    Cxt.SemaRef.Diag(Tag->getLocation(), diag::note_previous_use);
+    return QualType();
+  }
+
+  // Build the elaborated-type-specifier type.
+  QualType T = Cxt.SemaRef.Context.getTypeDeclType(Tag);
+  return getASTContext(Cxt).getElaboratedType(
+      Keyword, QualifierLoc.getNestedNameSpecifier(), T);
+}
+
+
+static QualType InjectDepedentTypeName(InjectionContext &Cxt,
+                                       TypeLocBuilder &TLB,
+                                       DependentNameTypeLoc TL,
+                                       bool DeducedContext = false) {
+  const DependentNameType *T = TL.getTypePtr();
+
+  NestedNameSpecifierLoc OldNNS = TL.getQualifierLoc();
+  NestedNameSpecifierLoc NewNNS = InjectNameSpecifier(Cxt, OldNNS);
+  if (!NewNNS)
+    return QualType();
+
+  QualType Result = RebuildDependentNameType(
+      Cxt, T->getKeyword(), TL.getElaboratedKeywordLoc(), NewNNS,
+      T->getIdentifier(), TL.getNameLoc(), DeducedContext);
+  
+  if (Result.isNull())
+    return QualType();
+
+  if (const ElaboratedType* ElabT = Result->getAs<ElaboratedType>()) {
+    QualType NamedT = ElabT->getNamedType();
+    TLB.pushTypeSpec(NamedT).setNameLoc(TL.getNameLoc());
+    ElaboratedTypeLoc NewTL = TLB.push<ElaboratedTypeLoc>(Result);
+    NewTL.setElaboratedKeywordLoc(TL.getElaboratedKeywordLoc());
+    NewTL.setQualifierLoc(NewNNS);
+  } else {
+    DependentNameTypeLoc NewTL = TLB.push<DependentNameTypeLoc>(Result);
+    NewTL.setElaboratedKeywordLoc(TL.getElaboratedKeywordLoc());
+    NewTL.setQualifierLoc(NewNNS);
+    NewTL.setNameLoc(TL.getNameLoc());
+  }
+  return Result;
+}
+
+static QualType RebuildQualifiedType(InjectionContext &Cxt,
+                                     QualType T, 
+                                     SourceLocation Loc, 
+                                     Qualifiers Quals) {
+  // C++ [dcl.fct]p7:
+  //   [When] adding cv-qualifications on top of the function type [...] the
+  //   cv-qualifiers are ignored.
+  // C++ [dcl.ref]p1:
+  //   when the cv-qualifiers are introduced through the use of a typedef-name
+  //   or decltype-specifier [...] the cv-qualifiers are ignored.
+  // Note that [dcl.ref]p1 lists all cases in which cv-qualifiers can be
+  // applied to a reference type.
+  // FIXME: This removes all qualifiers, not just cv-qualifiers!
+  if (T->isFunctionType() || T->isReferenceType())
+    return T;
+
+  // Suppress Objective-C lifetime qualifiers if they don't make sense for the
+  // resulting type.
+  if (Quals.hasObjCLifetime()) {
+    if (!T->isObjCLifetimeType() && !T->isDependentType())
+      Quals.removeObjCLifetime();
+    else if (T.getObjCLifetime()) {
+      // Objective-C ARC:
+      //   A lifetime qualifier applied to a substituted template parameter
+      //   overrides the lifetime qualifier from the template argument.
+      const AutoType *AutoTy;
+      if (const SubstTemplateTypeParmType *SubstTypeParam
+                                = dyn_cast<SubstTemplateTypeParmType>(T)) {
+        QualType Replacement = SubstTypeParam->getReplacementType();
+        Qualifiers Qs = Replacement.getQualifiers();
+        Qs.removeObjCLifetime();
+        Replacement = getASTContext(Cxt).getQualifiedType(
+            Replacement.getUnqualifiedType(), Qs);
+        T = getASTContext(Cxt).getSubstTemplateTypeParmType(
+            SubstTypeParam->getReplacedParameter(), Replacement);
+      } else if ((AutoTy = dyn_cast<AutoType>(T)) && AutoTy->isDeduced()) {
+        // 'auto' types behave the same way as template parameters.
+        QualType Deduced = AutoTy->getDeducedType();
+        Qualifiers Qs = Deduced.getQualifiers();
+        Qs.removeObjCLifetime();
+        Deduced =
+            getASTContext(Cxt).getQualifiedType(Deduced.getUnqualifiedType(), Qs);
+        T = getASTContext(Cxt).getAutoType(Deduced, AutoTy->getKeyword(),
+                                          AutoTy->isDependentType());
+      } else {
+        // Otherwise, complain about the addition of a qualifier to an
+        // already-qualified type.
+        // FIXME: Why is this check not in Sema::BuildQualifiedType?
+        Cxt.SemaRef.Diag(Loc, diag::err_attr_objc_ownership_redundant) << T;
+        Quals.removeObjCLifetime();
+      }
+    }
+  }
+
+  return Cxt.SemaRef.BuildQualifiedType(T, Loc, Quals);
+}
+
+TypeSourceInfo *InjectDeducibleType(InjectionContext &Cxt, TypeSourceInfo *TSI) {
+  if (!isa<DependentNameType>(TSI->getType()))
+    return InjectType(Cxt, TSI);
+
+
+  TypeLocBuilder TLB;
+  TypeLoc TL = TSI->getTypeLoc();
+  TLB.reserve(TL.getFullDataSize());
+
+  Qualifiers Quals;
+  auto QTL = TL.getAs<QualifiedTypeLoc>();
+  if (QTL)
+    TL = QTL.getUnqualifiedLoc();
+
+  auto DNTL = TL.castAs<DependentNameTypeLoc>();
+
+  QualType Result = InjectDepedentTypeName(Cxt, TLB, DNTL, /*DeducedContext=*/true);
+  if (Result.isNull())
+    return nullptr;
+
+  if (QTL) {
+    Result = RebuildQualifiedType(
+        Cxt, Result, QTL.getBeginLoc(), QTL.getType().getLocalQualifiers());
+    TLB.TypeWasModifiedSafely(Result);
+  }
+
+  return TLB.getTypeSourceInfo(getASTContext(Cxt), Result);
+}
+
 
 // Statements
 
@@ -787,6 +1086,19 @@ StmtResult InjectExprStmt(InjectionContext &Cxt, Expr *E) {
   return StmtResult(Result.get());
 }
 
+StmtResult InjectDeclStmt(InjectionContext &Cxt, DeclStmt *S) {
+  SmallVector<Decl *, 4> Decls;
+  for (auto *OldDecl : S->decls()) {
+    Decl *NewDecl = InjectDecl(Cxt, OldDecl);
+    if (!NewDecl)
+      return StmtError();
+    Decls.push_back(NewDecl);
+  }
+
+  Sema::DeclGroupPtrTy DG = Cxt.SemaRef.BuildDeclaratorGroup(Decls);
+  return Cxt.SemaRef.ActOnDeclStmt(DG, S->getStartLoc(), S->getEndLoc());
+}
+
 StmtResult InjectStmt(InjectionContext &Cxt, Stmt *S) {
   if (!S)
     return StmtResult();
@@ -819,11 +1131,11 @@ StmtResult InjectStmt(InjectionContext &Cxt, Stmt *S) {
   // case Stmt::CaseStmtClass:
   // case Stmt::DefaultStmtClass:
 
-
   case Stmt::ReturnStmtClass:
     return InjectReturnStmt(Cxt, cast<ReturnStmt>(S));
   
-  // case Stmt::DeclStmtClass:
+  case Stmt::DeclStmtClass:
+    return InjectDeclStmt(Cxt, cast<DeclStmt>(S));
 
   // case Stmt::CapturedStmtClass:
 
@@ -1090,7 +1402,8 @@ RebuildCXXOperatorCallExpr(InjectionContext &Cxt,
   return Cxt.SemaRef.CreateOverloadedBinOp(OpLoc, Opc, Functions, Args[0], Args[1]);
 }
 
-ExprResult InjectOperatorCallExpr(InjectionContext &Cxt, CXXOperatorCallExpr *E) {
+static ExprResult InjectOperatorCallExpr(InjectionContext &Cxt, 
+                                         CXXOperatorCallExpr *E) {
   switch (E->getOperator()) {
   case OO_New:
   case OO_Delete:
@@ -1166,7 +1479,7 @@ ExprResult InjectOperatorCallExpr(InjectionContext &Cxt, CXXOperatorCallExpr *E)
       Cxt, E->getOperator(), OpLoc, Callee.get(), First.get(), Second.get());
 }
 
-ExprResult InjectMemberExpr(InjectionContext &Cxt, MemberExpr *E) {
+static ExprResult InjectMemberExpr(InjectionContext &Cxt, MemberExpr *E) {
   // Transform the base expression.
   ExprResult Base = InjectExpr(Cxt, E->getBase());
   if (Base.isInvalid())
@@ -1223,7 +1536,8 @@ ExprResult InjectMemberExpr(InjectionContext &Cxt, MemberExpr *E) {
       /*FirstQualifierInScope=*/nullptr, R, ExplicitArgs, /*Scope=*/nullptr);
 }
 
-ExprResult InjectMemberExpr(InjectionContext &Cxt, CXXDependentScopeMemberExpr *E) {
+static ExprResult InjectMemberExpr(InjectionContext &Cxt, 
+                                   CXXDependentScopeMemberExpr *E) {
   // Transform the base expression.
   ExprResult Base = InjectExpr(Cxt, E->getBase());
   if (Base.isInvalid())
@@ -1284,7 +1598,8 @@ ExprResult InjectMemberExpr(InjectionContext &Cxt, CXXDependentScopeMemberExpr *
       TemplateLoc, nullptr, NameInfo, ExplicitArgs, /*Scope=*/nullptr);
 }
 
-ExprResult InjectUnaryTypeExpr(InjectionContext &Cxt, UnaryExprOrTypeTraitExpr *E) {
+static ExprResult InjectUnaryTypeExpr(InjectionContext &Cxt, 
+                                      UnaryExprOrTypeTraitExpr *E) {
   TypeSourceInfo *TSI = InjectType(Cxt, E->getArgumentTypeInfo());
   if (!TSI)
     return ExprError();
@@ -1292,7 +1607,8 @@ ExprResult InjectUnaryTypeExpr(InjectionContext &Cxt, UnaryExprOrTypeTraitExpr *
       TSI, E->getOperatorLoc(), E->getKind(), E->getSourceRange());
 }
 
-ExprResult InjectUnaryExpr(InjectionContext &Cxt, UnaryExprOrTypeTraitExpr *E) {
+static ExprResult InjectUnaryExpr(InjectionContext &Cxt, 
+                                  UnaryExprOrTypeTraitExpr *E) {
   if (E->isArgumentType())
     return InjectUnaryTypeExpr(Cxt, E);
 
@@ -1312,7 +1628,7 @@ ExprResult InjectUnaryExpr(InjectionContext &Cxt, UnaryExprOrTypeTraitExpr *E) {
     SubExpr.get(), E->getOperatorLoc(), E->getKind());
 }
 
-ExprResult InjectUnaryOperator(InjectionContext &Cxt, UnaryOperator *E) {
+static ExprResult InjectUnaryOperator(InjectionContext &Cxt, UnaryOperator *E) {
   ExprResult Sub = InjectExpr(Cxt, E->getSubExpr());
   if (Sub.isInvalid())
     return ExprError();
@@ -1320,7 +1636,7 @@ ExprResult InjectUnaryOperator(InjectionContext &Cxt, UnaryOperator *E) {
       nullptr, E->getOperatorLoc(), E->getOpcode(), Sub.get());
 }
 
-ExprResult InjectBinaryOperator(InjectionContext &Cxt, BinaryOperator *E) {
+static ExprResult InjectBinaryOperator(InjectionContext &Cxt, BinaryOperator *E) {
   ExprResult LHS = InjectExpr(Cxt, E->getLHS());
   if (LHS.isInvalid())
     return ExprError();
@@ -1331,7 +1647,8 @@ ExprResult InjectBinaryOperator(InjectionContext &Cxt, BinaryOperator *E) {
       nullptr, E->getOperatorLoc(), E->getOpcode(), LHS.get(), RHS.get());
 }
 
-ExprResult InjectConditionalOperator(InjectionContext &Cxt, ConditionalOperator *E) {
+static ExprResult InjectConditionalOperator(InjectionContext &Cxt, 
+                                            ConditionalOperator *E) {
   ExprResult Cond = InjectExpr(Cxt, E->getCond());
   if (Cond.isInvalid())
     return ExprError();
@@ -1348,7 +1665,8 @@ ExprResult InjectConditionalOperator(InjectionContext &Cxt, ConditionalOperator 
     E->getQuestionLoc(), E->getColonLoc(), Cond.get(), LHS.get(), RHS.get());
 }
 
-ExprResult InjectBinaryConditionalOperator(InjectionContext &Cxt, BinaryConditionalOperator *E) {
+static ExprResult InjectBinaryConditionalOperator(InjectionContext &Cxt, 
+                                                  BinaryConditionalOperator *E) {
   ExprResult Cond = InjectExpr(Cxt, E->getCommon());
   if (Cond.isInvalid())
     return ExprError();
@@ -1361,7 +1679,7 @@ ExprResult InjectBinaryConditionalOperator(InjectionContext &Cxt, BinaryConditio
     E->getQuestionLoc(), E->getColonLoc(), Cond.get(), nullptr, RHS.get());
 }
 
-ExprResult InjectSubscriptExpr(InjectionContext &Cxt, ArraySubscriptExpr *E) {
+static ExprResult InjectSubscriptExpr(InjectionContext &Cxt, ArraySubscriptExpr *E) {
   ExprResult LHS = InjectExpr(Cxt, E->getLHS());
   if (LHS.isInvalid())
     return ExprError();
@@ -1376,13 +1694,13 @@ ExprResult InjectSubscriptExpr(InjectionContext &Cxt, ArraySubscriptExpr *E) {
     /*Scope=*/nullptr, LHS.get(), Start, RHS.get(), End);
 }
 
-ExprResult InjectImplicitCast(InjectionContext &Cxt, ImplicitCastExpr *E) {
+static ExprResult InjectImplicitCast(InjectionContext &Cxt, ImplicitCastExpr *E) {
   // Implicit casts are eliminated during injection, since they will be 
   // recomputed by semantic analysis.
   return InjectExpr(Cxt, E->getSubExprAsWritten());
 }
 
-ExprResult InjectExplicitCast(InjectionContext &Cxt, CStyleCastExpr *E) {
+static ExprResult InjectExplicitCast(InjectionContext &Cxt, CStyleCastExpr *E) {
   TypeSourceInfo *TSI = InjectType(Cxt, E->getTypeInfoAsWritten());
   if (!TSI)
     return ExprError();
@@ -1393,6 +1711,20 @@ ExprResult InjectExplicitCast(InjectionContext &Cxt, CStyleCastExpr *E) {
 
   return Cxt.SemaRef.BuildCStyleCastExpr(
       E->getLParenLoc(), TSI, E->getRParenLoc(), SubExpr.get());
+}
+
+static ExprResult InjectExplicitCast(InjectionContext &Cxt, CXXFunctionalCastExpr *E) {
+  TypeSourceInfo *TSI = InjectDeducibleType(Cxt, E->getTypeInfoAsWritten());
+  if (!TSI)
+    return ExprError();
+
+  ExprResult SubExpr = InjectExpr(Cxt, E->getSubExprAsWritten());
+  if (SubExpr.isInvalid())
+    return ExprError();
+
+  Expr *Sub = SubExpr.get();
+  return Cxt.SemaRef.BuildCXXTypeConstructExpr(
+      TSI, E->getLParenLoc(), MultiExprArg(&Sub, 1), E->getRParenLoc());
 }
 
 tok::TokenKind GetCastName(Expr *E) {
@@ -1439,6 +1771,28 @@ ExprResult InjectCXXThisExpr(InjectionContext &Cxt, CXXThisExpr *E) {
   SourceLocation Loc = E->getLocStart();
   Cxt.SemaRef.CheckCXXThisCapture(Loc);
   return new (Cxt.SemaRef.Context) CXXThisExpr(Loc, T, E->isImplicit());
+}
+
+ExprResult InjectInitExpr(InjectionContext &Cxt, CXXDefaultInitExpr *E) {
+  FieldDecl *Field
+    = cast_or_null<FieldDecl>(ResolveDecl(Cxt, E->getField()));
+  if (!Field)
+    return ExprError();
+
+  return CXXDefaultInitExpr::Create(getASTContext(Cxt), E->getExprLoc(), Field);
+}
+
+ExprResult InjectInitExpr(InjectionContext &Cxt, CXXScalarValueInitExpr *E) {
+  TypeSourceInfo *TSI = InjectType(Cxt, E->getTypeSourceInfo());
+  if (!TSI)
+    return ExprError();
+
+  return Cxt.SemaRef.BuildCXXTypeConstructExpr(
+      TSI, TSI->getTypeLoc().getEndLoc(), None, E->getRParenLoc());
+}
+
+ExprResult InjectInitExpr(InjectionContext &Cxt, CXXStdInitializerListExpr *E) {
+  return InjectExpr(Cxt, E->getSubExpr());
 }
 
 ExprResult InjectReflectionExpr(InjectionContext &Cxt, ReflectionExpr *E) {
@@ -1541,16 +1895,20 @@ ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   case Stmt::CXXReinterpretCastExprClass:
   case Stmt::CXXConstCastExprClass:
     return InjectExplicitCast(Cxt, cast<CXXNamedCastExpr>(E));
-  // case Stmt::CXXFunctionalCastExprClass:
+  case Stmt::CXXFunctionalCastExprClass:
+    return InjectExplicitCast(Cxt, cast<CXXFunctionalCastExpr>(E));
   // case Stmt::CXXTypeidExprClass:
   // case Stmt::UserDefinedLiteralClass:
   case Stmt::CXXThisExprClass:
     return InjectCXXThisExpr(Cxt, cast<CXXThisExpr>(E));
   // case Stmt::CXXThrowExprClass:
   // case Stmt::CXXDefaultArgExprClass:
-  // case Stmt::CXXDefaultInitExprClass:
-  // case Stmt::CXXScalarValueInitExprClass:
-  // case Stmt::CXXStdInitializerListExprClass:
+  case Stmt::CXXDefaultInitExprClass:
+    return InjectInitExpr(Cxt, cast<CXXDefaultInitExpr>(E));
+  case Stmt::CXXScalarValueInitExprClass:
+    return InjectInitExpr(Cxt, cast<CXXScalarValueInitExpr>(E));
+  case Stmt::CXXStdInitializerListExprClass:
+    return InjectInitExpr(Cxt, cast<CXXStdInitializerListExpr>(E));
   // case Stmt::CXXNewExprClass:
   // case Stmt::CXXDeleteExprClass:
   // case Stmt::CXXPseudoDestructorExprClass:
@@ -1882,7 +2240,130 @@ static bool InjectMemberDeclarator(InjectionContext &Cxt,
   return Invalid;
 }
 
-static Decl* InjectParmVarDecl(InjectionContext &Cxt, ParmVarDecl *D) {
+static bool InjectVariableInitializer(InjectionContext &Cxt, 
+                                      VarDecl *Old,
+                                      VarDecl *New) {
+  if (Old->getInit()) {
+    if (New->isStaticDataMember() && !Old->isOutOfLine())
+      Cxt.SemaRef.PushExpressionEvaluationContext(
+          Sema::ExpressionEvaluationContext::ConstantEvaluated, Old);
+    else
+      Cxt.SemaRef.PushExpressionEvaluationContext(
+          Sema::ExpressionEvaluationContext::PotentiallyEvaluated, Old);
+
+    // Instantiate the initializer.
+    ExprResult Init;
+    {
+      Sema::ContextRAII SwitchContext(Cxt.SemaRef, New->getDeclContext());
+      bool DirectInit = (Old->getInitStyle() == VarDecl::CallInit);
+      Init = InjectInit(Cxt, Old->getInit(), DirectInit);
+    }
+    
+    if (!Init.isInvalid()) {
+      Expr *InitExpr = Init.get();
+      if (New->hasAttr<DLLImportAttr>() &&
+          (!InitExpr || 
+           !InitExpr->isConstantInitializer(getASTContext(Cxt), false))) {
+        // Do not dynamically initialize dllimport variables.
+      } else if (InitExpr) {
+        Cxt.SemaRef.AddInitializerToDecl(New, InitExpr, Old->isDirectInit());
+      } else {
+        Cxt.SemaRef.ActOnUninitializedDecl(New);
+      }
+    } else {
+      New->setInvalidDecl();
+    }
+
+    Cxt.SemaRef.PopExpressionEvaluationContext();
+  } else {
+    if (New->isStaticDataMember()) {
+      if (!New->isOutOfLine())
+        return New;
+
+      // If the declaration inside the class had an initializer, don't add
+      // another one to the out-of-line definition.
+      if (Old->getFirstDecl()->hasInit())
+        return New;
+    }
+
+    // We'll add an initializer to a for-range declaration later.
+    if (New->isCXXForRangeDecl())
+      return New;
+
+    Cxt.SemaRef.ActOnUninitializedDecl(New);
+  }
+  
+  return New;
+}
+
+static Decl *InjectVariable(InjectionContext &Cxt, VarDecl *D) {
+  DeclContext *Owner = Cxt.SemaRef.CurContext;
+  
+  DeclarationNameInfo DNI;
+  TypeSourceInfo *TSI;
+  bool Invalid = InjectDeclarator(Cxt, D, DNI, TSI);
+
+  // FIXME: Check for re-declaration.
+
+  VarDecl *Var = VarDecl::Create(
+      getASTContext(Cxt), Owner, D->getInnerLocStart(), DNI, TSI->getType(), 
+      TSI, D->getStorageClass());
+
+  if (D->isNRVOVariable()) {
+    QualType ReturnType = cast<FunctionDecl>(Owner)->getReturnType();
+    if (Cxt.SemaRef.isCopyElisionCandidate(ReturnType, Var, false))
+      Var->setNRVOVariable(true);
+  }
+
+  Var->setImplicit(D->isImplicit());
+  Var->setInvalidDecl(Invalid);
+
+  // If we are instantiating a local extern declaration, the
+  // instantiation belongs lexically to the containing function.
+  // If we are instantiating a static data member defined
+  // out-of-line, the instantiation will have the same lexical
+  // context (which will be a namespace scope) as the template.
+  if (D->isLocalExternDecl()) {
+    Var->setLocalExternDecl();
+    Var->setLexicalDeclContext(Owner);
+  } else if (D->isOutOfLine()) {
+    Var->setLexicalDeclContext(D->getLexicalDeclContext());
+  }
+  Var->setTSCSpec(D->getTSCSpec());
+  Var->setInitStyle(D->getInitStyle());
+  Var->setCXXForRangeDecl(D->isCXXForRangeDecl());
+  Var->setConstexpr(D->isConstexpr());
+  Var->setInitCapture(D->isInitCapture());
+  Var->setPreviousDeclInSameBlockScope(D->isPreviousDeclInSameBlockScope());
+  Var->setAccess(D->getAccess());
+
+  if (!D->isStaticDataMember()) {
+    if (D->isUsed(false))
+      Var->setIsUsed();
+    Var->setReferenced(D->isReferenced());
+  }
+
+  // FIXME: Instantiate attributes.
+
+  // Forward the mangling number from the template to the instantiated decl.
+  getASTContext(Cxt).setManglingNumber(
+      Var, getASTContext(Cxt).getManglingNumber(D));
+  getASTContext(Cxt).setStaticLocalNumber(
+      Var, getASTContext(Cxt).getStaticLocalNumber(D));
+
+  if (D->isInlineSpecified())
+    Var->setInlineSpecified();
+  else if (D->isInline())
+    Var->setImplicitlyInline();
+
+  InjectVariableInitializer(Cxt, D, Var);
+
+  // FIXME: Diagnose un-used declarations here?
+  
+  return Var;
+}
+
+static Decl* InjectParameter(InjectionContext &Cxt, ParmVarDecl *D) {
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
   bool Invalid = InjectDeclarator(Cxt, D, DNI, TSI);
@@ -1896,10 +2377,12 @@ static Decl* InjectParmVarDecl(InjectionContext &Cxt, ParmVarDecl *D) {
       DefaultArg = Default.get();
   }
 
+  // Note that the context is overwritten when the parameter is added to
+  // a function declaration.
   ParmVarDecl *Parm = ParmVarDecl::Create(
-      getASTContext(Cxt), D->getDeclContext(), D->getInnerLocStart(), 
-      D->getLocation(), D->getIdentifier(), TSI->getType(), TSI, 
-      D->getStorageClass(), DefaultArg);
+    getASTContext(Cxt), D->getDeclContext(), D->getInnerLocStart(), 
+    D->getLocation(), D->getIdentifier(), TSI->getType(), TSI, 
+    D->getStorageClass(), DefaultArg);
   
   // FIXME: Under what circumstances do we need to adjust depth and scope?
   Parm->setScopeInfo(D->getFunctionScopeDepth(), D->getFunctionScopeIndex());
@@ -2147,8 +2630,10 @@ static Decl *InjectDeclImpl(InjectionContext &Cxt, Decl *D) {
   case Decl::Typedef:
   case Decl::TypeAlias:
     return InjectTypedefNameDecl(Cxt, cast<TypedefNameDecl>(D));
+  case Decl::Var:
+    return InjectVariable(Cxt, cast<VarDecl>(D));
   case Decl::ParmVar:
-    return InjectParmVarDecl(Cxt, cast<ParmVarDecl>(D));
+    return InjectParameter(Cxt, cast<ParmVarDecl>(D));
   case Decl::CXXRecord:
     return InjectClassDecl(Cxt, cast<CXXRecordDecl>(D));
   case Decl::Field:

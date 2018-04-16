@@ -969,10 +969,6 @@ namespace {
 bool TemplateInstantiator::AlreadyTransformed(QualType T) {
   if (T.isNull())
     return true;
-  
-  // FIXME: This will cause overly aggressive substitutions.
-  if (getSema().CurrentInjectionContext)
-    return false;
 
   if (T->isInstantiationDependentType() || T->isVariablyModifiedType())
     return false;

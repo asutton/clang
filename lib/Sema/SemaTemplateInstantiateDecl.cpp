@@ -878,24 +878,6 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
   Field->setAccess(D->getAccess());
   Owner->addDecl(Field);
 
-  // Transfer the late-parsed initializer to the new field.
-  if (D->isInFragment() && D->hasInClassInitializer()) {
-    assert(D->getInClassInitializer() == nullptr && "Pre-parsed initializer");
-
-    // FIXME: This sucks. We need to construct an object that lets us re-parse
-    // the initializer much later, but to do so as if it were in the original
-    // template context. This means need to associate, with the fragment 
-    // (probably?) the fact that we have a late-parsed initializer (where
-    // do we get the tokens?) and the levels of template arguments that have
-    // been applied.
-    //
-    // Later -- after injection even, we need to rebuild the original template
-    // context, parse the initializer, and THEN, we can instantiate the 
-    // expression with the template argument lists.
-    //
-    // This does not seem sane.
-  }
-
   return Field;
 }
 
@@ -1674,7 +1656,6 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
   if (D->isCompleteDefinition() && (D->isLocalClass() || D->isInFragment())) {
     Sema::LocalEagerInstantiationScope LocalInstantiations(SemaRef);
 
-    llvm::outs() << "SUBST CLASS DEF\n";
     SemaRef.InstantiateClass(D->getLocation(), Record, D, TemplateArgs,
                              TSK_ImplicitInstantiation,
                              /*Complain=*/true);
@@ -1682,7 +1663,7 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
     // For nested local classes only, we will instantiate the members when we
     // reach the end of the outermost (non-nested) local class. Members of
     // fragments are considered separately.
-    if (!D->isCXXClassMember() && !D->isInFragment())
+    if (!D->isCXXClassMember())
       SemaRef.InstantiateClassMembers(D->getLocation(), Record, TemplateArgs,
                                       TSK_ImplicitInstantiation);
 

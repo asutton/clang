@@ -5934,7 +5934,6 @@ QualType TreeTransform<Derived>::TransformSubstTemplateTypeParmType(
     = TLB.push<SubstTemplateTypeParmTypeLoc>(Result);
   NewTL.setNameLoc(TL.getNameLoc());
   return Result;
-
 }
 
 template<typename Derived>
@@ -7451,8 +7450,6 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
     NamedDecl *Owner = dyn_cast<NamedDecl>(getSema().CurContext);
     MultiLevelTemplateArgumentList Args =
         getSema().getTemplateInstantiationArgs(Owner);
-    llvm::outs() << "CLONE DECL\n";
-    OldFragment->getContent()->dump();
     Decl *NewContent = 
         getSema().SubstDecl(OldFragment->getContent(), NewFragment, Args);
     if (!NewContent)
