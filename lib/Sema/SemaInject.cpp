@@ -1441,6 +1441,35 @@ ExprResult InjectCXXThisExpr(InjectionContext &Cxt, CXXThisExpr *E) {
   return new (Cxt.SemaRef.Context) CXXThisExpr(Loc, T, E->isImplicit());
 }
 
+ExprResult InjectReflectionExpr(InjectionContext &Cxt, ReflectionExpr *E) {
+  SourceLocation OpLoc = E->getOperatorLoc();
+  if (E->hasExpressionOperand()) {
+    ExprResult Expr = InjectExpr(Cxt, E->getExpressionOperand());
+    if (Expr.isInvalid())
+      return ExprError();
+    return Cxt.SemaRef.ActOnCXXReflectExpr(OpLoc, Expr.get());
+  }
+  TypeSourceInfo *TSI = InjectType(Cxt, E->getTypeOperand());
+  if (!TSI)
+    return ExprError();
+  return Cxt.SemaRef.ActOnCXXReflectExpr(OpLoc, TSI);
+}
+
+ExprResult InjectConstantExpr(InjectionContext &Cxt, CXXConstantExpr *E) {
+  ExprResult Result = InjectExpr(Cxt, E->getExpression());
+  if (Result.isInvalid())
+    return ExprError();
+  return Cxt.SemaRef.BuildConstantExpression(Result.get());
+}
+
+ExprResult InjectCompilerErrorExpr(InjectionContext &Cxt, CompilerErrorExpr *E) {
+  ExprResult Message = InjectExpr(Cxt, E->getMessage());
+  if (Message.isInvalid())
+    return ExprError();
+  return Cxt.SemaRef.ActOnCompilerErrorExpr(
+      Message.get(), E->getBuiltinLoc(), E->getRParenLoc());
+}
+
 ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   if (!E)
     return ExprResult();
@@ -1454,6 +1483,8 @@ ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   case Stmt::ImaginaryLiteralClass:
   case Stmt::StringLiteralClass:
   case Stmt::CharacterLiteralClass:
+  case Stmt::CXXBoolLiteralExprClass:
+  case Stmt::CXXNullPtrLiteralExprClass:
     // Just return the literal.
     return E;
   case Stmt::ParenExprClass:
@@ -1513,8 +1544,6 @@ ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   // case Stmt::CXXFunctionalCastExprClass:
   // case Stmt::CXXTypeidExprClass:
   // case Stmt::UserDefinedLiteralClass:
-  // case Stmt::CXXBoolLiteralExprClass:
-  // case Stmt::CXXNullPtrLiteralExprClass:
   case Stmt::CXXThisExprClass:
     return InjectCXXThisExpr(Cxt, cast<CXXThisExpr>(E));
   // case Stmt::CXXThrowExprClass:
@@ -1560,10 +1589,13 @@ ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   // case Stmt::CoyieldExprClass:
 
   // C++ Reflection Expressions
-  // case Stmt::ReflectionExprClass:
+  case Stmt::ReflectionExprClass:
+    return InjectReflectionExpr(Cxt, cast<ReflectionExpr>(E));
   // case Stmt::ReflectionTraitExprClass:
-  // case Stmt::CXXConstantExprClass:
-  // case Stmt::CompilerErrorExprClass:
+  case Stmt::CXXConstantExprClass:
+    return InjectConstantExpr(Cxt, cast<CXXConstantExpr>(E));
+  case Stmt::CompilerErrorExprClass:
+    return InjectCompilerErrorExpr(Cxt, cast<CompilerErrorExpr>(E));
 
   default:
     E->dump();
@@ -2922,8 +2954,8 @@ bool Sema::InjectFragment(SourceLocation POI,
       if (Class->isInjectedClassName())
         continue;
 
-    llvm::outs() << "BEFORE INJECT\n";
-    D->dump();
+    // llvm::outs() << "BEFORE INJECT\n";
+    // D->dump();
     
     Decl *R = InjectDecl(*Cxt, D);
     if (!R || R->isInvalidDecl()) {
@@ -2935,8 +2967,8 @@ bool Sema::InjectFragment(SourceLocation POI,
       continue;
     }
 
-    llvm::outs() << "AFTER INJECT\n";
-    R->dump();
+    // llvm::outs() << "AFTER INJECT\n";
+    // R->dump();
   }
 
   // If we're injecting into a class and have pending definitions, attach
