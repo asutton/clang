@@ -628,6 +628,81 @@ static QualType InjectAutoType(InjectionContext &Cxt,
   return Result;
 }
 
+QualType BuildQualifiedType(InjectionContext &Cxt, 
+                            QualType T, 
+                            SourceLocation Loc, 
+                            Qualifiers Quals) {
+  // C++ [dcl.fct]p7:
+  //   [When] adding cv-qualifications on top of the function type [...] the
+  //   cv-qualifiers are ignored.
+  // C++ [dcl.ref]p1:
+  //   when the cv-qualifiers are introduced through the use of a typedef-name
+  //   or decltype-specifier [...] the cv-qualifiers are ignored.
+  // Note that [dcl.ref]p1 lists all cases in which cv-qualifiers can be
+  // applied to a reference type.
+  // FIXME: This removes all qualifiers, not just cv-qualifiers!
+  if (T->isFunctionType() || T->isReferenceType())
+    return T;
+
+  // Suppress Objective-C lifetime qualifiers if they don't make sense for the
+  // resulting type.
+  if (Quals.hasObjCLifetime()) {
+    if (!T->isObjCLifetimeType() && !T->isDependentType())
+      Quals.removeObjCLifetime();
+    else if (T.getObjCLifetime()) {
+      // Objective-C ARC:
+      //   A lifetime qualifier applied to a substituted template parameter
+      //   overrides the lifetime qualifier from the template argument.
+      const AutoType *AutoTy;
+      if (const SubstTemplateTypeParmType *SubstTypeParam
+                                = dyn_cast<SubstTemplateTypeParmType>(T)) {
+        QualType Replacement = SubstTypeParam->getReplacementType();
+        Qualifiers Qs = Replacement.getQualifiers();
+        Qs.removeObjCLifetime();
+        Replacement = getASTContext(Cxt).getQualifiedType(
+            Replacement.getUnqualifiedType(), Qs);
+        T = getASTContext(Cxt).getSubstTemplateTypeParmType(
+            SubstTypeParam->getReplacedParameter(), Replacement);
+      } else if ((AutoTy = dyn_cast<AutoType>(T)) && AutoTy->isDeduced()) {
+        // 'auto' types behave the same way as template parameters.
+        QualType Deduced = AutoTy->getDeducedType();
+        Qualifiers Qs = Deduced.getQualifiers();
+        Qs.removeObjCLifetime();
+        Deduced = getASTContext(Cxt).getQualifiedType(
+              Deduced.getUnqualifiedType(), Qs);
+        T = getASTContext(Cxt).getAutoType(
+              Deduced, AutoTy->getKeyword(), AutoTy->isDependentType());
+      } else {
+        // Otherwise, complain about the addition of a qualifier to an
+        // already-qualified type.
+        // FIXME: Why is this check not in Sema::BuildQualifiedType?
+        Cxt.SemaRef.Diag(Loc, diag::err_attr_objc_ownership_redundant) << T;
+        Quals.removeObjCLifetime();
+      }
+    }
+  }
+
+  return Cxt.SemaRef.BuildQualifiedType(T, Loc, Quals);
+}
+
+static QualType InjectQualifiedType(InjectionContext &Cxt,
+                                    TypeLocBuilder &TLB,
+                                    QualifiedTypeLoc TL) {
+  Qualifiers Quals = TL.getType().getLocalQualifiers();
+  QualType Result = InjectType(Cxt, TLB, TL.getUnqualifiedLoc());
+  if (Result.isNull())
+    return QualType();
+
+  Result = BuildQualifiedType(Cxt, Result, TL.getBeginLoc(), Quals);
+
+  // RebuildQualifiedType might have updated the type, but not in a way
+  // that invalidates the TypeLoc. (There's no location information for
+  // qualifiers.)
+  TLB.TypeWasModifiedSafely(Result);
+
+  return Result;
+}
+
 static QualType InjectTemplateTypeParmType(InjectionContext &Cxt,
                                            TypeLocBuilder &TLB,
                                            TemplateTypeParmTypeLoc TL) {
@@ -657,45 +732,47 @@ static QualType InjectTemplateTypeParmType(InjectionContext &Cxt,
 // TLB facility to do this "correctly".
 QualType InjectType(InjectionContext &Cxt, TypeLocBuilder &TLB, TypeLoc TL) {
   switch (TL.getTypeLocClass()) {
-  case Type::Builtin:
+  case TypeLoc::Builtin:
     return InjectBuiltinType(Cxt, TLB, TL.castAs<BuiltinTypeLoc>());
-  case Type::Complex:
+  case TypeLoc::Complex:
     return InjectComplexType(Cxt, TLB, TL.castAs<ComplexTypeLoc>());
-  case Type::Paren:
+  case TypeLoc::Paren:
     return InjectParenType(Cxt, TLB, TL.castAs<ParenTypeLoc>());
-  case Type::Pointer:
+  case TypeLoc::Pointer:
     return InjectPointerType(Cxt, TLB, TL.castAs<PointerTypeLoc>());
-  case Type::Decayed:
+  case TypeLoc::Decayed:
     return InjectDecayedType(Cxt, TLB, TL.castAs<DecayedTypeLoc>());
-  case Type::LValueReference:
+  case TypeLoc::LValueReference:
     return InjectLValueReferenceType(Cxt, TLB, TL.castAs<LValueReferenceTypeLoc>());
-  case Type::RValueReference:
+  case TypeLoc::RValueReference:
     return InjectRValueReferenceType(Cxt, TLB, TL.castAs<RValueReferenceTypeLoc>());
-  case Type::MemberPointer:
+  case TypeLoc::MemberPointer:
     return InjectMemberPointerType(Cxt, TLB, TL.castAs<MemberPointerTypeLoc>());
-  case Type::ConstantArray:
+  case TypeLoc::ConstantArray:
     return InjectArrayType(Cxt, TLB, TL.castAs<ConstantArrayTypeLoc>());
-  case Type::VariableArray:
+  case TypeLoc::VariableArray:
     return InjectArrayType(Cxt, TLB, TL.castAs<VariableArrayTypeLoc>());
-  case Type::IncompleteArray:
+  case TypeLoc::IncompleteArray:
     return InjectArrayType(Cxt, TLB, TL.castAs<IncompleteArrayTypeLoc>());
-  case Type::DependentSizedArray:
+  case TypeLoc::DependentSizedArray:
     return InjectArrayType(Cxt, TLB, TL.castAs<DependentSizedArrayTypeLoc>());
-  case Type::FunctionProto:
+  case TypeLoc::FunctionProto:
     return InjectFunctionType(Cxt, TLB, TL.castAs<FunctionProtoTypeLoc>());
-  case Type::UnresolvedUsing:
+  case TypeLoc::UnresolvedUsing:
     return InjectUnresolvedUsingType(Cxt, TLB, TL.castAs<UnresolvedUsingTypeLoc>());
-  case Type::Typedef:
+  case TypeLoc::Typedef:
     return InjectTypedefType(Cxt, TLB, TL.castAs<TypedefTypeLoc>());
-  case Type::Record:
+  case TypeLoc::Record:
     return InjectRecordType(Cxt, TLB, TL.castAs<RecordTypeLoc>());
-  case Type::Enum:
+  case TypeLoc::Enum:
     return InjectEnumType(Cxt, TLB, TL.castAs<EnumTypeLoc>());
-  case Type::Auto:
+  case TypeLoc::Auto:
     return InjectAutoType(Cxt, TLB, TL.castAs<AutoTypeLoc>());
-  case Type::TemplateTypeParm:
+  case TypeLoc::Qualified:
+    return InjectQualifiedType(Cxt, TLB, TL.castAs<QualifiedTypeLoc>());
+  case TypeLoc::TemplateTypeParm:
     return InjectTemplateTypeParmType(Cxt, TLB, TL.castAs<TemplateTypeParmTypeLoc>());
-  case Type::SubstTemplateTypeParm:
+  case TypeLoc::SubstTemplateTypeParm:
     return InjectTemplateTypeParmType(Cxt, TLB, TL.castAs<SubstTemplateTypeParmTypeLoc>());
   default:
     TL.getType()->dump();
@@ -852,7 +929,7 @@ static QualType RebuildDependentNameType(InjectionContext& Cxt,
   }
 
   // Build the elaborated-type-specifier type.
-  QualType T = Cxt.SemaRef.Context.getTypeDeclType(Tag);
+  QualType T = getASTContext(Cxt).getTypeDeclType(Tag);
   return getASTContext(Cxt).getElaboratedType(
       Keyword, QualifierLoc.getNestedNameSpecifier(), T);
 }
@@ -1180,6 +1257,11 @@ static bool InjectExplicitTemplateArgs(InjectionContext &Cxt, ExprType *E,
 }
 
 ExprResult InjectDeclRefExpr(InjectionContext &Cxt, DeclRefExpr *E) {
+  // If the expression is a placeholder, then we should have a replacement
+  // available.
+  if (Expr *Repl = Cxt.GetPlaceholderReplacement(E))
+    return Repl;
+ 
   // Transform the nested name specifier (if any).
   NestedNameSpecifierLoc QualifierLoc;
   if (E->getQualifier()) {
@@ -1205,8 +1287,10 @@ ExprResult InjectDeclRefExpr(InjectionContext &Cxt, DeclRefExpr *E) {
 
   // Try resolving the reference.
   ValueDecl *Value = cast_or_null<ValueDecl>(ResolveDecl(Cxt, E->getDecl()));
-  if (!Value)
+  if (!Value) {
+    E->dump();
     llvm_unreachable("FAIL");
+  }
 
   CXXScopeSpec SS;
   SS.Adopt(QualifierLoc);
@@ -1795,6 +1879,76 @@ ExprResult InjectInitExpr(InjectionContext &Cxt, CXXStdInitializerListExpr *E) {
   return InjectExpr(Cxt, E->getSubExpr());
 }
 
+ExprResult InjectNewExpr(InjectionContext &Cxt, CXXNewExpr *E) {
+  // Transform the type that we're allocating
+  TypeSourceInfo *AllocTypeInfo = InjectDeducibleType(
+      Cxt, E->getAllocatedTypeSourceInfo());
+  if (!AllocTypeInfo)
+    return ExprError();
+
+  // Transform the size of the array we're allocating (if any).
+  ExprResult ArraySize = InjectExpr(Cxt, E->getArraySize());
+  if (ArraySize.isInvalid())
+    return ExprError();
+
+  // Transform the placement arguments (if any).
+  SmallVector<Expr*, 8> PlacementArgs;
+  if (!InjectArgs(Cxt, E->getPlacementArgs(), E->getNumPlacementArgs(), PlacementArgs))
+    return ExprError();
+
+  // Transform the initializer (if any).
+  Expr *OldInit = E->getInitializer();
+  ExprResult NewInit;
+  if (OldInit)
+    NewInit = InjectInit(Cxt, OldInit, true);
+  if (NewInit.isInvalid())
+    return ExprError();
+
+  // Transform new operator and delete operator.
+  FunctionDecl *OperatorNew = nullptr;
+  if (E->getOperatorNew()) {
+    OperatorNew = cast_or_null<FunctionDecl>(ResolveDecl(Cxt, E->getOperatorNew()));
+    if (!OperatorNew)
+      return ExprError();
+  }
+
+  FunctionDecl *OperatorDelete = nullptr;
+  if (E->getOperatorDelete()) {
+    OperatorDelete = cast_or_null<FunctionDecl>(ResolveDecl(Cxt, E->getOperatorDelete()));
+    if (!OperatorDelete)
+      return ExprError();
+  }
+
+  QualType AllocType = AllocTypeInfo->getType();
+  if (!ArraySize.get()) {
+    // If no array size was specified, but the new expression was
+    // instantiated with an array type (e.g., "new T" where T is
+    // instantiated with "int[4]"), extract the outer bound from the
+    // array type as our array size. We do this with constant and
+    // dependently-sized array types.
+    const ArrayType *AT = getASTContext(Cxt).getAsArrayType(AllocType);
+    if (!AT) {
+      // Do nothing
+    } else if (const ConstantArrayType *CAT = dyn_cast<ConstantArrayType>(AT)) {
+      ArraySize = IntegerLiteral::Create(getASTContext(Cxt), CAT->getSize(),
+                                         getASTContext(Cxt).getSizeType(),
+                                         /*FIXME:*/ E->getLocStart());
+      AllocType = CAT->getElementType();
+    } else if (const DependentSizedArrayType *DAT = dyn_cast<DependentSizedArrayType>(AT)) {
+      if (DAT->getSizeExpr()) {
+        ArraySize = DAT->getSizeExpr();
+        AllocType = DAT->getElementType();
+      }
+    }
+  }
+
+  return Cxt.SemaRef.BuildCXXNew(
+    E->getLocStart(), E->isGlobalNew(), E->getLocStart(), PlacementArgs,
+    E->getLocStart(), E->getTypeIdParens(), AllocType, AllocTypeInfo,
+    ArraySize.get(), E->getDirectInitRange(), NewInit.get());
+}
+
+
 ExprResult InjectReflectionExpr(InjectionContext &Cxt, ReflectionExpr *E) {
   SourceLocation OpLoc = E->getOperatorLoc();
   if (E->hasExpressionOperand()) {
@@ -1909,7 +2063,8 @@ ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
     return InjectInitExpr(Cxt, cast<CXXScalarValueInitExpr>(E));
   case Stmt::CXXStdInitializerListExprClass:
     return InjectInitExpr(Cxt, cast<CXXStdInitializerListExpr>(E));
-  // case Stmt::CXXNewExprClass:
+  case Stmt::CXXNewExprClass:
+    return InjectNewExpr(Cxt, cast<CXXNewExpr>(E));
   // case Stmt::CXXDeleteExprClass:
   // case Stmt::CXXPseudoDestructorExprClass:
   // case Stmt::TypeTraitExprClass:
@@ -2314,6 +2469,8 @@ static Decl *InjectVariable(InjectionContext &Cxt, VarDecl *D) {
     if (Cxt.SemaRef.isCopyElisionCandidate(ReturnType, Var, false))
       Var->setNRVOVariable(true);
   }
+
+  Owner->addDecl(Var);
 
   Var->setImplicit(D->isImplicit());
   Var->setInvalidDecl(Invalid);
@@ -3439,8 +3596,8 @@ bool Sema::InjectFragment(SourceLocation POI,
       if (Class->isInjectedClassName())
         continue;
 
-    // llvm::outs() << "BEFORE INJECT\n";
-    // D->dump();
+    llvm::outs() << "BEFORE INJECT\n";
+    D->dump();
     
     Decl *R = InjectDecl(*Cxt, D);
     if (!R || R->isInvalidDecl()) {
@@ -3452,8 +3609,8 @@ bool Sema::InjectFragment(SourceLocation POI,
       continue;
     }
 
-    // llvm::outs() << "AFTER INJECT\n";
-    // R->dump();
+    llvm::outs() << "AFTER INJECT\n";
+    R->dump();
   }
 
   // If we're injecting into a class and have pending definitions, attach
