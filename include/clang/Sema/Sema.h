@@ -297,7 +297,14 @@ struct InjectedDef
 class InjectionContext
 {
 public:
-  InjectionContext(Sema &SemaRef, CXXFragmentDecl *Frag, DeclContext *Injectee);
+  InjectionContext(Sema &SemaRef, 
+                   CXXFragmentDecl *Frag, 
+                   DeclContext *Injectee,
+                   Decl *Injection);
+  InjectionContext(Sema &SemaRef, 
+                   DeclContext *Injectee, 
+                   Decl *Injection);
+  
   InjectionContext(const InjectionContext& Cxt);
   ~InjectionContext();
 
@@ -343,6 +350,9 @@ public:
 
   /// \brief The context into which the fragment is injected
   DeclContext *Injectee;
+
+  /// \brief The declaration being Injected.
+  Decl *Injection;
 
   /// \brief A mapping from declarations in an injection to those in the
   /// destination context.

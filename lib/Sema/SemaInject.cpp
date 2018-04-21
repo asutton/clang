@@ -28,9 +28,18 @@ using namespace sema;
 
 InjectionContext::InjectionContext(Sema &SemaRef, 
                                    CXXFragmentDecl *Frag, 
-                                   DeclContext *Injectee)
+                                   DeclContext *Injectee,
+                                   Decl *Injection)
     : SemaRef(SemaRef), Prev(SemaRef.CurrentInjectionContext), 
-      Fragment(Frag), Injectee(Injectee) {
+      Fragment(Frag), Injectee(Injectee), Injection(Injection) {
+  SemaRef.CurrentInjectionContext = this;
+}
+
+InjectionContext::InjectionContext(Sema &SemaRef, 
+                                   DeclContext *Injectee,
+                                   Decl *Injection)
+    : SemaRef(SemaRef), Prev(SemaRef.CurrentInjectionContext), Fragment(), 
+      Injectee(Injectee), Injection(Injection) {
   SemaRef.CurrentInjectionContext = this;
 }
 
@@ -110,21 +119,48 @@ static inline ASTContext& getASTContext(InjectionContext &Cxt) {
   return Cxt.SemaRef.getASTContext();
 }
 
+static bool IsInInjection(InjectionContext &Cxt, Decl *D);
+
 /// Try to find a replacement for the given declaration.
 ///
 /// FIXME: We really want a resolve or lookup operation. If the declaration
 /// cannot be resolved, then we need to lookup the use of the name in the
 /// current context.
 static Decl* ResolveDecl(InjectionContext &Cxt, Decl *D) {
-  // If the original declaration is not in the fragment, then we can simply
-  // bind to the original name.
+  // If D is part of the injection, then we must have seen a previous
+  // declaration.
   //
-  // NOTE: If the original declaration is captured, then we shouldn't be
-  // resolving use this mechanism.
-  if (!D->isInFragment())
-    return D;
-  
-  return Cxt.GetDeclReplacement(D);
+  // FIXME: This may not be true with gotos.
+  if (IsInInjection(Cxt, D))
+    return Cxt.GetDeclReplacement(D);
+
+  // When copying existing declarations, if D is a member of the of the
+  // injection's declaration context, then we want to re-map that so that the
+  // result is a member of the injection. For example:
+  //
+  //    struct S {
+  //      int x; 
+  //      int f() { 
+  //        return x; // Not dependent, bound
+  //      }
+  //    };
+  //
+  //    struct T { constexpr { __generate $S::f; } };
+  //
+  // At the point that we inject S::f, the reference to x is not dependent,
+  // and therefore not subject to two-phase lookup. However, we would expect
+  // the reference to be to the T::x during injection.
+  //
+  // Note that this isn't necessary for fragments. We expect names to be
+  // written dependently there and subject to the usual name resolution
+  // rules.
+  //
+  // Defer the resolution to the caller so that the result can be interpreted
+  // within the context of the expression, not here.
+  if (!Cxt.Fragment && D->getDeclContext() == Cxt.Injection->getDeclContext())
+    return nullptr;
+
+  return D;
 }
 
 static DeclarationName InjectName(InjectionContext &Cxt, 
@@ -1592,15 +1628,6 @@ static ExprResult InjectMemberExpr(InjectionContext &Cxt, MemberExpr *E) {
   if (!InjectExplicitTemplateArgs(Cxt, E, TemplateArgs, ExplicitArgs, TemplateLoc))
     return ExprError();
 
-  // Resolve the found declaration (although, we may)
-  NamedDecl *Member = cast_or_null<NamedDecl>(ResolveDecl(Cxt, E->getMemberDecl()));
-  if (!Member) {
-    // FIXME: If we can't re-bind the identifier, then (and only then), we
-    // need to re-do the lookup. We'll update FoundDecl with the result,
-    // if any.
-    llvm_unreachable("no prior declaration");
-  }
-
   CXXScopeSpec SS;
   SS.Adopt(QualifierLoc);
 
@@ -1609,10 +1636,23 @@ static ExprResult InjectMemberExpr(InjectionContext &Cxt, MemberExpr *E) {
   if (E->isArrow() && !BaseType->isPointerType())
     return ExprError();
 
+  LookupResult R(Cxt.SemaRef, NameInfo, Sema::LookupMemberName);
+
+  // Resolve the found declaration (although, we may)
+  NamedDecl *Member = cast_or_null<NamedDecl>(ResolveDecl(Cxt, E->getMemberDecl()));
+  if (!Member) {
+    // Re-do the lookup.
+    assert(SS.isEmpty() && "Qualified lookup of member not implemented");
+    if (!Cxt.SemaRef.LookupName(R, Cxt.SemaRef.getCurScope())) {
+      Cxt.SemaRef.DiagnoseEmptyLookup(Cxt.SemaRef.getCurScope(), SS, R, nullptr);
+      return ExprError();
+    }
+  } else {
+    R.addDecl(Member);
+  }
+
   // FIXME: this involves duplicating earlier analysis in a lot of
   // cases; we should avoid this when possible.
-  LookupResult R(Cxt.SemaRef, NameInfo, Sema::LookupMemberName);
-  R.addDecl(Member);
   R.resolveKind();
 
   return Cxt.SemaRef.BuildMemberReferenceExpr(
@@ -2811,6 +2851,42 @@ static Decl *InjectDeclImpl(InjectionContext &Cxt, Decl *D) {
   }
 }
 
+// Returns true if D is or is declared within the current injection.
+bool IsInInjection(InjectionContext &Cxt, Decl *D) {
+  // If this is actually a fragment, then we can check in the usual way.
+  if (Cxt.Fragment)
+    return D->isInFragment();
+
+  // Otherwise, we're cloning a declaration, (not a fragment) but we need
+  // to ensure that any any declarations within that are injected.
+
+  // If D is injection source, then it must be injected.
+  if (D == Cxt.Injection)
+    return true;
+
+  // If the injection is not a DC, then D cannot be in the injection.
+  DeclContext *Outer = dyn_cast<DeclContext>(Cxt.Injection);
+  if (!Outer)
+    return false;
+
+  // Note that Injection->getDeclContext() == InjecteeDC. We don't want to
+  // use that as the outermost context since it includes declarations that
+  // should not be injected. That is, copying a member function does not
+  // mean that we are copying member variables of the same class.
+
+  // Otherwise, work outwards to see if D is in the Outermost context
+  // of the injection. If we reach the global sc
+  DeclContext *DC = D->getDeclContext();
+  while (DC) {
+    if (DC == Outer)
+      return true;
+    if (DC == Cxt.Injectee)
+      return false;
+    DC = DC->getParent();
+  }
+  return false;
+}
+
 /// \brief Injects a new version of the declaration. Do not use this to
 /// resolve references to declarations; use ResolveDecl instead.
 Decl *InjectDecl(InjectionContext& Cxt, Decl *D) {
@@ -2818,7 +2894,7 @@ Decl *InjectDecl(InjectionContext& Cxt, Decl *D) {
   
   // If the declaration does not appear in the context, then it need
   // not be resolved.
-  if (!D->isInFragment())
+  if (!IsInInjection(Cxt, D))
     return D;
 
   // Inject the declaration; the result cannot be null.
@@ -2826,6 +2902,10 @@ Decl *InjectDecl(InjectionContext& Cxt, Decl *D) {
   assert(R);
 
   // Remember the substitution.
+  //
+  // FIXME: We may need to add the substitution when these are created and
+  // not after the fact. A late return type may refer to a parameter, for
+  // example.
   Cxt.AddDeclSubstitution(D, R);
   
   return R;
@@ -3585,7 +3665,7 @@ bool Sema::InjectFragment(SourceLocation POI,
   ContextRAII Switch(*this, InjecteeDC, isa<CXXRecordDecl>(Injectee));
 
   // Establish the injection context and register the substitutions.
-  InjectionContext *Cxt = new InjectionContext(*this, Fragment, InjecteeDC);
+  InjectionContext *Cxt = new InjectionContext(*this, Fragment, InjecteeDC, Injection);
   Cxt->AddDeclSubstitution(Injection, Injectee);
   Cxt->AddPlaceholderSubstitutions(Fragment, Class, Captures);
 
@@ -3596,8 +3676,8 @@ bool Sema::InjectFragment(SourceLocation POI,
       if (Class->isInjectedClassName())
         continue;
 
-    llvm::outs() << "BEFORE INJECT\n";
-    D->dump();
+    // llvm::outs() << "BEFORE INJECT\n";
+    // D->dump();
     
     Decl *R = InjectDecl(*Cxt, D);
     if (!R || R->isInvalidDecl()) {
@@ -3609,8 +3689,8 @@ bool Sema::InjectFragment(SourceLocation POI,
       continue;
     }
 
-    llvm::outs() << "AFTER INJECT\n";
-    R->dump();
+    // llvm::outs() << "AFTER INJECT\n";
+    // R->dump();
   }
 
   // If we're injecting into a class and have pending definitions, attach
@@ -3626,49 +3706,27 @@ bool Sema::InjectFragment(SourceLocation POI,
   return !Injectee->isInvalidDecl();
 }
 
-static Decl *RewriteAsStaticMemberVariable(Sema &SemaRef, 
-                                           FieldDecl *D, 
-                                           DeclContext *Owner) {
-  MultiLevelTemplateArgumentList Args; // Empty arguments for substitution.
-
-  DeclarationNameInfo DNI(D->getDeclName(), D->getLocation());
-  DNI = SemaRef.SubstDeclarationNameInfo(DNI, Args);
-  if (!DNI.getName())
-    return nullptr;
-
-  TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(D->getType());
-  TSI = SemaRef.SubstType(TSI, Args, D->getLocation(), DNI.getName());
-  if (!TSI)
-    return nullptr;
+static Decl *RewriteAsStaticMemberVariable(InjectionContext &Cxt, FieldDecl *D) {
+  DeclarationNameInfo DNI;
+  TypeSourceInfo *TSI;
+  CXXRecordDecl *Owner;
+  bool Invalid = InjectMemberDeclarator(Cxt, D, DNI, TSI, Owner);
   
-  VarDecl *R = VarDecl::Create(SemaRef.Context, Owner, D->getLocation(), DNI,
-                               TSI->getType(), TSI, SC_Static);
-  R->setAccess(D->getAccess());
-  Owner->addDecl(R);
+  VarDecl *Var = VarDecl::Create(
+      getASTContext(Cxt), Owner, D->getLocation(), DNI, TSI->getType(), 
+      TSI, SC_Static);
+  
+  Var->setAccess(D->getAccess());
+  Owner->addDecl(Var);
 
-  // Transform the initializer and associated properties of the definition.
-  //
-  // FIXME: I'm pretty sure that initializer semantics are not being
-  // translated incorrectly.
-  if (Expr *OldInit = D->getInClassInitializer()) {
-    SemaRef.PushExpressionEvaluationContext(
-      Sema::ExpressionEvaluationContext::ConstantEvaluated, D);
+  // FIXME: This is almost certainly going to break when it runs.
+  // if (D->hasInClassInitializer())
+  //   Cxt.InjectedDefinitions.push_back(InjectedDef(D, Var));
 
-    ExprResult Init;
-    {
-      Sema::ContextRAII SwitchContext(SemaRef, R->getDeclContext());
-      Init = SemaRef.SubstInitializer(OldInit, Args, false);
-    }
-    if (!Init.isInvalid()) {
-      if (Init.get())
-        SemaRef.AddInitializerToDecl(R, Init.get(), false);
-      else
-        SemaRef.ActOnUninitializedDecl(R);
-    } else
-      R->setInvalidDecl();
-  }
+  if (D->hasInClassInitializer())
+    llvm_unreachable("Initialization of static members not implemented");
 
-  return R;
+  return Var;
 }
 
 /// Clone a declaration into the current context.
@@ -3692,13 +3750,10 @@ bool Sema::CopyDeclaration(SourceLocation POI,
   if (!CheckInjectionKind(*this, POI, Injection, InjecteeDC))
     return false;
 
-  // Set up the injection context. There are no placeholders for copying.
-  // Within the copied declaration, references to the enclosing context are 
-  // replaced with references to the destination context.
-  LocalInstantiationScope Locals(*this);
-  InjectionContext InjectionCxt(*this, nullptr, InjecteeDC);
-  Sema::InstantiatingTemplate Inst(*this, POI, &InjectionCxt);
-  InjectionCxt.AddDeclSubstitution(InjectionOwner, Injectee);
+  // Set up the injection context for the declaration. Note that we're
+  // going to replace references to the inectee with the current owner.
+  InjectionContext *Cxt = new InjectionContext(*this, InjecteeDC, Injection);
+  Cxt->AddDeclSubstitution(InjectionOwner, Injectee);
 
   // Establish injectee as the current context.
   ContextRAII Switch(*this, InjecteeDC, isa<CXXRecordDecl>(Injectee));
@@ -3733,18 +3788,15 @@ bool Sema::CopyDeclaration(SourceLocation POI,
   // Build the declaration. If there was a request to make field static, we'll
   // need to build a new declaration.
   Decl* Result;
-  if (isa<FieldDecl>(Injection) && Storage == Static) {
-    Result = RewriteAsStaticMemberVariable(*this, 
-                                           cast<FieldDecl>(Injection), 
-                                           InjecteeDC);
-  } else {
-    MultiLevelTemplateArgumentList Args;
-    Result = SubstDecl(Injection, InjecteeDC, Args);
-  }
+  if (isa<FieldDecl>(Injection) && Storage == Static)
+    Result = RewriteAsStaticMemberVariable(*Cxt, cast<FieldDecl>(Injection));
+  else
+    Result = InjectDecl(*Cxt, Injection);
   if (!Result || Result->isInvalidDecl()) {
     Injectee->setInvalidDecl(true);
     return false;
   }
+  
   // llvm::outs() << "AFTER CLONING\n";
   // Result->dump();
   // Injectee->dump();
@@ -3822,8 +3874,15 @@ bool Sema::CopyDeclaration(SourceLocation POI,
   // Finally, update the owning context.
   Result->getDeclContext()->updateDecl(Result);
 
-  // Decls.push_back(Result);
 
+  // If we're injecting into a class and have pending definitions, attach
+  // those to the class for subsequent analysis. 
+  if (CXXRecordDecl *ClassInjectee = dyn_cast<CXXRecordDecl>(Injectee)) {
+    if (!Injectee->isInvalidDecl() && !Cxt->InjectedDefinitions.empty()) {
+      PendingClassMemberInjections.push_back(Cxt->Detach());
+      return true;
+    }
+  }
   return !Injectee->isInvalidDecl(); 
 }
 

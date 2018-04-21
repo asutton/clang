@@ -1984,38 +1984,10 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
 
   if (Function->isLocalExternDecl() && !Function->getPreviousDecl())
     DC->makeDeclVisibleInContext(PrincipalDecl);
-  else if (SemaRef.CurrentInjectionContext && D->isInFragment())
-    // FIXME: This is probably wrong for any injection more complex than
-    // a simple function definition.
-    DC->makeDeclVisibleInContext(PrincipalDecl);
 
   if (Function->isOverloadedOperator() && !DC->isRecord() &&
       PrincipalDecl->isInIdentifierNamespace(Decl::IDNS_Ordinary))
     PrincipalDecl->setNonMemberOperator();
-
-  // If we injected a top-level function, we need to instantiate the
-  // definition.
-  //
-  // FIXME: We'd probably like to defer instantiation since it could refer
-  // to as-of-yet defined members. For example:
-  //
-  //    auto f = __fragment namespace N {
-  //        void foo() { 
-  //          return N::member;  // refers to a dependent member
-  //        }
-  //
-  // Of course, we don't have dependent namespaces, so the example doesn't
-  // make the most sense. This more likely describes a problem with the
-  // design of the feature.
-  else if (SemaRef.CurrentInjectionContext && 
-           D->isThisDeclarationADefinition() && 
-           D->isInFragment()) {
-    SemaRef.InstantiateFunctionDefinition(D->getLocation(), Function, 
-                                          /*Recursive=*/false, 
-                                          /*DefinitionRequired=*/true, 
-                                          /*AtEndOfTU=*/false, 
-                                          /*Injection=*/ D);
-  }
 
   assert(!D->isDefaulted() && "only methods should be defaulted");
   return Function;
@@ -2257,31 +2229,6 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
   } else if (!IsClassScopeSpecialization) {
     Owner->addDecl(Method);
   }
-
-  // // If we injected a method, we need to also instantiate the definition.
-  // // See the comments in VisitFunctionDecl.
-  // if (SemaRef.CurrentInjectionContext && D->isThisDeclarationADefinition()) {
-  //   llvm::outs() << "MAYBE INSTANTIATE\n";
-  //     D->dump();
-  //     Method->dump();
-  //   if (!D->isInFragment()) {
-  //     llvm::outs() << "BUT DON'T\n";
-  //     goto out;
-  //   }
-  //   if (SemaRef.DeferredGenerations) {
-  //     llvm::outs() << "REQUEST FOR\n";
-  //     SemaRef.DeferredGenerations->MakeRequest(*SemaRef.CurrentInjectionContext,
-  //                                              D, Method);
-  //   }
-  //   else  {
-  //     llvm::outs() << "INSTANTIATE NOW\n";
-  //     SemaRef.InstantiateFunctionDefinition(D->getLocation(), Method, 
-  //                                           /*Recursive=*/false, 
-  //                                           /*DefinitionRequired=*/true, 
-  //                                           /*AtEndOfTU=*/false, 
-  //                                           /*Injection=*/ D);
-  //   }
-  // }
 
   return Method;
 }
@@ -4334,12 +4281,6 @@ void Sema::BuildVariableInstantiation(
       NewVar->getDeclContext()->isFunctionOrMethod() &&
       OldVar->getType()->isDependentType())
     DiagnoseUnusedDecl(NewVar);
-
-  // If we injected a global variable, tell the consumer.
-  if (CurrentInjectionContext && NewVar->getDeclContext()->isFileContext()) {
-    DeclGroupRef DG(NewVar);
-    Consumer.HandleTopLevelDecl(DG); 
-  }
 }
 
 /// \brief Instantiate the initializer of a variable.
