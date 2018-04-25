@@ -123,6 +123,7 @@ namespace clang {
   class FunctionProtoType;
   class FunctionTemplateDecl;
   class ImplicitConversionSequence;
+  class InjectionContext;
   typedef MutableArrayRef<ImplicitConversionSequence> ConversionSequenceList;
   class InitListExpr;
   class InitializationKind;
@@ -265,108 +266,6 @@ public:
     Cache.Nullability = Map[file];
     return Cache.Nullability;
   }
-};
-
-
-/// \brief A compile-time value along with its type.
-struct TypedValue
-{
-  TypedValue(QualType T, const APValue& V)
-    : Type(T), Value(V)
-  { }
-
-  QualType Type;
-  APValue Value;
-};
-
-/// Records information about a definition inside a fragment that must be
-/// processed later. These are typically fields and methods.
-struct InjectedDef
-{
-  InjectedDef(Decl *F, Decl *I) : Fragment(F), Injected(I) { }
-  
-  /// The declaration within the fragment.
-  Decl *Fragment;
-
-  /// The injected declaration.
-  Decl *Injected;
-};
-
-/// \brief An injection context. This is declared to establish a set of
-/// substitutions during an injection.
-class InjectionContext
-{
-public:
-  InjectionContext(Sema &SemaRef, 
-                   CXXFragmentDecl *Frag, 
-                   DeclContext *Injectee,
-                   Decl *Injection);
-  InjectionContext(Sema &SemaRef, 
-                   DeclContext *Injectee, 
-                   Decl *Injection);
-  
-  InjectionContext(const InjectionContext& Cxt);
-  ~InjectionContext();
-
-  /// Detach the context from the semantics object. Returns this object for
-  /// convenience.
-  InjectionContext *Detach();
-
-  /// Re-attach the context to the context stack.
-  void Attach();
-
-  /// \brief Adds a substitution from one declaration to another.
-  void AddDeclSubstitution(Decl *Orig, Decl *New);
-
-  /// \brief Adds a substitution from a fragment placeholder to its
-  /// (type) constant value.
-  void AddPlaceholderSubstitution(Decl *Orig, QualType T, const APValue &V);
-
-  /// \brief Adds substitutions for each placeholder in the fragment. 
-  /// The types and values are sourced from the fields of the reflection 
-  /// class and the captured values.
-  void AddPlaceholderSubstitutions(DeclContext *Fragment,
-                                   CXXRecordDecl *Reflection,
-                                   ArrayRef<APValue> Captures);
-
-  /// Returns a replacement for D if a substitution has been registered.
-  Decl *GetDeclReplacement(Decl *D);
-
-  /// Returns a replacement expression if E refers to a placeholder.
-  Expr *GetPlaceholderReplacement(DeclRefExpr *E);
-
-  /// Returns the declaration for the injectee.
-  Decl *GetInjecteeDecl() const { 
-    return Decl::castFromDeclContext(Injectee); 
-  }
-
-  Sema &SemaRef;
-
-  /// \brief The previous injection context.
-  InjectionContext *Prev;
-
-  /// \brief The fragment being injected.
-  CXXFragmentDecl *Fragment;
-
-  /// \brief The context into which the fragment is injected
-  DeclContext *Injectee;
-
-  /// \brief The declaration being Injected.
-  Decl *Injection;
-
-  /// \brief A mapping from declarations in an injection to those in the
-  /// destination context.
-  llvm::DenseMap<Decl *, Decl *> DeclSubsts;
-
-  /// \brief A mapping of fragment placeholders to their typed compile-time
-  /// values. This is used by TreeTransformer to replace references with
-  /// constant expressions.
-  llvm::DenseMap<Decl *, TypedValue> PlaceholderSubsts;
-
-  /// \brief A list of declarations whose definitions have not yet been
-  /// injected. These are processed when a class receiving injections is
-  /// completed.
-  llvm::SmallVector<InjectedDef, 8> InjectedDefinitions;
 };
 
 /// Sema - This implements semantic analysis and AST building for C.
@@ -7396,13 +7295,6 @@ public:
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           Stmt *S, ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange);
-
-    /// \brief Note that we injecting source code.
-    ///
-    /// FIXME: This is *not* template instantiation. We should really have
-    /// a mirror of this class called InjectingEntity.
-    InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
-                          InjectionContext *Cxt);
 
     /// \brief Note that we have finished instantiating this template.
     void Clear();

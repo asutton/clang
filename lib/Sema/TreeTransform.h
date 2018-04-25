@@ -408,6 +408,24 @@ public:
                       SmallVectorImpl<Expr *> &Outputs,
                       bool *ArgChanged = nullptr);
 
+  /// \brief Provides an opportunity to redo lookup if a declaration cannot
+  /// be resolved. 
+  ///
+  /// This is used by source code injection to rebind identifiers of 
+  /// DeclRefExprs when copying declarations.
+  ValueDecl *LookupDecl(NestedNameSpecifierLoc NNS, DeclarationNameInfo DNI) {
+    return nullptr;
+  }
+
+  /// \brief Provides an opportunity to redo lookup if a member declaration 
+  /// be resolved.
+  ///
+  /// This is used by source code injection to rebind identifiers of 
+  /// MemberExprs when copying declarations.
+  ValueDecl *LookupMember(NestedNameSpecifierLoc NNS, DeclarationNameInfo DNI) {
+    return nullptr;
+  }
+
   /// \brief Transform the given declaration.
   Decl *TransformDecl(Decl *D) {
     return getDerived().TransformDecl(D->getLocation(), D);
@@ -9192,16 +9210,19 @@ TreeTransform<Derived>::TransformDeclRefExpr(DeclRefExpr *E) {
       return ExprError();
   }
 
-  ValueDecl *ND
-    = cast_or_null<ValueDecl>(getDerived().TransformDecl(E->getLocation(),
-                                                         E->getDecl()));
-  if (!ND)
-    return ExprError();
-
   DeclarationNameInfo NameInfo = E->getNameInfo();
   if (NameInfo.getName()) {
     NameInfo = getDerived().TransformDeclarationNameInfo(NameInfo);
     if (!NameInfo.getName())
+      return ExprError();
+  }
+
+  ValueDecl *ND
+    = cast_or_null<ValueDecl>(getDerived().TransformDecl(E->getLocation(),
+                                                         E->getDecl()));
+  if (!ND) {
+    ND = getDerived().LookupDecl(QualifierLoc, NameInfo);
+    if (!ND)
       return ExprError();
   }
 
@@ -9591,6 +9612,7 @@ TreeTransform<Derived>::TransformMemberExpr(MemberExpr *E) {
   if (Base.isInvalid())
     return ExprError();
 
+  // Transform the NNS if present.
   NestedNameSpecifierLoc QualifierLoc;
   if (E->hasQualifier()) {
     QualifierLoc
@@ -9601,11 +9623,22 @@ TreeTransform<Derived>::TransformMemberExpr(MemberExpr *E) {
   }
   SourceLocation TemplateKWLoc = E->getTemplateKeywordLoc();
 
+  // Transform the member name if present.
+  DeclarationNameInfo NameInfo = E->getMemberNameInfo();
+  if (NameInfo.getName()) {
+    NameInfo = TransformDeclarationNameInfo(NameInfo);
+    if (!NameInfo.getName())
+      return ExprError();
+  }
+
   ValueDecl *Member
     = cast_or_null<ValueDecl>(getDerived().TransformDecl(E->getMemberLoc(),
                                                          E->getMemberDecl()));
-  if (!Member)
-    return ExprError();
+  if (!Member) {
+    Member = getDerived().LookupMember(QualifierLoc, NameInfo);
+    if (!Member)
+      return ExprError();
+  }
 
   NamedDecl *FoundDecl = E->getFoundDecl();
   if (FoundDecl == E->getMemberDecl()) {
@@ -9614,7 +9647,9 @@ TreeTransform<Derived>::TransformMemberExpr(MemberExpr *E) {
     FoundDecl = cast_or_null<NamedDecl>(
                    getDerived().TransformDecl(E->getMemberLoc(), FoundDecl));
     if (!FoundDecl)
-      return ExprError();
+      FoundDecl = getDerived().LookupMember(QualifierLoc, NameInfo);
+      if (!FoundDecl)
+        return ExprError();
   }
 
   // If the expression is (implicitly) this->x and the type of this and the 

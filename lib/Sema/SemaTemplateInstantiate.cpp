@@ -365,19 +365,6 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
   Inst.Loop = S;
 }
 
-// Source code injection.
-Sema::InstantiatingTemplate::InstantiatingTemplate(
-    Sema &SemaRef, SourceLocation PointOfInstantiation, InjectionContext *Cxt)
-    : InstantiatingTemplate(
-          SemaRef, 
-          CodeSynthesisContext::SourceCodeInjection,
-          PointOfInstantiation, SourceRange(), nullptr, nullptr,
-          ArrayRef<TemplateArgument>()) {
-  CodeSynthesisContext& Inst = 
-    SemaRef.CodeSynthesisContexts.back();
-  Inst.Injection = Cxt;    
-}
-
 void Sema::pushCodeSynthesisContext(CodeSynthesisContext Ctx) {
   Ctx.SavedInNonInstantiationSFINAEContext = InNonInstantiationSFINAEContext;
   InNonInstantiationSFINAEContext = false;
