@@ -267,6 +267,9 @@ bool InjectionContext::IsInInjection(Decl *D) {
 }
 
 Decl* InjectionContext::TransformDecl(SourceLocation Loc, Decl *D) {
+  if (!D)
+    return nullptr;
+
   // If D is part of the injection, then we must have seen a previous
   // declaration.
   //
