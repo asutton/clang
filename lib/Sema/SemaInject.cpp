@@ -1371,6 +1371,46 @@ ExprResult InjectDeclRefExpr(InjectionContext &Cxt, DependentScopeDeclRefExpr *E
         SS, TemplateLoc, NameInfo, &TemplateArgs);
 }
 
+/// FIXME: I don't think there are any overrides of this.
+static bool DropCallArgument(Expr *E) {
+  return E->isDefaultArgument();
+}
+
+ExprResult InjectConstructExpr(InjectionContext &Cxt, CXXConstructExpr *E) {
+  // CXXConstructExprs other than for list-initialization and
+  // CXXTemporaryObjectExpr are always implicit, so when we have
+  // a 1-argument construction we just transform that argument.
+  if ((E->getNumArgs() == 1 ||
+       (E->getNumArgs() > 1 && DropCallArgument(E->getArg(1)))) &&
+      (!DropCallArgument(E->getArg(0))) &&
+      !E->isListInitialization())
+    return InjectExpr(Cxt, E->getArg(0));
+
+  QualType T = InjectType(Cxt, E->getType());
+  if (T.isNull())
+    return ExprError();
+
+  CXXConstructorDecl *Ctor = cast_or_null<CXXConstructorDecl>(
+      ResolveDecl(Cxt, E->getConstructor()));
+  if (!Ctor)
+    return ExprError();
+
+  SmallVector<Expr*, 8> Args;
+  if (!InjectArgs(Cxt, E->getArgs(), E->getNumArgs(), Args))
+    return ExprError();
+
+  SmallVector<Expr*, 8> ConvArgs;
+  if (Cxt.SemaRef.CompleteConstructorCall(Ctor, Args, E->getLocStart(), ConvArgs))
+    return ExprError();
+
+  return Cxt.SemaRef.BuildCXXConstructExpr(
+      E->getLocStart(), T, Ctor, E->isElidable(), ConvArgs, 
+      E->hadMultipleCandidates(), E->isListInitialization(),
+      E->isStdInitListInitialization(),
+      E->requiresZeroInitialization(), E->getConstructionKind(),
+      E->getParenOrBraceRange());
+}
+
 ExprResult InjectParenExpr(InjectionContext &Cxt, ParenExpr *E) {
   ExprResult Inner = InjectExpr(Cxt, E->getSubExpr());
   if (Inner.isInvalid())
@@ -1417,13 +1457,10 @@ ExprResult InjectCallExpr(InjectionContext &Cxt, CallExpr *E) {
   if (!InjectArgs(Cxt, E->getArgs(), E->getNumArgs(), Args))
     return ExprError();
 
-  CallExpr *CalleeExpr = cast<CallExpr>(Callee.get());
-  SourceLocation LParenLoc = CalleeExpr->getLocStart();
-  SourceLocation RParenLoc = CalleeExpr->getRParenLoc();
-
+  SourceLocation LParen = Callee.get()->getSourceRange().getBegin();
   return Cxt.SemaRef.ActOnCallExpr(
-      /*Scope=*/nullptr, CalleeExpr, LParenLoc, Args, RParenLoc, 
-      /*ExecConfig*/nullptr);
+      /*Scope=*/nullptr, Callee.get(), LParen, Args, E->getRParenLoc(), 
+      /*ExecConfig=*/nullptr);
 }
 
 ExprResult InjectAddressOfOperand(InjectionContext &Cxt, Expr *E) {
@@ -2112,7 +2149,8 @@ ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   // case Stmt::ExpressionTraitExprClass:
   case Stmt::DependentScopeDeclRefExprClass:
     return InjectDeclRefExpr(Cxt, cast<DependentScopeDeclRefExpr>(E));
-  // case Stmt::CXXConstructExprClass:
+  case Stmt::CXXConstructExprClass:
+    return InjectConstructExpr(Cxt, cast<CXXConstructExpr>(E));
   // case Stmt::CXXInheritedCtorInitExprClass:
   // case Stmt::CXXBindTemporaryExprClass:
   // case Stmt::ExprWithCleanupsClass:
@@ -2120,8 +2158,8 @@ ExprResult InjectExpr(InjectionContext &Cxt, Expr *E) {
   // case Stmt::CXXUnresolvedConstructExprClass:
   case Stmt::CXXDependentScopeMemberExprClass:
     return InjectMemberExpr(Cxt, cast<CXXDependentScopeMemberExpr>(E));
-  // case Stmt::OverloadExprClass:
   // case Stmt::UnresolvedLookupExprClass:
+  //   return InjectUnresolvedLookupExpr(Cxt, cast<CXXUnresolvedConstructExpr>(E));
   // case Stmt::UnresolvedMemberExprClass:
   // case Stmt::CXXNoexceptExprClass:
   // case Stmt::PackExpansionExprClass:
@@ -2818,6 +2856,23 @@ static Decl *InjectAccessSpecDecl(InjectionContext &Cxt, AccessSpecDecl *D)
                                 D->getLocation(), D->getColonLoc());
 }
 
+static Decl* InjectConstexrDecl(InjectionContext &Cxt, ConstexprDecl *D) {
+  // We can use the ActOn* members since the initial parsing for these
+  // declarations is trivial (i.e., don't have to translate declarators).
+  unsigned ScopeFlags; // Unused
+  Decl *New = Cxt.SemaRef.ActOnConstexprDecl(
+    /*Scope=*/nullptr, D->getLocation(), ScopeFlags);
+
+  Cxt.SemaRef.ActOnStartConstexprDecl(/*Scope=*/nullptr, New);
+  StmtResult S = InjectStmt(Cxt, D->getBody());
+  if (!S.isInvalid())
+    Cxt.SemaRef.ActOnFinishConstexprDecl(/*Scope=*/nullptr, New, S.get());
+  else
+    Cxt.SemaRef.ActOnConstexprDeclError(/*Scope=*/nullptr, New);
+
+  return New;
+}
+
 static Decl *InjectDeclImpl(InjectionContext &Cxt, Decl *D) {
   switch (D->getKind()) {
   case Decl::Enum:
@@ -2845,6 +2900,8 @@ static Decl *InjectDeclImpl(InjectionContext &Cxt, Decl *D) {
     return InjectCXXConversionDecl(Cxt, cast<CXXConversionDecl>(D));
   case Decl::AccessSpec:
     return InjectAccessSpecDecl(Cxt, cast<AccessSpecDecl>(D));
+  case Decl::Constexpr:
+    return InjectConstexrDecl(Cxt, cast<ConstexprDecl>(D));
   default:
     D->dump();
     llvm_unreachable("unknown declaration");
@@ -2919,10 +2976,26 @@ static void FindCapturesInScope(Sema &SemaRef, Scope *S,
                                 SmallVectorImpl<VarDecl *> &Vars) {
   for (Decl *D : S->decls()) {
     if (VarDecl *Var = dyn_cast<VarDecl>(D)) {
-      // Only capture locals with initializers. This avoids the capture of
-      // a variable defining its own capture.
-      if (Var->isLocalVarDeclOrParm() && Var->hasInit())
-        Vars.push_back(Var);
+      // Only capture locals with initializers.
+      //
+      // FIXME: If the fragment is in the initializer of a variable, this
+      // will also capture that variable. For example:
+      //
+      //    auto f = __fragment class { ... };
+      //
+      // The capture list for the fragment will include f. This seems insane,
+      // but lambda capture seems to also do this (with some caveats about
+      // usage).
+      //
+      // We can actually detect this case in this implementation because
+      // the type must be deduced and we won't have associated the 
+      // initializer with the variable yet.
+      if (!isa<ParmVarDecl>(Var) &&
+          !Var->hasInit() &&
+          Var->getType()->isUndeducedType())
+        continue;
+
+      Vars.push_back(Var);
     }
   }
 }
@@ -3717,6 +3790,7 @@ static Decl *RewriteAsStaticMemberVariable(InjectionContext &Cxt, FieldDecl *D) 
       TSI, SC_Static);
   
   Var->setAccess(D->getAccess());
+  Var->setInvalidDecl(Invalid);
   Owner->addDecl(Var);
 
   // FIXME: This is almost certainly going to break when it runs.

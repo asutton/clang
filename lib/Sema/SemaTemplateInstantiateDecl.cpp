@@ -931,7 +931,6 @@ Decl *TemplateDeclInstantiator::VisitMetaclassDecl(MetaclassDecl *D) {
 }
 
 Decl *TemplateDeclInstantiator::VisitConstexprDecl(ConstexprDecl *D) {
-  
   if (FunctionDecl *Fn = D->getFunctionDecl()) {
     // Instantiate the nested function.
     //
