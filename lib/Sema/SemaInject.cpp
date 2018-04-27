@@ -646,32 +646,9 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
 }
 
 Decl *InjectionContext::InjectParmVarDecl(ParmVarDecl *D) {
-  DeclarationNameInfo DNI;
-  TypeSourceInfo *TSI;
-  bool Invalid = InjectDeclarator(D, DNI, TSI);
-
-  Expr *DefaultArg = nullptr;
-  if (D->hasDefaultArg()) {
-    ExprResult Default = TransformExpr(D->getDefaultArg());
-    if (Default.isInvalid())
-      Invalid = true;
-    else
-      DefaultArg = Default.get();
-  }
-
-  // Note that the context is overwritten when the parameter is added to
-  // a function declaration.
-  ParmVarDecl *Parm = ParmVarDecl::Create(
-    getContext(), D->getDeclContext(), D->getInnerLocStart(), 
-    D->getLocation(), D->getIdentifier(), TSI->getType(), TSI, 
-    D->getStorageClass(), DefaultArg);
-  AddDeclSubstitution(D, Parm);
-  
-  // FIXME: Under what circumstances do we need to adjust depth and scope?
-  Parm->setScopeInfo(D->getFunctionScopeDepth(), D->getFunctionScopeIndex());
-  Parm->setInvalidDecl(Invalid);
-  
-  return Parm;
+  // Parameters are created during type transformation. We add mappings
+  // for them when creating the function.
+  llvm_unreachable("Should not get here");
 }
 
 /// Injects the base specifier Base into Class.
@@ -854,11 +831,21 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   }
   AddDeclSubstitution(D, Method);
 
-  // Update the parameters their owning functions.
+  // Bind the parameters to the method.
   FunctionProtoTypeLoc TL = TSI->getTypeLoc().castAs<FunctionProtoTypeLoc>();
   Method->setParams(TL.getParams());
-  for (ParmVarDecl *Parm : Method->parameters())
-    Parm->setOwningFunction(Method);
+
+  // Update the parameters their owning functions and register
+  // substitutions.
+  assert(Method->getNumParams() == D->getNumParams());
+  auto OldParms = D->parameters();
+  auto NewParms = Method->parameters();
+  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+    ParmVarDecl *Old = OldParms[I];
+    ParmVarDecl *New = NewParms[I];
+    New->setOwningFunction(Method);
+    AddDeclSubstitution(Old, New);
+  }
 
   // FIXME: Propagate attributes
 
