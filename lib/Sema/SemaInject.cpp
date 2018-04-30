@@ -2098,16 +2098,23 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,
   ActOnStartConstexprDecl(nullptr, CD);
   SourceLocation Loc;
 
-  // Build the expression $<id>.
-  QualType ThisType = Context.getRecordType(Class);
-  TypeSourceInfo *ThisTypeInfo = Context.getTrivialTypeSourceInfo(ThisType);
-  ExprResult Output = ActOnCXXReflectExpr(IdLoc, ThisTypeInfo);
+  // // Build the expression $<id>.
+  // QualType ThisType = Context.getRecordType(Class);
+  // TypeSourceInfo *ThisTypeInfo = Context.getTrivialTypeSourceInfo(ThisType);
+  // ExprResult Output = ActOnCXXReflectExpr(IdLoc, ThisTypeInfo);
 
-  // Build the call to <gen>($<id>, <ref>)
-  Expr *Args[] {Output.get(), Reflection};
+  // Build the call to <gen>(<ref>)
+  // Expr *Args[] {Output.get(), Reflection};
+  Expr *Args[] {Reflection};
   ExprResult Call = ActOnCallExpr(nullptr, Generator, IdLoc, Args, IdLoc);
+  if (Call.isInvalid()) {
+    ActOnConstexprDeclError(nullptr, CD);
+    Class->setInvalidDecl(true);
+    CompleteDefinition(Class);
+    PopDeclContext();
+  }
+  
   Stmt* Body = new (Context) CompoundStmt(Context, Call.get(), IdLoc, IdLoc);
-
   ActOnFinishConstexprDecl(nullptr, CD, Body);
 
   CompleteDefinition(Class);
