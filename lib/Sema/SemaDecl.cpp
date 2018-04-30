@@ -14145,14 +14145,18 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
 
       // We've just finished parsing the definition of something like this:
       //
-      //    class(M) Proto { ... };
+      //    class(M) C { ... };
       //
-      // And have internally transformed that into something like this. 
+      // And have conceptually transformed that into something like this. 
       //
-      //    namespace __fake__ { class Proto {... } };
-      //    class Class {
-      //      using prototype = __fake__::Proto;
-      //      constexpr { M($Class, $__fake__::Proto); }
+      //    namespace __fake__ { class C {... } };
+      //
+      // Now, we need to build a new version of the class containing a
+      // prototype and its generator.
+      //
+      //    class C {
+      //      using prototype = __fake__::C;
+      //      constexpr { M($prototype); }
       //    };
       //
       // The only remaining step is to build and apply the metaprogram to
@@ -14164,51 +14168,66 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
       // Make sure that the final class available in its declaring scope.
       PushOnScopeChains(Class, CurScope->getParent(), false);
 
+      // Make the new class is the current declaration context for the
+      // purpose of injecting source code.
+      ContextRAII Switch(*this, Class);
+
       // For the purpose of creating the metaprogram and performing
       // the final analysis, the Class needs to be scope's entity, not
       // prototype.
       S->setEntity(Class);
 
+      // Use the name of the class for most source locations.
+      //
+      // FIXME: This isn't a particularly good idea.
+      SourceLocation Loc = Proto->getLocation();
+
+      // Insert 'using prototype = <proto>'.
+      IdentifierInfo *ProtoId = &Context.Idents.get("prototype");
+      QualType ProtoType(Proto->getTypeForDecl(), 0);
+      TypeSourceInfo *ProtoTSI = Context.getTrivialTypeSourceInfo(
+          ProtoType, Loc);
+      Decl *Alias = TypeAliasDecl::Create(
+          Context, Class, Loc, Loc, ProtoId, ProtoTSI);
+      Alias->setImplicit(true);
+      Alias->setAccess(AS_public);
+      Class->addDecl(Alias);
+
       // Add 'constexpr { M($Class, $Proto); }' to the class.
       //
       // FIXME: This is duplicated in SemaInject.
       unsigned ScopeFlags;
-      SourceLocation Loc = Class->getLocation();
       Decl *CD = ActOnConstexprDecl(CurScope, Loc, ScopeFlags);
       CD->setImplicit(true);
       CD->setAccess(AS_public);
       
       ActOnStartConstexprDecl(CurScope, CD);
 
-      // Build the expression $Class.
-      QualType ThisType = Context.getRecordType(Class);
-      TypeSourceInfo *ThisTypeInfo = Context.getTrivialTypeSourceInfo(ThisType);
-      ExprResult Output = ActOnCXXReflectExpr(Loc, ThisTypeInfo);
-
       // Build the expression $prototype (or equivalent).
-      QualType ProtoType = Context.getRecordType(Proto);
-      TypeSourceInfo *ProtoTypeInfo = Context.getTrivialTypeSourceInfo(ProtoType);
-      ExprResult Input = ActOnCXXReflectExpr(Loc, ProtoTypeInfo);
+      ExprResult Input = ActOnCXXReflectExpr(Loc, ProtoTSI);
 
-      // Build the call to <gen>($<id>, <ref>)
-      Expr *Args[] {Output.get(), Input.get()};
+      // Build the call to <gen>(<ref>)
+      Expr *Args[] {Input.get()};
       ExprResult Call = ActOnCallExpr(CurScope, Generator, Loc, Args, Loc);
+      if (Call.isInvalid()) {
+        ActOnConstexprDeclError(nullptr, CD);
+        Class->setInvalidDecl(true);
+      } else {
+        Stmt* Body = new (Context) CompoundStmt(Context, Call.get(), Loc, Loc);
+        ActOnFinishConstexprDecl(CurScope, CD, Body);
 
-      Stmt* Body = new (Context) CompoundStmt(Context, Call.get(), Loc, Loc);
+        // Finally, re-analyze the fields of the fields the class to 
+        // instantiate remaining defaults. This will also complete the 
+        // definition.
+        SmallVector<Decl *, 32> Fields;
+        ActOnFields(S, Class->getLocation(), Class, Fields, 
+                    BraceRange.getBegin(), BraceRange.getEnd(), nullptr);
 
-      // FIXME: How do we process late-parsed declarations here. 
-      ActOnFinishConstexprDecl(CurScope, CD, Body);
+        assert(Class->isCompleteDefinition() && "Generated class not complete");
 
-      // Finally, re-analyze the fields of the fields the class to instantiate
-      // remaining defaults. This will also complete the definition.
-      SmallVector<Decl *, 32> Fields;
-      ActOnFields(S, Class->getLocation(), Class, Fields, 
-                  BraceRange.getBegin(), BraceRange.getEnd(), nullptr);
-
-      assert(Class->isCompleteDefinition() && "Generated class not complete");
-
-      // Replace the closed tag with this class.
-      Tag = Class;
+        // Replace the closed tag with this class.
+        Tag = Class;
+      }
     }
   }
 

@@ -9052,6 +9052,10 @@ def err_capture_non_static : Error<
   "injection captures a non-static member %select{function|variable}0">;
 def err_injecting_local_into_invalid_scope : Error<
   "cannot inject a local variable into %select{namespace|class}0 scope">;
+def err_modify_virtual_constructor : Error<
+  "cannot make a constructor virtual">;
+def err_modify_constexpr_field : Error<
+  "cannot make a non-static data member constexpr">;
 def err_extending_non_reflection : Error<"injectee is not a reflection">;
 def err_extending_declaration : Error<"cannot extend a declaration">;
 def err_extending_rvalue : Error<"rvalue injectee is not extendable">;

@@ -51,6 +51,90 @@ struct InjectedDef
   Decl *Injected;
 };
 
+
+enum AccessModifier { NoAccess, Public, Private, Protected, Default };
+enum StorageModifier { NoStorage, Static, Automatic, ThreadLocal };
+
+/// Modifiers used for cloning definitions. When the values of modifiers are
+/// non-zero they indicate that the property should be specified. Modifiers
+/// can never remove specifiers.
+struct DeclModifiers
+{
+  DeclModifiers()
+    : Access(), Storage(), Constexpr(), Virtual(), Pure()
+  { }
+
+  // This is the traits layout in the library:
+  //
+  //    linkage_kind new_linkage : 2;
+  //    access_kind new_access : 2;
+  //    storage_kind new_storage : 2;
+  //    bool make_constexpr : 1;
+  //    bool make_virtual : 1;
+  //    bool make_pure : 1;
+  DeclModifiers(const APValue& Traits)
+    : Access((AccessModifier)Traits.getStructField(1).getInt().getExtValue()),
+      Storage((StorageModifier)Traits.getStructField(2).getInt().getExtValue()),
+      Constexpr(Traits.getStructField(3).getInt().getExtValue()),
+      Virtual(Traits.getStructField(4).getInt().getExtValue()),
+      Pure(Traits.getStructField(5).getInt().getExtValue())
+  {
+    assert(Storage != Automatic && "Can't make declarations automatic");
+    assert(Storage != ThreadLocal && "Thread local storage not implemented");
+  }
+
+  // Returns true if access is modified.
+  bool modifyAccess() const { return Access != NoAccess; }
+
+  // Returns the modified access specifier.
+  AccessSpecifier getAccess() {
+    switch (Access) {
+    case NoAccess:
+      llvm_unreachable("No access specifier");
+    case Public:
+      return AS_public;
+    case Private:
+      return AS_private;
+    case Protected:
+      return AS_protected;
+    default:
+      // FIXME: What does Default mean?
+      llvm_unreachable("Invalid access specifier");
+    }
+  }
+
+  // Returns true if access is modified.
+  bool modifyStorage() const { return Storage != NoStorage; }
+
+  // Returns the modified storage specifier.
+  StorageClass getStorage() {
+    switch (Access) {
+    case NoStorage:
+      llvm_unreachable("No storage specifier");
+    case Static:
+      return SC_Static;
+    default:
+      // FIXME: We're obviously missing some thing.
+      llvm_unreachable("Invalid storage specifier");
+    }
+  }
+
+  // If true, add the constexpr specifier.
+  bool addConstexpr() { return Constexpr; }
+  
+  // If true, add the virtual specifier.
+  bool addVirtual() { return Virtual; }
+  
+  // If true, add the pure virtual specifier.
+  bool addPureVirtual() { return Pure; }
+  
+  AccessModifier Access;
+  StorageModifier Storage;
+  bool Constexpr;
+  bool Virtual;
+  bool Pure;
+};
+
 class InjectionContext;
 
 /// \brief An injection context. This is declared to establish a set of
@@ -65,7 +149,7 @@ public:
                    DeclContext *Injectee,
                    Decl *Injection)
       : Base(SemaRef), Prev(SemaRef.CurrentInjectionContext), 
-        Fragment(Frag), Injectee(Injectee), Injection(Injection) {
+        Fragment(Frag), Injectee(Injectee), Injection(Injection), Modifiers() {
     getSema().CurrentInjectionContext = this;
   }
   
@@ -74,7 +158,7 @@ public:
                    DeclContext *Injectee, 
                    Decl *Injection)
     : Base(SemaRef), Prev(SemaRef.CurrentInjectionContext), Fragment(), 
-      Injectee(Injectee), Injection(Injection) {
+      Injectee(Injectee), Injection(Injection), Modifiers() {
    getSema().CurrentInjectionContext = this;
   }  
 
@@ -93,6 +177,11 @@ public:
   InjectionContext *Detach() {
     getSema().CurrentInjectionContext = Prev;
     Prev = (InjectionContext *)0x1;
+
+    // Reset the declaration modifiers. They're already been applied and
+    // must not apply to nested declarations in a definition.
+    Modifiers = DeclModifiers();
+    
     return this;
   }
 
@@ -167,6 +256,25 @@ public:
   /// Returns true if D is within an injected fragment or cloned declaration.
   bool IsInInjection(Decl *D);
 
+  /// Sets the declaration modifiers.
+  void setModifiers(const APValue& Traits) { Modifiers = DeclModifiers(Traits); }
+
+  /// Suppresses modifiers for nested declarations.
+  struct SuppressModifiersRAII
+  {
+    SuppressModifiersRAII(InjectionContext &Cxt)
+      : Context(Cxt), Mods(Cxt.Modifiers)
+    {
+      Context.Modifiers = DeclModifiers();
+    }
+    ~SuppressModifiersRAII()
+    {
+      Context.Modifiers = Mods;
+    }
+    InjectionContext &Context;
+    DeclModifiers Mods;
+  };
+
   // TreeTransform Overloads
 
   DeclarationNameInfo TransformDeclarationName(NamedDecl *ND) {
@@ -198,6 +306,7 @@ public:
   Decl *InjectVarDecl(VarDecl *D);
   Decl *InjectParmVarDecl(ParmVarDecl *D);
   Decl *InjectCXXRecordDecl(CXXRecordDecl *D);
+  Decl *InjectStaticDataMemberDecl(FieldDecl *D);
   Decl *InjectFieldDecl(FieldDecl *D);
   Decl *InjectCXXMethodDecl(CXXMethodDecl *D);
   Decl *InjectAccessSpecDecl(AccessSpecDecl *D);
@@ -216,6 +325,10 @@ public:
 
   /// \brief The declaration being Injected.
   Decl *Injection;
+
+  /// \brief Attached to an injection context to modify specifiers
+  /// when cloning a definition.
+  DeclModifiers Modifiers;
 
   /// \brief A mapping of fragment placeholders to their typed compile-time
   /// values. This is used by TreeTransformer to replace references with
@@ -401,7 +514,7 @@ Decl* InjectionContext::InjectEnumDecl(EnumDecl *D) {
       D->getIdentifier(), /*PrevDecl*/nullptr, D->isScoped(), 
       D->isScopedUsingClassTag(), D->isFixed());
   AddDeclSubstitution(D, Enum);
-  
+
   if (D->isFixed()) {
     if (TypeSourceInfo *TSI = D->getIntegerTypeSourceInfo()) {
       // If we have type source information for the underlying type, it means it
@@ -419,7 +532,12 @@ Decl* InjectionContext::InjectEnumDecl(EnumDecl *D) {
     }
   }
 
-  Enum->setAccess(D->getAccess());
+  // Update the access specifier. Note that if the enum's access is modified,
+  // then so is that of its members.
+  if (Modifiers.modifyAccess())
+    Enum->setAccess(Modifiers.getAccess());
+  else
+    Enum->setAccess(D->getAccess());
 
   // Forward the mangling number from the template to the instantiated decl.
   getContext().setManglingNumber(Enum, getContext().getManglingNumber(D));
@@ -474,7 +592,10 @@ Decl* InjectionContext::InjectTypedefNameDecl(TypedefNameDecl *D) {
         D->getIdentifier(), TSI);
   AddDeclSubstitution(D, Typedef);
 
-  Typedef->setAccess(D->getAccess());
+  if (Modifiers.modifyAccess())
+    Typedef->setAccess(Modifiers.getAccess());
+  else
+    Typedef->setAccess(D->getAccess());
   Typedef->setInvalidDecl(Invalid);
   Owner->addDecl(Typedef);
   
@@ -617,7 +738,11 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   Var->setConstexpr(D->isConstexpr());
   Var->setInitCapture(D->isInitCapture());
   Var->setPreviousDeclInSameBlockScope(D->isPreviousDeclInSameBlockScope());
-  Var->setAccess(D->getAccess());
+  
+  if (Modifiers.modifyAccess())
+    Var->setAccess(Modifiers.getAccess());
+  else
+    Var->setAccess(D->getAccess());
 
   if (!D->isStaticDataMember()) {
     if (D->isUsed(false))
@@ -709,6 +834,7 @@ static bool InjectClassDefinition(InjectionContext &Cxt,
                                   CXXRecordDecl *OldClass,
                                   CXXRecordDecl *NewClass) {
   Sema::ContextRAII SwitchContext(Cxt.getSema(), NewClass);
+  InjectionContext::SuppressModifiersRAII SwitchModifiers(Cxt);
   Cxt.getSema().StartDefinition(NewClass);
   InjectBaseSpecifiers(Cxt, OldClass, NewClass);
   InjectClassMembers(Cxt, OldClass, NewClass);
@@ -742,7 +868,10 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
   // FIXME: Inject attributes.
 
   // FIXME: Propagate other properties?
-  Class->setAccess(D->getAccess());
+  if (Modifiers.modifyAccess())
+    Class->setAccess(Modifiers.getAccess());
+  else
+    Class->setAccess(D->getAccess());
   Class->setImplicit(D->isImplicit());
   Class->setInvalidDecl(Invalid);
   Owner->addDecl(Class);
@@ -753,7 +882,36 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
   return Class;
 }
 
+// FIXME: This needs a LOT of work.
+Decl* InjectionContext::InjectStaticDataMemberDecl(FieldDecl *D) {
+  DeclarationNameInfo DNI;
+  TypeSourceInfo *TSI;
+  CXXRecordDecl *Owner;
+  bool Invalid = InjectMemberDeclarator(D, DNI, TSI, Owner);
+  
+  VarDecl *Var = VarDecl::Create(
+      getContext(), Owner, D->getLocation(), DNI, TSI->getType(), 
+      TSI, SC_Static);
+  AddDeclSubstitution(D, Var);
+  
+  Var->setAccess(D->getAccess());
+  Var->setInvalidDecl(Invalid);
+  Owner->addDecl(Var);
+
+  // FIXME: This is almost certainly going to break when it runs.
+  // if (D->hasInClassInitializer())
+  //   InjectedDefinitions.push_back(InjectedDef(D, Var));
+
+  if (D->hasInClassInitializer())
+    llvm_unreachable("Initialization of static members not implemented");
+
+  return Var;
+}
+
 Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
+  if (Modifiers.modifyStorage() && Modifiers.getStorage() == SC_Static)
+    return InjectStaticDataMemberDecl(D);
+
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
   CXXRecordDecl *Owner;
@@ -774,13 +932,22 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   // FIXME: In general, see VisitFieldDecl in the template instantiatior.
   // There are some interesting cases we probably need to handle.
 
+  // Can't make 
+  if (Modifiers.addConstexpr()) {
+    SemaRef.Diag(D->getLocation(), diag::err_modify_constexpr_field);
+    Field->setInvalidDecl(true);
+  }
+
   // Propagate semantic properties.
-  //
-  // FIXME: Inherit access as a semantic attribute or trace it through the
-  // injection as if parsing?
   Field->setImplicit(D->isImplicit());
-  Field->setAccess(D->getAccess());
-  Field->setInvalidDecl(Invalid);
+  if (Modifiers.modifyAccess())
+    Field->setAccess(Modifiers.getAccess());
+  else
+    Field->setAccess(D->getAccess());
+  
+  if (!Field->isInvalidDecl())
+    Field->setInvalidDecl(Invalid);
+  
   Owner->addDecl(Field);
 
   // If the field has an initializer, add it to the Fragment so that we
@@ -856,16 +1023,52 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   // FIXME: Inherit access as a semantic attribute or trace it through the
   // injection as if parsing?
   Method->setImplicit(D->isImplicit());
-  Method->setAccess(D->getAccess());
+  
+  // Update the access specifier.
+  if (Modifiers.modifyAccess())
+    Method->setAccess(Modifiers.getAccess());
+  else
+    Method->setAccess(D->getAccess());
+
+  // Update the constexpr specifier.
+  if (Modifiers.addConstexpr()) {
+    if (isa<CXXDestructorDecl>(Method)) {
+      SemaRef.Diag(D->getLocation(), diag::err_constexpr_dtor);
+      Method->setInvalidDecl(true);
+    }
+    Method->setConstexpr(true);
+  }
+
+  // Request to make function virtual. Note that the original may have
+  // a definition. When the original is defined, we'll ignore the definition.
+  if (Modifiers.addVirtual() || Modifiers.addPureVirtual()) {
+    // FIXME: Actually generate a diagnostic here.
+    if (isa<CXXConstructorDecl>(Method)) {
+      SemaRef.Diag(D->getLocation(), diag::err_modify_virtual_constructor);
+      Method->setInvalidDecl(true);
+    } else {
+      Method->setVirtualAsWritten(true);
+      if (Modifiers.addPureVirtual())
+        SemaRef.CheckPureMethod(Method, Method->getSourceRange());
+    }
+  }
+
+  // FIXME: Should be modifiable?
   Method->setDeletedAsWritten(D->isDeletedAsWritten());
+  
+  // FIXME: Should be modifiable?
   Method->setDefaulted(D->isDefaulted());
-  Method->setInvalidDecl(Invalid);
+  
+  if (!Method->isInvalidDecl())
+    Method->setInvalidDecl(Invalid);
+  
   Owner->addDecl(Method);
 
   // If the method is has a body, add it to the context so that we can 
   // process it later. Note that deleted/defaulted definitions are just
-  // flags processed above.
-  if (D->hasBody())
+  // flags processed above. Ignore the definition if we've marked this
+  // as pure virtual.
+  if (D->hasBody() && !Method->isPure())
     InjectedDefinitions.push_back(InjectedDef(D, Method));
 
   return Method;
@@ -893,7 +1096,6 @@ Decl *InjectionContext::InjectConstexrDecl(ConstexprDecl *D) {
 
   return New;
 }
-
 
 /// \brief Injects a new version of the declaration. Do not use this to
 /// resolve references to declarations; use ResolveDecl instead.
@@ -1631,6 +1833,7 @@ struct TypedValue
 // %select in err_invalid_injection.
 static bool InvalidInjection(Sema& S, SourceLocation POI, int SK, 
                              DeclContext *DC) {
+  llvm_unreachable("oops");
   S.Diag(POI, diag::err_invalid_injection) << SK << DescribeInjectionTarget(DC);
   return false;
 }
@@ -1750,32 +1953,6 @@ bool Sema::InjectFragment(SourceLocation POI,
   return !Injectee->isInvalidDecl();
 }
 
-/// FIXME: Make this part of the injection context?
-static Decl *RewriteAsStaticMemberVariable(InjectionContext &Cxt, FieldDecl *D) {
-  DeclarationNameInfo DNI;
-  TypeSourceInfo *TSI;
-  CXXRecordDecl *Owner;
-  bool Invalid = Cxt.InjectMemberDeclarator(D, DNI, TSI, Owner);
-  
-  VarDecl *Var = VarDecl::Create(
-      Cxt.getContext(), Owner, D->getLocation(), DNI, TSI->getType(), 
-      TSI, SC_Static);
-  Cxt.AddDeclSubstitution(D, Var);
-  
-  Var->setAccess(D->getAccess());
-  Var->setInvalidDecl(Invalid);
-  Owner->addDecl(Var);
-
-  // FIXME: This is almost certainly going to break when it runs.
-  // if (D->hasInClassInitializer())
-  //   Cxt.InjectedDefinitions.push_back(InjectedDef(D, Var));
-
-  if (D->hasInClassInitializer())
-    llvm_unreachable("Initialization of static members not implemented");
-
-  return Var;
-}
-
 /// Clone a declaration into the current context.
 bool Sema::CopyDeclaration(SourceLocation POI, 
                            QualType ReflectionTy, 
@@ -1809,36 +1986,13 @@ bool Sema::CopyDeclaration(SourceLocation POI,
   // the declaration.
   DeclarationName Name(&Context.Idents.get("mods"));
   const APValue &Traits = GetModifications(ReflectionVal, ReflectionTy, Name);
-
-  enum StorageMod { NoStorage, Static, Automatic, ThreadLocal };
-  enum AccessMod { NoAccess, Public, Private, Protected, Default };
-
-  // linkage_kind new_linkage : 2;
-  // access_kind new_access : 2;
-  // storage_kind new_storage : 2;
-  // bool make_constexpr : 1;
-  // bool make_virtual : 1;
-  // bool make_pure : 1;
-  AccessMod Access = (AccessMod)Traits.getStructField(1).getInt().getExtValue();
-  StorageMod Storage = (StorageMod)Traits.getStructField(2).getInt().getExtValue();
-  bool Constexpr = Traits.getStructField(3).getInt().getExtValue();
-  bool Virtual = Traits.getStructField(4).getInt().getExtValue();
-  bool Pure = Traits.getStructField(5).getInt().getExtValue();
-
-  assert(Storage != Automatic && "Can't make declarations automatic");
-  assert(Storage != ThreadLocal && "Thread local storage not implemented");
+  Cxt->setModifiers(Traits);
 
   // llvm::outs() << "BEFORE CLONE\n";
   // Injection->dump();
   // Injectee->dump();
 
-  // Build the declaration. If there was a request to make field static, we'll
-  // need to build a new declaration.
-  Decl* Result;
-  if (isa<FieldDecl>(Injection) && Storage == Static)
-    Result = RewriteAsStaticMemberVariable(*Cxt, cast<FieldDecl>(Injection));
-  else
-    Result = Cxt->InjectDecl(Injection);
+  Decl* Result = Cxt->InjectDecl(Injection);
   if (!Result || Result->isInvalidDecl()) {
     Injectee->setInvalidDecl(true);
     return false;
@@ -1847,80 +2001,6 @@ bool Sema::CopyDeclaration(SourceLocation POI,
   // llvm::outs() << "AFTER CLONING\n";
   // Result->dump();
   // Injectee->dump();
-
-  // Update access specifiers.
-  if (Access) {
-    if (!Result->getDeclContext()->isRecord()) {
-      Diag(POI, diag::err_modifies_mem_spec_of_non_member) << 0;
-      return false;
-    }
-    switch (Access) {
-    case Public:
-      Result->setAccess(AS_public);
-      break;
-    case Private:
-      Result->setAccess(AS_private);
-      break;
-    case Protected:
-      Result->setAccess(AS_protected);
-      break;
-    default:
-      llvm_unreachable("Invalid access specifier");
-    }
-  } else {
-    // FIXME: In some cases (nested classes?) member access specifiers
-    // are not inherited from the fragments. Force this to be public for now.
-    if (isa<CXXRecordDecl>(InjecteeDC)) {
-      if (Result->getAccess() == AS_none)
-        Result->setAccess(AS_public);
-    }
-  }
-
-  if (Constexpr) {
-    if (VarDecl *Var = dyn_cast<VarDecl>(Result)) {
-      Var->setConstexpr(true);
-      CheckVariableDeclarationType(Var);
-    }
-    else if (isa<CXXDestructorDecl>(Result)) {
-      Diag(POI, diag::err_declration_cannot_be_made_constexpr);
-      return false;
-    }
-    else if (FunctionDecl *Fn = dyn_cast<FunctionDecl>(Result)) {
-      Var->setConstexpr(true);
-      CheckConstexprFunctionDecl(Fn);
-    } else {
-      // Non-members cannot be virtual.
-      Diag(POI, diag::err_virtual_non_function);
-      return false;
-    }
-  }
-
-  if (Virtual) {
-    if (!isa<CXXMethodDecl>(Result)) {
-      Diag(POI, diag::err_virtual_non_function);
-      return false;
-    }
-    
-    CXXMethodDecl *Method = cast<CXXMethodDecl>(Result);
-    Method->setVirtualAsWritten(true);
-  
-    if (Pure) {
-      // FIXME: Move pure checks up?
-      int Err = 0;
-      if (Method->isDefaulted()) Err = 2;
-      else if (Method->isDeleted()) Err = 3;
-      else if (Method->isDefined()) Err = 1;
-      if (Err) {
-        Diag(POI, diag::err_cannot_make_pure_virtual) << (Err - 1);
-        return false;
-      }
-      CheckPureMethod(Method, Method->getSourceRange());
-    }
-  }
-
-  // Finally, update the owning context.
-  Result->getDeclContext()->updateDecl(Result);
-
 
   // If we're injecting into a class and have pending definitions, attach
   // those to the class for subsequent analysis. 
@@ -2079,7 +2159,7 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,
   // FIXME: If the reflection (ref) is a fragment DO NOT insert the
   // prototype. A fragment is NOT a type.
 
-  // Insert 'using prototype = typename(ref)'
+  // Insert 'using prototype = typename(ref)'.
   IdentifierInfo *ProtoId = &Context.Idents.get("prototype");
   QualType ProtoTy = BuildReflectedType(IdLoc, Reflection);
   TypeSourceInfo *ProtoTSI = Context.getTrivialTypeSourceInfo(ProtoTy);
@@ -2089,22 +2169,15 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXGeneratedTypeDecl(SourceLocation UsingLoc,
   Alias->setAccess(AS_public);
   Class->addDecl(Alias);
 
-  // Add 'constexpr { <gen>($<id>, <ref>); }' to the class.
+  // Insert 'constexpr { <gen>(<ref>); }'.
   unsigned ScopeFlags;
   Decl *CD = ActOnConstexprDecl(nullptr, UsingLoc, ScopeFlags);
   CD->setImplicit(true);
   CD->setAccess(AS_public);
   
   ActOnStartConstexprDecl(nullptr, CD);
-  SourceLocation Loc;
-
-  // // Build the expression $<id>.
-  // QualType ThisType = Context.getRecordType(Class);
-  // TypeSourceInfo *ThisTypeInfo = Context.getTrivialTypeSourceInfo(ThisType);
-  // ExprResult Output = ActOnCXXReflectExpr(IdLoc, ThisTypeInfo);
 
   // Build the call to <gen>(<ref>)
-  // Expr *Args[] {Output.get(), Reflection};
   Expr *Args[] {Reflection};
   ExprResult Call = ActOnCallExpr(nullptr, Generator, IdLoc, Args, IdLoc);
   if (Call.isInvalid()) {
