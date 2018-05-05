@@ -299,6 +299,8 @@ public:
                               TypeSourceInfo *&TSI, 
                               CXXRecordDecl *&Owner);
 
+  TemplateParameterList *InjectTemplateParms(TemplateParameterList *Old);
+
   Decl *InjectDecl(Decl *D);
   Decl *InjectEnumDecl(EnumDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
@@ -311,6 +313,8 @@ public:
   Decl *InjectCXXMethodDecl(CXXMethodDecl *D);
   Decl *InjectAccessSpecDecl(AccessSpecDecl *D);
   Decl *InjectConstexrDecl(ConstexprDecl *D);
+  Decl *InjectFunctionTemplateDecl(FunctionTemplateDecl *D);
+  Decl *InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D);
 
   // Members
 
@@ -420,9 +424,10 @@ Decl* InjectionContext::TransformDecl(SourceLocation Loc, Decl *D) {
 }
 
 ExprResult InjectionContext::TransformDeclRefExpr(DeclRefExpr *E) {
-  if (Expr *Repl = GetPlaceholderReplacement(E))
-    return Repl;
-  return Base::TransformDeclRefExpr(E);
+  if (Expr *R = GetPlaceholderReplacement(E))
+    return R;
+  else
+    return Base::TransformDeclRefExpr(E);
 }
 
 ValueDecl *InjectionContext::LookupDecl(NestedNameSpecifierLoc NNS,
@@ -1097,6 +1102,80 @@ Decl *InjectionContext::InjectConstexrDecl(ConstexprDecl *D) {
   return New;
 }
 
+TemplateParameterList *
+InjectionContext::InjectTemplateParms(TemplateParameterList *OldParms) {
+  bool Invalid = false;
+  SmallVector<NamedDecl *, 8> NewParms;
+  NewParms.reserve(OldParms->size());
+  for (auto &P : *OldParms) {
+    NamedDecl *D = cast_or_null<NamedDecl>(InjectDecl(P));
+    NewParms.push_back(D);
+    if (!D || D->isInvalidDecl())
+      Invalid = true;
+  }
+
+  // Clean up if we had an error.
+  if (Invalid)
+    return nullptr;
+
+  ExprResult Reqs = TransformExpr(OldParms->getRequiresClause());
+  if (Reqs.isInvalid())
+    return nullptr;
+
+  return TemplateParameterList::Create(
+      getSema().Context, OldParms->getTemplateLoc(), OldParms->getLAngleLoc(), 
+      NewParms, OldParms->getRAngleLoc(), Reqs.get());
+}
+
+Decl* InjectionContext::InjectFunctionTemplateDecl(FunctionTemplateDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  TemplateParameterList *Parms = InjectTemplateParms(D->getTemplateParameters());
+  if (!Parms)
+    return nullptr;
+
+  // Build the underlying pattern.
+  Decl *Pattern = InjectDecl(D->getTemplatedDecl());
+  if (!Pattern)
+    return nullptr;
+  FunctionDecl *Fn = cast<FunctionDecl>(Pattern);
+
+  // Build the enclosing template.
+  FunctionTemplateDecl *Template = FunctionTemplateDecl::Create(
+      getSema().Context, getSema().CurContext, Fn->getLocation(), 
+      Fn->getDeclName(), Parms, Fn);
+  AddDeclSubstitution(D, Template);
+
+  // FIXME: Other attributes to process?
+  Template->setAccess(D->getAccess());
+
+  // FIXME: Do we add both the template and the underlying function to
+  // the context? Not sure...
+  Owner->addDecl(Template);
+
+  return Template;
+}
+
+Decl* InjectionContext::InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
+  TemplateTypeParmDecl *Parm = TemplateTypeParmDecl::Create(
+      getSema().Context, getSema().CurContext, D->getLocStart(), D->getLocation(),
+      D->getDepth(), D->getIndex(), D->getIdentifier(),
+      D->wasDeclaredWithTypename(), D->isParameterPack());
+  AddDeclSubstitution(D, Parm);
+
+  Parm->setAccess(AS_public);
+
+  // Process the default argument.
+  if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited()) {
+    TypeSourceInfo *Default = TransformType(D->getDefaultArgumentInfo());
+    if (Default)
+      Parm->setDefaultArgument(Default);
+    // FIXME: What if this fails.
+  }
+
+  return Parm;
+}
+
 /// \brief Injects a new version of the declaration. Do not use this to
 /// resolve references to declarations; use ResolveDecl instead.
 Decl *InjectionContext::InjectDecl(Decl *D) {
@@ -1133,6 +1212,10 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
     return InjectAccessSpecDecl(cast<AccessSpecDecl>(D));
   case Decl::Constexpr:
     return InjectConstexrDecl(cast<ConstexprDecl>(D));
+  case Decl::FunctionTemplate:
+    return InjectFunctionTemplateDecl(cast<FunctionTemplateDecl>(D));
+  case Decl::TemplateTypeParm:
+    return InjectTemplateTypeParmDecl(cast<TemplateTypeParmDecl>(D));
   default:
     D->dump();
     llvm_unreachable("unknown declaration");

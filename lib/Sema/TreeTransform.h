@@ -3906,7 +3906,7 @@ TreeTransform<Derived>
     llvm::ArrayRef<Expr *> OldArgs = Name.getCXXIdExprArguments();
     SmallVector<Expr *, 4> NewArgs(OldArgs.size());
     for (std::size_t I = 0; I < OldArgs.size(); ++I) {
-      ExprResult E = TransformExpr(OldArgs[I]);
+      ExprResult E = getDerived().TransformExpr(OldArgs[I]);
       if (E.isInvalid())
         return DeclarationNameInfo();
       NewArgs[I] = E.get();

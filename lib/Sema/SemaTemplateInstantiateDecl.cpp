@@ -2229,6 +2229,17 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     Owner->addDecl(Method);
   }
 
+  // For methods defined in fragments, substitute through the body. Note
+  // that this is NOT the same as instantiating the function definition.
+  if (Method->isInFragment() && D->hasBody()) {
+    Sema::ContextRAII Switch(SemaRef, Method);
+    StmtResult Body = SemaRef.SubstStmt(D->getBody(), TemplateArgs);
+    if (Body.isInvalid())
+      Method->setInvalidDecl();
+    else
+      Method->setBody(Body.get());
+  }
+
   return Method;
 }
 
