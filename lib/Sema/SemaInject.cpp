@@ -277,6 +277,11 @@ public:
 
   // TreeTransform Overloads
 
+  ParmVarDecl *TransformFunctionTypeParam(ParmVarDecl *OldParm, 
+                                          int indexAdjustment, 
+                                          Optional<unsigned> NumExpansions, 
+                                          bool ExpectParameterPack);
+
   DeclarationNameInfo TransformDeclarationName(NamedDecl *ND) {
     DeclarationNameInfo DNI(ND->getDeclName(), ND->getLocation());
     return TransformDeclarationNameInfo(DNI);
@@ -382,6 +387,27 @@ bool InjectionContext::IsInInjection(Decl *D) {
   }
   return false;
 }
+
+ParmVarDecl *
+InjectionContext::TransformFunctionTypeParam(ParmVarDecl *OldParm, 
+                                             int IndexAdjustment, 
+                                             Optional<unsigned> NumExpansions,
+                                             bool ExpectParameterPack) {
+  QualType T = OldParm->getType();
+  if (!isa<InjectedParmType>(T))
+    return Base::TransformFunctionTypeParam(
+        OldParm, IndexAdjustment, NumExpansions, ExpectParameterPack);
+
+  const InjectedParmType *ParmTy = cast<InjectedParmType>(T);
+
+  // FIXME: This is going to crash.
+  for (ParmVarDecl *Parm : ParmTy->getParameters())
+    Parm->dump();
+
+  return Base::TransformFunctionTypeParam(
+      OldParm, IndexAdjustment, NumExpansions, ExpectParameterPack);
+}
+
 
 Decl* InjectionContext::TransformDecl(SourceLocation Loc, Decl *D) {
   if (!D)
@@ -2073,7 +2099,6 @@ bool Sema::CopyDeclaration(SourceLocation POI,
 
   // llvm::outs() << "BEFORE CLONE\n";
   // Injection->dump();
-  // Injectee->dump();
 
   Decl* Result = Cxt->InjectDecl(Injection);
   if (!Result || Result->isInvalidDecl()) {
@@ -2083,7 +2108,6 @@ bool Sema::CopyDeclaration(SourceLocation POI,
   
   // llvm::outs() << "AFTER CLONING\n";
   // Result->dump();
-  // Injectee->dump();
 
   // If we're injecting into a class and have pending definitions, attach
   // those to the class for subsequent analysis. 

@@ -1992,6 +1992,13 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
   return Function;
 }
 
+static bool addInstantiatedParametersToScope(Sema &S, FunctionDecl *Function,
+                                             const FunctionDecl *PatternDecl,
+                                             LocalInstantiationScope &Scope,
+                            const MultiLevelTemplateArgumentList &TemplateArgs);
+
+static void InstantiateDefaultCtorDefaultArgs(Sema &S, CXXConstructorDecl *Ctor);
+
 Decl *
 TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
                                       TemplateParameterList *TemplateParams,
@@ -2232,12 +2239,46 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
   // For methods defined in fragments, substitute through the body. Note
   // that this is NOT the same as instantiating the function definition.
   if (Method->isInFragment() && D->hasBody()) {
+    // Fragments are never evaluated. Only during injection would their
+    // bodies be potentially evaluated.
+    EnterExpressionEvaluationContext EvalContext(
+      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);
+
+    // Create a merged instantiation scope.
+    LocalInstantiationScope Scope(SemaRef, true);
+
+    // Perform necessary pre-processing before instantiating the definition.
+    SubstQualifier(D, Method);    
+    SemaRef.ActOnStartOfFunctionDef(nullptr, Method);
+
+    // Switch the context to the method.    
     Sema::ContextRAII Switch(SemaRef, Method);
+
+    // Add parameters to the local instantiation scope.
+    if (addInstantiatedParametersToScope(SemaRef, Method, D, Scope, TemplateArgs)) {
+      Method->setInvalidDecl(true);
+      return Method;
+    }
+
+    // If this is a constructor, instantiate the member initializers.
+    if (CXXConstructorDecl *NewCtor = dyn_cast<CXXConstructorDecl>(Method)) {
+      CXXConstructorDecl *OldCtor = cast<CXXConstructorDecl>(D);
+      SemaRef.InstantiateMemInitializers(NewCtor, OldCtor, TemplateArgs);
+      
+      // If this is an MS ABI dllexport default constructor, instantiate any
+      // default arguments.
+      if (SemaRef.Context.getTargetInfo().getCXXABI().isMicrosoft() &&
+          NewCtor->isDefaultConstructor()) {
+        InstantiateDefaultCtorDefaultArgs(SemaRef, NewCtor);
+      }
+    }
+
     StmtResult Body = SemaRef.SubstStmt(D->getBody(), TemplateArgs);
     if (Body.isInvalid())
       Method->setInvalidDecl();
-    else
-      Method->setBody(Body.get());
+
+    // Perform post-processing checks.
+    SemaRef.ActOnFinishFunctionBody(Method, Body.get(), true);
   }
 
   return Method;
@@ -3662,18 +3703,11 @@ static bool addInstantiatedParametersToScope(Sema &S, FunctionDecl *Function,
   unsigned FParamIdx = 0;
   for (unsigned I = 0, N = PatternDecl->getNumParams(); I != N; ++I) {
     const ParmVarDecl *PatternParam = PatternDecl->getParamDecl(I);
-    if (isa<InjectedParmType>(PatternParam->getType())) {
-      // FIXME: If the injected parameter has a name...
-      //
-      // I think we need to skip the injected parameters in the instantiated
-      // function -- there's not much we can do with them.
-      // llvm::outs() << "HERE\n";
-      continue;
-
-    } 
-
     if (!PatternParam->isParameterPack()) {
       // Simple case: not a parameter pack.
+      //
+      // Note that this also includes injected parameters. These expanded
+      // during injection, and not instantiation.
       assert(FParamIdx < Function->getNumParams());
       ParmVarDecl *FunctionParam = Function->getParamDecl(FParamIdx);
       FunctionParam->setDeclName(PatternParam->getDeclName());

@@ -5193,38 +5193,6 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
                                                           indexAdjustment,
                                                           NumExpansions,
                                                   /*ExpectParameterPack=*/true);
-      } else if (isa<InjectedParmType>(OldParm->getType()) &&
-                 !OldParm->getType()->isDependentType()) {
-        // Injected parameters are handled similarly to packs, except that
-        // they don't produce argument packs; they just expand in place.
-        // This is only done when the parameter is not dependent (i.e., we
-        // can actually find the referenced parameters to inject).
-        const InjectedParmType *IPT = cast<InjectedParmType>(OldParm->getType());
-        for (ParmVarDecl *Old : IPT->getParameters()) {
-          ParmVarDecl *New
-            = getDerived().TransformFunctionTypeParam(Old,
-                                                      indexAdjustment,
-                                                      NumExpansions,
-                                                 /*ExpectParameterPack=*/false);
-          if (!New)
-            return true;
-
-          // Mark the parameter injected. 
-          New->setInjected(true);
-          
-          if (ParamInfos)
-            PInfos.set(OutParamTypes.size(), ParamInfos[i]);
-          OutParamTypes.push_back(New->getType());
-          if (PVars)
-            PVars->push_back(New);
-        }
-        
-        // Decrement the index adjustment so the next parameter has
-        // the same adjustment as the last pushed. (Same reason as above).
-        // --indexAdjustment;
-        indexAdjustment += (IPT->getParameters().size() - 1);
-
-        continue;
       } else {
         NewParm = getDerived().TransformFunctionTypeParam(OldParm, 
                                                           indexAdjustment, 
@@ -5317,22 +5285,6 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
       IsPackExpansion = true;
       Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), -1);
       NewType = getDerived().TransformType(OldType);
-    } 
-    else if (isa<InjectedParmType>(OldType) && !OldType->isDependentType()) {
-      // Handle injected parameters like packs.
-      const InjectedParmType *IPT = cast<InjectedParmType>(OldType);
-      for (ParmVarDecl *Orig : IPT->getParameters()) {
-        QualType New = TransformType(Orig->getType());
-        if (New.isNull())
-          return true;
-        
-        if (ParamInfos)
-          PInfos.set(OutParamTypes.size(), ParamInfos[i]);
-        OutParamTypes.push_back(New);
-        if (PVars)
-          PVars->push_back(nullptr);
-      }
-      continue;
     } else {
       NewType = getDerived().TransformType(OldType);
     }
@@ -5911,7 +5863,7 @@ QualType TreeTransform<Derived>::TransformInjectedParmType(
   ExprResult E = getDerived().TransformExpr(TL.getReflection());
   if (E.isInvalid())
     return QualType();
-  
+
   QualType T = getSema().BuildInjectedParmType(TL.getNameLoc(), E.get());
   if (T.isNull())
     return QualType();

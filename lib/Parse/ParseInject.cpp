@@ -340,7 +340,6 @@ Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
   return Actions.ActOnCXXInjectionDecl(Loc, Reflection.get());
 }
 
-
 /// \brief Parse a generated type declaration.
 ///
 ///   generated-type-declaration:
@@ -412,6 +411,41 @@ Parser::ParseCXXGeneratedTypeDeclaration(SourceLocation UsingLoc)
 
   return DeclGroupPtrTy();
 }
+
+// parameter:
+//      '__inject' '(' constant-expression ')' identifier
+//
+// FIXME: Do I want an ellipsis here? Maybe consider alternative syntax
+// like: 'using identifier = constant-expression'. 
+bool Parser::ParseCXXInjectedParameter(
+                       SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo) {
+  assert(Tok.is(tok::kw___inject) && "Expected __inject");
+  SourceLocation Loc = ConsumeToken();
+  
+  if (ExpectAndConsume(tok::l_paren))
+    return false;
+
+  // The constant expression is unevaluated; we get everything we need
+  // from it's type.
+  EnterExpressionEvaluationContext Unevaluated(
+      Actions, Sema::ExpressionEvaluationContext::Unevaluated);
+  ExprResult Reflection = ParseConstantExpression();
+  if (Reflection.isInvalid())
+    return false;
+
+  if (ExpectAndConsume(tok::r_paren))
+    return false;
+
+  IdentifierInfo *II = nullptr;
+  if (Tok.is(tok::identifier)) {
+    II = Tok.getIdentifierInfo();
+    ConsumeToken();
+  }
+
+  Actions.ActOnCXXInjectedParameter(Loc, Reflection.get(), II, ParamInfo);
+  return true;
+}
+
 
 void Parser::LateClassFragmentParserCallback(void *P,
                                              void *Cxt,

@@ -418,6 +418,9 @@ namespace  {
       if (!T->isSugared())
         dumpTypeAsChild(T->getPattern());
     }
+    void VisitInjectedParmType(const InjectedParmType *T) {
+      dumpStmt(T->getReflection());
+    }
     // FIXME: ElaboratedType, DependentNameType,
     // DependentTemplateSpecializationType, ObjCObjectType
 
