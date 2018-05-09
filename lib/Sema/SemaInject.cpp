@@ -246,9 +246,6 @@ public:
       // the output AST (but we might want it as context later -- makes
       // pretty printing more elegant).
       const TypedValue &TV = Iter->second;
-      llvm::outs() << "REPLACEMENT VAL\n";
-      TV.Value.dump();
-      llvm::outs() << '\n';
       Expr *Opaque = new (getContext()) OpaqueValueExpr(
           E->getLocation(), TV.Type, VK_RValue, OK_Ordinary, E);
       return new (getContext()) CXXConstantExpr(Opaque, TV.Value);
