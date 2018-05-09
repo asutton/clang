@@ -27,6 +27,7 @@ using namespace clang;
 using namespace sema;
 
 namespace clang {
+
 /// \brief A compile-time value along with its type.
 struct TypedValue
 {
@@ -172,6 +173,9 @@ public:
   /// Injection always builds new trees.
   bool AlwaysRebuild() const { return true; }
 
+  /// We are injecting code.
+  bool InjectingCode() const { return true; }
+
   /// Detach the context from the semantics object. Returns this object for
   /// convenience.
   InjectionContext *Detach() {
@@ -242,9 +246,12 @@ public:
       // the output AST (but we might want it as context later -- makes
       // pretty printing more elegant).
       const TypedValue &TV = Iter->second;
-      Expr *O = new (getContext()) OpaqueValueExpr(
+      llvm::outs() << "REPLACEMENT VAL\n";
+      TV.Value.dump();
+      llvm::outs() << '\n';
+      Expr *Opaque = new (getContext()) OpaqueValueExpr(
           E->getLocation(), TV.Type, VK_RValue, OK_Ordinary, E);
-      return new (getContext()) CXXConstantExpr(O, TV.Value);
+      return new (getContext()) CXXConstantExpr(Opaque, TV.Value);
     } else {
       return nullptr;
     }
@@ -276,11 +283,6 @@ public:
   };
 
   // TreeTransform Overloads
-
-  ParmVarDecl *TransformFunctionTypeParam(ParmVarDecl *OldParm, 
-                                          int indexAdjustment, 
-                                          Optional<unsigned> NumExpansions, 
-                                          bool ExpectParameterPack);
 
   DeclarationNameInfo TransformDeclarationName(NamedDecl *ND) {
     DeclarationNameInfo DNI(ND->getDeclName(), ND->getLocation());
@@ -344,11 +346,22 @@ public:
   /// constant expressions.
   llvm::DenseMap<Decl *, TypedValue> PlaceholderSubsts;
 
+  /// \brief A mapping of injected parameters to their corresponding
+  /// expansions.
+  llvm::DenseMap<ParmVarDecl *, SmallVector<ParmVarDecl *, 4>> InjectedParms;
+
   /// \brief A list of declarations whose definitions have not yet been
   /// injected. These are processed when a class receiving injections is
   /// completed.
   llvm::SmallVector<InjectedDef, 8> InjectedDefinitions;
 };
+
+SmallVectorImpl<ParmVarDecl *> *
+Sema::GetInjectedParameterPack(ParmVarDecl *P)
+{
+  assert(CurrentInjectionContext);
+  return &CurrentInjectionContext->InjectedParms[P];
+}
 
 bool InjectionContext::IsInInjection(Decl *D) {
   // If this is actually a fragment, then we can check in the usual way.
@@ -387,27 +400,6 @@ bool InjectionContext::IsInInjection(Decl *D) {
   }
   return false;
 }
-
-ParmVarDecl *
-InjectionContext::TransformFunctionTypeParam(ParmVarDecl *OldParm, 
-                                             int IndexAdjustment, 
-                                             Optional<unsigned> NumExpansions,
-                                             bool ExpectParameterPack) {
-  QualType T = OldParm->getType();
-  if (!isa<InjectedParmType>(T))
-    return Base::TransformFunctionTypeParam(
-        OldParm, IndexAdjustment, NumExpansions, ExpectParameterPack);
-
-  const InjectedParmType *ParmTy = cast<InjectedParmType>(T);
-
-  // FIXME: This is going to crash.
-  for (ParmVarDecl *Parm : ParmTy->getParameters())
-    Parm->dump();
-
-  return Base::TransformFunctionTypeParam(
-      OldParm, IndexAdjustment, NumExpansions, ExpectParameterPack);
-}
-
 
 Decl* InjectionContext::TransformDecl(SourceLocation Loc, Decl *D) {
   if (!D)
@@ -1035,14 +1027,22 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 
   // Update the parameters their owning functions and register
   // substitutions.
-  assert(Method->getNumParams() == D->getNumParams());
-  auto OldParms = D->parameters();
-  auto NewParms = Method->parameters();
-  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
-    ParmVarDecl *Old = OldParms[I];
-    ParmVarDecl *New = NewParms[I];
-    New->setOwningFunction(Method);
-    AddDeclSubstitution(Old, New);
+  //
+  // FIXME: This is wrong... If we're injecting parameters, then these won't
+  // line up. In general, we can match non-injected parameters, but we have
+  // to skip injected parameters. Note that we also don't map the args to
+  // anything -- or do we? Should we cache the list of injected parameters,
+  // associating that with the argument name? YES.
+  // assert(Method->getNumParams() == D->getNumParams());
+  if (Method->getNumParams() == D->getNumParams()) {
+    auto OldParms = D->parameters();
+    auto NewParms = Method->parameters();
+    for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+      ParmVarDecl *Old = OldParms[I];
+      ParmVarDecl *New = NewParms[I];
+      New->setOwningFunction(Method);
+      AddDeclSubstitution(Old, New);
+    }
   }
 
   // FIXME: Propagate attributes

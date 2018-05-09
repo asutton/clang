@@ -7429,6 +7429,9 @@ public:
   /// \brief The current injection context. Defined in SemaInject.cpp.
   InjectionContext *CurrentInjectionContext;
 
+  /// \brief Returns a list of expanded parameters.
+  SmallVectorImpl<ParmVarDecl *>* GetInjectedParameterPack(ParmVarDecl *P);
+
   /// \brief Tracks whether we are in a context where typo correction is
   /// disabled.
   bool DisableTypoCorrection;

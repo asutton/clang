@@ -150,6 +150,12 @@ public:
   /// statement node appears at most once in its containing declaration.
   bool AlwaysRebuild() { return SemaRef.ArgumentPackSubstitutionIndex != -1; }
 
+  /// \brief True when the derived class is an injection context. 
+  ///
+  /// This is hack, but we need to differentiate function type transformation
+  /// so that we don't pre-emptively expand e.g., parameters.
+  bool InjectingCode() const { return false; }
+
   /// \brief Returns the location of the entity being transformed, if that
   /// information was not available elsewhere in the AST.
   ///
@@ -5093,6 +5099,49 @@ ParmVarDecl *TreeTransform<Derived>::TransformFunctionTypeParam(
   return newParm;
 }
 
+// Extract information about injected parameters.
+//
+// FIXME: Actually add diagnostics to this.
+static inline bool 
+GetFunctionParmInfo(Sema &SemaRef, QualType T, FunctionDecl *& Fn, int &Index) {
+  const TemplateSpecializationType *TST = T->getAs<TemplateSpecializationType>();
+  if (!TST)
+    return false;
+
+  // FIXME: We should really check that we have cppx::meta::reflected_tuple
+  // here, but for now, let's just assume that we're right.
+  //
+  // TemplateName TempName = TST->getTemplateName();
+  // TempName.getAsTemplateDecl()->dump();
+
+  if (TST->getNumArgs() != 1)
+    return false;
+  const TemplateArgument &Arg = TST->getArg(0);
+  if (Arg.getKind() != TemplateArgument::Type)
+    return false;
+  QualType ArgTy = Arg.getAsType();
+
+  // FIXME: If the ArgClass is a meta::parameter (or something), then we've
+  // only asked for a single parameter.
+  CXXRecordDecl *ArgClass = ArgTy->getAsCXXRecordDecl();
+  CXXRecordDecl *Parent = dyn_cast<CXXRecordDecl>(ArgClass->getDeclContext());
+  if (!Parent)
+    return false;
+  QualType ParentTy = SemaRef.Context.getTagDeclType(Parent);
+
+  // FIXME: Give a good source location.
+  ReflectedConstruct Ref = SemaRef.EvaluateReflection(ParentTy, SourceLocation());
+  if (!Ref.isDeclaration())
+    return false;
+  Decl *D = Ref.getAsDeclaration();
+  if (!isa<FunctionDecl>(D))
+    return false;
+  Fn = cast<FunctionDecl>(D);
+  Index = -1;
+  return true;
+}
+
+
 template <typename Derived>
 bool TreeTransform<Derived>::TransformFunctionTypeParams(
     SourceLocation Loc, ArrayRef<ParmVarDecl *> Params,
@@ -5193,6 +5242,72 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
                                                           indexAdjustment,
                                                           NumExpansions,
                                                   /*ExpectParameterPack=*/true);
+      } else if (isa<InjectedParmType>(OldParm->getType())) {
+        if (getDerived().InjectingCode()) {
+          const InjectedParmType *ParmTy = 
+              cast<InjectedParmType>(OldParm->getType());
+
+          // NOTE: We don't actually need to evaluate the expression since the
+          // the value is carried in the type of the expression. However, we DO
+          // need to interpret the results as a list of parameters.
+          //
+          // FIXME: If the member the member reference is misspelled, Clang is
+          // somehow missing an opportunity to diagnose a typo expression.
+          ExprResult Ref = getDerived().TransformExpr(ParmTy->getReflection());
+          if (Ref.isInvalid())
+            return true;
+          QualType RefTy = Ref.get()->getType();
+
+          // Unpack information needed to transform parameters.
+          int Index; // -1 means all.
+          FunctionDecl *Fn;
+          if (!GetFunctionParmInfo(getSema(), RefTy, Fn, Index))
+            return true;
+
+          // Make sure that we're actually injecting things.
+          // TODO: We should ensure that the current injection context
+          // is actually the derived class.
+          assert(getSema().CurrentInjectionContext);
+          SmallVectorImpl<ParmVarDecl *> *Pack =
+              getSema().GetInjectedParameterPack(OldParm);
+
+          // Create new parameters for each of the old parameters.
+          for (ParmVarDecl *FnParm : Fn->parameters()) {
+            ParmVarDecl *NewParm
+              = getDerived().TransformFunctionTypeParam(FnParm,
+                                                /*IndexAdjustment=*/0,
+                                                        NumExpansions,
+                                                /*ExpectParameterPack=*/false);
+            if (!NewParm)
+              return true;
+
+            // Overwrite the parameter's position. It's currently being
+            // taken from that of the injected parameter, but we need to make
+            // it relative to the current list of parameters. The depth
+            // is that of the original parameter.
+            unsigned Pos = OutParamTypes.size();
+            NewParm->setScopeInfo(OldParm->getFunctionScopeDepth(), Pos);
+
+            Pack->push_back(NewParm);
+
+            if (ParamInfos)
+              PInfos.set(OutParamTypes.size(), ParamInfos[i]);
+            OutParamTypes.push_back(NewParm->getType());
+            if (PVars)
+              PVars->push_back(NewParm);
+          }
+
+          // Update the index adjustment for subsequent parameters.
+          indexAdjustment += Fn->parameters().size() - 1;
+          
+          continue;
+        }
+
+        // Otherwise, just transform the parameter in the usual way.        
+        NewParm = getDerived().TransformFunctionTypeParam(OldParm, 
+                                                          indexAdjustment, 
+                                                          None,
+                                                 /*ExpectParameterPack=*/false);
       } else {
         NewParm = getDerived().TransformFunctionTypeParam(OldParm, 
                                                           indexAdjustment, 
@@ -5305,8 +5420,13 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
 #ifndef NDEBUG
   if (PVars) {
     for (unsigned i = 0, e = PVars->size(); i != e; ++i)
-      if (ParmVarDecl *parm = (*PVars)[i])
+      if (ParmVarDecl *parm = (*PVars)[i]) {
+        if (parm->getFunctionScopeIndex() != i) {
+          llvm::errs() << "FAIL : " << i << ' ' << parm->getFunctionScopeIndex() << '\n';
+          parm->dump();
+        }
         assert(parm->getFunctionScopeIndex() == i);
+      }
   }
 #endif
 
@@ -5856,6 +5976,7 @@ template<typename Derived>
 QualType TreeTransform<Derived>::TransformInjectedParmType(
                                          TypeLocBuilder &TLB,
                                          InjectedParmTypeLoc TL) {
+
   // Ensure that cleanups are handled properly.
   EnterExpressionEvaluationContext Unevaluated(
       getSema(), Sema::ExpressionEvaluationContext::Unevaluated);
@@ -5869,6 +5990,7 @@ QualType TreeTransform<Derived>::TransformInjectedParmType(
     return QualType();
 
   TLB.pushTypeSpec(T).setNameLoc(TL.getNameLoc());
+
   return T;
 }
 

@@ -767,6 +767,7 @@ Sema::BuildMemberReferenceExpr(Expr *Base, QualType BaseType,
 
   // Explicit member accesses.
   } else {
+
     ExprResult BaseResult = Base;
     ExprResult Result = LookupMemberExpr(
         *this, R, BaseResult, IsArrow, OpLoc, SS,
