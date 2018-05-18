@@ -3542,10 +3542,26 @@ ExprResult TreeTransform<Derived>::TransformInitializer(Expr *Init,
 }
 
 template<typename Derived>
+static SmallVectorImpl<ParmVarDecl *> *
+GetInjectedParms(TreeTransform<Derived> &TT, Expr *E) {
+  if (!TT.getDerived().InjectingCode())
+    return nullptr;
+  DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E);
+  if (!DRE)
+    return nullptr;
+
+  ParmVarDecl *Parm = dyn_cast<ParmVarDecl>(DRE->getDecl());
+  if (!Parm)
+    return nullptr;
+
+  return TT.getSema().FindInjectedParameterPack(Parm);
+}
+
+template<typename Derived>
 bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
                                             unsigned NumInputs,
                                             bool IsCall,
-                                      SmallVectorImpl<Expr *> &Outputs,
+                                            SmallVectorImpl<Expr *> &Outputs,
                                             bool *ArgChanged) {
   for (unsigned I = 0; I != NumInputs; ++I) {
     // If requested, drop call arguments that need to be dropped.
@@ -3572,26 +3588,47 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
       // transformed declarations.
       QualType PatternType = Pattern->getType();
       if (const InjectedParmType *IPT = dyn_cast<InjectedParmType>(PatternType)) {
-        
         // Transform the injected parameter type first. If it's dependent,
         // then we'll return a new pack expansion with an adjusted reference
         // to the (possibly) new parameter. If not, we can simply unpack
         // the parameters, and build references to them.
         QualType PatternType = TransformType(QualType(IPT, 0));
 
-        if (PatternType->isDependentType()) {
-          ExprResult NewPattern = TransformExpr(Pattern);
-          if (NewPattern.isInvalid())
-            return true;
-          Expr *E = new (getSema().Context) PackExpansionExpr(PatternType,
-                                                              NewPattern.get(),
-                                                    Expansion->getEllipsisLoc(),
-                                                           /*NumExpansions=*/0);
-          Outputs.push_back(E);
+        /// If we can find parameters to inject, then do so.
+        if (auto *Injected = GetInjectedParms(*this, Pattern)) {
+          for (ParmVarDecl *P : *Injected) {
+            ParmVarDecl *New = 
+                cast<ParmVarDecl>(getDerived().TransformDecl(P->getLocation(), P));
+            assert(New);
+            ExprResult Ref = getSema().BuildDeclRefExpr(New, New->getType(), 
+                                                        VK_LValue,
+                                                        Pattern->getExprLoc());
+            if (Ref.isInvalid())
+              return false;
+
+            getSema().MarkDeclRefReferenced(cast<DeclRefExpr>(Ref.get()));
+
+            Outputs.push_back(Ref.get());
+          }
+
           *ArgChanged = true;
           return false;
         }
 
+        // If we're not injecting code, then transform this in the usual
+        // way.
+        ExprResult NewPattern = TransformExpr(Pattern);
+        if (NewPattern.isInvalid())
+          return true;
+        Expr *E = new (getSema().Context) PackExpansionExpr(PatternType,
+                                                            NewPattern.get(),
+                                                  Expansion->getEllipsisLoc(),
+                                                         /*NumExpansions=*/0);
+        Outputs.push_back(E);
+        *ArgChanged = true;
+        return false;
+
+        #if 0
         // The pattern is not dependent and holds references to the parameters
         // to which it expanded. Build references to those expressions.
         IPT = PatternType->getAs<InjectedParmType>();
@@ -3602,16 +3639,8 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
           if (!D)
             return false;
           ParmVarDecl *New = cast<ParmVarDecl>(D);
-          ExprResult Ref = getSema().BuildDeclRefExpr(New, New->getType(), 
-                                                      VK_LValue,
-                                                      Pattern->getExprLoc());
-          if (Ref.isInvalid())
-            return false;
-
-          getSema().MarkDeclRefReferenced(cast<DeclRefExpr>(Ref.get()));
-
-          Outputs.push_back(Ref.get());
         }
+        #endif
   
         *ArgChanged = true;
         return false;
@@ -5263,6 +5292,7 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
           FunctionDecl *Fn;
           if (!GetFunctionParmInfo(getSema(), RefTy, Fn, Index))
             return true;
+          assert(Index == -1); // Single parm injection not implemented.
 
           // Make sure that we're actually injecting things.
           // TODO: We should ensure that the current injection context
@@ -5280,6 +5310,10 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
                                                 /*ExpectParameterPack=*/false);
             if (!NewParm)
               return true;
+
+            // Add this to the current substitution. Note that this is 
+            // equivalent to calling InjectionContext::AddDeclSubst().
+            transformedLocalDecl(FnParm, NewParm);
 
             // Overwrite the parameter's position. It's currently being
             // taken from that of the injected parameter, but we need to make
@@ -5303,7 +5337,8 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
           continue;
         }
 
-        // Otherwise, just transform the parameter in the usual way.        
+        // If we're not injecting code, just transform the parameter in the 
+        // usual way.        
         NewParm = getDerived().TransformFunctionTypeParam(OldParm, 
                                                           indexAdjustment, 
                                                           None,

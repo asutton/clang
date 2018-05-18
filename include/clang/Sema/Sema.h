@@ -7432,6 +7432,10 @@ public:
   /// \brief Returns a list of expanded parameters.
   SmallVectorImpl<ParmVarDecl *>* GetInjectedParameterPack(ParmVarDecl *P);
 
+  /// \brief Search for a list of expanded parameters corresponding to P.
+  /// Returns nullptr if no such pack exists.
+  SmallVectorImpl<ParmVarDecl *>* FindInjectedParameterPack(ParmVarDecl *P);
+
   /// \brief Tracks whether we are in a context where typo correction is
   /// disabled.
   bool DisableTypoCorrection;

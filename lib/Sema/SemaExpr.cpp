@@ -13781,8 +13781,6 @@ diagnoseUncapturableValueReference(Sema &S, SourceLocation loc,
     ContextKind = 1;
   }
 
-  llvm::outs() << "ERR\n";
-  var->dump();
   S.Diag(loc, diag::err_reference_to_local_in_enclosing_context)
     << var << ValueKind << ContextKind << VarDC;
   S.Diag(var->getLocation(), diag::note_entity_declared_at)

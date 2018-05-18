@@ -347,6 +347,17 @@ public:
   /// expansions.
   llvm::DenseMap<ParmVarDecl *, SmallVector<ParmVarDecl *, 4>> InjectedParms;
 
+  SmallVectorImpl<ParmVarDecl *> *GetInjectedParameterPack(ParmVarDecl *P) {
+    return &InjectedParms[P];
+  }
+
+  SmallVectorImpl<ParmVarDecl *> *FindInjectedParameterPack(ParmVarDecl *P) {
+    auto Iter = InjectedParms.find(P);
+    if (Iter == InjectedParms.end())
+      return nullptr;
+    return &Iter->second;
+  }
+
   /// \brief A list of declarations whose definitions have not yet been
   /// injected. These are processed when a class receiving injections is
   /// completed.
@@ -357,7 +368,14 @@ SmallVectorImpl<ParmVarDecl *> *
 Sema::GetInjectedParameterPack(ParmVarDecl *P)
 {
   assert(CurrentInjectionContext);
-  return &CurrentInjectionContext->InjectedParms[P];
+  return CurrentInjectionContext->GetInjectedParameterPack(P);
+}
+
+SmallVectorImpl<ParmVarDecl *> *
+Sema::FindInjectedParameterPack(ParmVarDecl *P)
+{
+  assert(CurrentInjectionContext);
+  return CurrentInjectionContext->FindInjectedParameterPack(P);
 }
 
 bool InjectionContext::IsInInjection(Decl *D) {
@@ -1022,25 +1040,31 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   FunctionProtoTypeLoc TL = TSI->getTypeLoc().castAs<FunctionProtoTypeLoc>();
   Method->setParams(TL.getParams());
 
-  // Update the parameters their owning functions and register
-  // substitutions.
-  //
-  // FIXME: This is wrong... If we're injecting parameters, then these won't
-  // line up. In general, we can match non-injected parameters, but we have
-  // to skip injected parameters. Note that we also don't map the args to
-  // anything -- or do we? Should we cache the list of injected parameters,
-  // associating that with the argument name? YES.
-  // assert(Method->getNumParams() == D->getNumParams());
-  if (Method->getNumParams() == D->getNumParams()) {
-    auto OldParms = D->parameters();
-    auto NewParms = Method->parameters();
-    for (unsigned I = 0; I < Method->getNumParams(); ++I) {
-      ParmVarDecl *Old = OldParms[I];
-      ParmVarDecl *New = NewParms[I];
+  // Update the parameters their owning functions and register substitutions
+  // as needed. Note that we automatically register substitutions for injected
+  // parameters.
+  unsigned OldIndex = 0;
+  unsigned NewIndex = 0;
+  auto OldParms = D->parameters();
+  auto NewParms = Method->parameters();
+  while (true) {
+    ParmVarDecl *Old = OldParms[OldIndex++];
+    if (SmallVectorImpl<ParmVarDecl *> *Injected = FindInjectedParameterPack(Old)) {
+      for (unsigned I = 0; I < Injected->size(); ++I) {
+        ParmVarDecl *New = NewParms[NewIndex++];
+        New->setOwningFunction(Method);
+      }
+    } else {
+      ParmVarDecl *New = NewParms[NewIndex++];
       New->setOwningFunction(Method);
       AddDeclSubstitution(Old, New);
     }
+
+    if (OldIndex == OldParms.size() || NewIndex == NewParms.size())
+      break;
   }
+  assert(OldIndex == OldParms.size() && NewIndex == NewParms.size());
+
 
   // FIXME: Propagate attributes
 
