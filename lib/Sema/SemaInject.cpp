@@ -2170,37 +2170,37 @@ bool Sema::ApplyInjection(SourceLocation POI, InjectionInfo &II) {
     return CopyDeclaration(POI, Ty, Val, Injectee, Injection);
 }
 
-// static void
-// PrintDecl(Sema &SemaRef, Decl *D) {
-//   PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
-//   PP.TerseOutput = false;
-//   D->print(llvm::errs(), PP);
-//   llvm::errs() << '\n';
-// }
+static void
+PrintDecl(Sema &SemaRef, Decl *D) {
+  PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
+  PP.TerseOutput = false;
+  D->print(llvm::errs(), PP);
+  llvm::errs() << '\n';
+}
 
-// static void
-// PrintType(Sema &SemaRef, Type *T) {
-//   if (TagDecl *TD = T->getAsTagDecl())
-//     return PrintDecl(SemaRef, TD);
-//   PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
-//   QualType QT(T, 0);
-//   QT.print(llvm::errs(), PP);
-//   llvm::errs() << '\n';
-// }
+static void
+PrintType(Sema &SemaRef, Type *T) {
+  if (TagDecl *TD = T->getAsTagDecl())
+    return PrintDecl(SemaRef, TD);
+  PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
+  QualType QT(T, 0);
+  QT.print(llvm::errs(), PP);
+  llvm::errs() << '\n';
+}
 
 static bool
 ApplyDiagnostic(Sema &SemaRef, SourceLocation Loc, const APValue &Arg) {
   ReflectedConstruct R(Arg.getInt().getExtValue());
   if (Decl *D = R.getAsDeclaration()) {
-    D->dump();
-    // PrintDecl(SemaRef, D);
+    // D->dump();
+    PrintDecl(SemaRef, D);
   }
   else if (Type *T = R.getAsType()) {
-    if (TagDecl *TD = T->getAsTagDecl())
-      TD->dump();
-    else
-      T->dump();
-    // PrintType(SemaRef, T);
+    // if (TagDecl *TD = T->getAsTagDecl())
+    //   TD->dump();
+    // else
+    //   T->dump();
+    PrintType(SemaRef, T);
   }
   else
     llvm_unreachable("printing invalid reflection");
