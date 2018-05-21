@@ -6,17 +6,17 @@
 struct proto {
   int n;
   char c;
-  int f1() { return 1; }
+  int f() { return 1; }
 };
 
-struct final {
+struct final1 {
   constexpr {
     for... (auto x : $proto.member_variables()) {
       x.make_static();
       __generate x;
     }
 
-    __generate $proto::f1;
+    __generate $proto::f;
 
   } // constexpr
 };
@@ -32,11 +32,11 @@ struct final2 {
 
 
 int main() { 
-  compiler.debug($final);
+  compiler.debug($final1);
 
-  final f;
-  (void)final::n;
-  assert(f.f1() == 1);
+  final1 f1;
+  (void)final1::n;
+  assert(f1.f() == 1);
 
   final2<int> f2;
   compiler.debug($final2<int>);

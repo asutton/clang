@@ -1,4 +1,4 @@
-// RUN: %clang -std=c++1z -Xclang -freflection -Xclang -verify %s 
+// RUN: %clang -fsyntax-only -std=c++1z -Xclang -freflection -Xclang -verify %s 
 
 // FIXME: This compiles, but fails to link. Using _cc1 causes this to
 // not find standard headers (we could remove <cassert> from the lib).

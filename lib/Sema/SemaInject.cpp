@@ -109,7 +109,7 @@ struct DeclModifiers
 
   // Returns the modified storage specifier.
   StorageClass getStorage() {
-    switch (Access) {
+    switch (Storage) {
     case NoStorage:
       llvm_unreachable("No storage specifier");
     case Static:
@@ -1047,21 +1047,22 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   unsigned NewIndex = 0;
   auto OldParms = D->parameters();
   auto NewParms = Method->parameters();
-  while (true) {
-    ParmVarDecl *Old = OldParms[OldIndex++];
-    if (SmallVectorImpl<ParmVarDecl *> *Injected = FindInjectedParameterPack(Old)) {
-      for (unsigned I = 0; I < Injected->size(); ++I) {
+  if (OldParms.size() > 0) {
+    do {
+      ParmVarDecl *Old = OldParms[OldIndex++];
+      if (SmallVectorImpl<ParmVarDecl *> *Injected = FindInjectedParameterPack(Old)) {
+        for (unsigned I = 0; I < Injected->size(); ++I) {
+          ParmVarDecl *New = NewParms[NewIndex++];
+          New->setOwningFunction(Method);
+        }
+      } else {
         ParmVarDecl *New = NewParms[NewIndex++];
         New->setOwningFunction(Method);
+        AddDeclSubstitution(Old, New);
       }
-    } else {
-      ParmVarDecl *New = NewParms[NewIndex++];
-      New->setOwningFunction(Method);
-      AddDeclSubstitution(Old, New);
-    }
-
-    if (OldIndex == OldParms.size() || NewIndex == NewParms.size())
-      break;
+    } while (OldIndex < OldParms.size() && NewIndex < NewParms.size());
+  } else {
+    assert(NewParms.size() == 0);
   }
   assert(OldIndex == OldParms.size() && NewIndex == NewParms.size());
 
@@ -1963,7 +1964,6 @@ struct TypedValue
 // %select in err_invalid_injection.
 static bool InvalidInjection(Sema& S, SourceLocation POI, int SK, 
                              DeclContext *DC) {
-  llvm_unreachable("oops");
   S.Diag(POI, diag::err_invalid_injection) << SK << DescribeInjectionTarget(DC);
   return false;
 }
