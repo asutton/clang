@@ -420,12 +420,16 @@ Decl* InjectionContext::TransformDecl(SourceLocation Loc, Decl *D) {
   if (!D)
     return nullptr;
 
+  // If we've EVER seen a replacement, then return that.
+  if (Decl *Repl = GetDeclReplacement(D))
+    return Repl;
+
   // If D is part of the injection, then we must have seen a previous
-  // declaration.
+  // declaration. Otherwise, return nullptr and force a lookup or error.
   //
-  // FIXME: This may not be true with gotos and labels.
+  // FIXME: This may not be valid for gotos and labels.
   if (IsInInjection(D))
-    return GetDeclReplacement(D);
+    return nullptr;
 
   // When copying existing declarations, if D is a member of the of the
   // injection's declaration context, then we want to re-map that so that the
@@ -652,7 +656,6 @@ bool InjectionContext::InjectDeclarator(DeclaratorDecl *D,
   bool Invalid = false;
 
   // Rebuild the name.
-
   DNI = TransformDeclarationName(D);
   if (!DNI.getName())
     Invalid = true;
