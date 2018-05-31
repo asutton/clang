@@ -285,6 +285,13 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
   if (Indent)
     Indentation += Policy.Indentation;
 
+  // Maintain a current access specifier so that we can generate new
+  // access specifiers to represent state changes resulting from source
+  // code injections.
+  AccessSpecifier CurrentAccess = AS_none;
+  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(DC))
+    CurrentAccess = Class->isClass() ? AS_private : AS_public;
+
   SmallVector<Decl*, 2> Decls;
   for (DeclContext::decl_iterator D = DC->decls_begin(), DEnd = DC->decls_end();
        D != DEnd; ++D) {
@@ -348,6 +355,15 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
       Out << ":\n";
       Indentation += Policy.Indentation;
       continue;
+    }
+
+    if (D->getAccess() != CurrentAccess) {
+      CurrentAccess = D->getAccess();
+      Indentation -= Policy.Indentation;
+      this->Indent();
+      Print(CurrentAccess);
+      Out << ":\n";
+      Indentation += Policy.Indentation;
     }
 
     this->Indent();
