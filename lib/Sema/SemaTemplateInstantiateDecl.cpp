@@ -2003,6 +2003,7 @@ Decl *
 TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
                                       TemplateParameterList *TemplateParams,
                                       bool IsClassScopeSpecialization) {
+
   FunctionTemplateDecl *FunctionTemplate = D->getDescribedFunctionTemplate();
   if (FunctionTemplate && !TemplateParams) {
     // We are creating a function template specialization from a function
@@ -3610,24 +3611,6 @@ TemplateDeclInstantiator::SubstFunctionType(FunctionDecl *D,
         ParmVarDecl *OldParam = OldProtoLoc.getParam(OldIdx);
 
         LocalInstantiationScope *Scope = SemaRef.CurrentInstantiationScope;
-
-        // // FIXME: This is a bit of a hack... If the original parameter was
-        // // injected, then we need to add 0 or more parameters into the
-        // // array so that we match the number expected when creating the
-        // // function.
-        // if (isa<InjectedParmType>(OldParam->getType())) {
-        //   llvm::outs() << "HERE?\n";
-        //   while (NewIdx < NewProtoLoc.getNumParams()) {
-        //     ParmVarDecl *NewParam = NewProtoLoc.getParam(NewIdx);
-        //     // FIXME: Why isn't the injected parameter injected?
-        //     if (!NewParam->isInjected() && 
-        //         !isa<InjectedParmType>(NewParam->getType()))
-        //       break;
-        //     Params.push_back(NewParam);
-        //     ++NewIdx;
-        //   }
-        //   continue;
-        // }
 
         Optional<unsigned> NumArgumentsInExpansion;
         if (OldParam->isParameterPack())

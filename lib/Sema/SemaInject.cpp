@@ -1118,7 +1118,10 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   if (!Method->isInvalidDecl())
     Method->setInvalidDecl(Invalid);
   
-  Owner->addDecl(Method);
+  // Don't register the declaration if we're injecting the declaration of
+  // a template-declaration. We'll add the template later.
+  if (!D->getDescribedFunctionTemplate())
+    Owner->addDecl(Method);
 
   // If the method is has a body, add it to the context so that we can 
   // process it later. Note that deleted/defaulted definitions are just
@@ -1198,10 +1201,10 @@ Decl* InjectionContext::InjectFunctionTemplateDecl(FunctionTemplateDecl *D) {
   AddDeclSubstitution(D, Template);
 
   // FIXME: Other attributes to process?
+  Fn->setDescribedFunctionTemplate(Template);
   Template->setAccess(D->getAccess());
 
-  // FIXME: Do we add both the template and the underlying function to
-  // the context? Not sure...
+  // Add the declaration.
   Owner->addDecl(Template);
 
   return Template;

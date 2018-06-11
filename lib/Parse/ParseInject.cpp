@@ -35,8 +35,9 @@ Decl* Parser::ParseCXXFragment(SmallVectorImpl<Expr *> &Captures) {
   // template parameters within the fragment will not be referenced by 
   // template arguments during an instantiation. They will always be outside
   // the depth of a template argument list.
-  TemplateParameterDepthRAII CurTemplateDepthTracker(TemplateParameterDepth);
-  ++CurTemplateDepthTracker;
+  //
+  // TemplateParameterDepthRAII CurTemplateDepthTracker(TemplateParameterDepth);
+  // ++CurTemplateDepthTracker;
 
 
   // Implicitly capture automatic variables as captured constants.
