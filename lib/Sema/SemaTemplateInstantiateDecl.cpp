@@ -796,11 +796,6 @@ Decl *TemplateDeclInstantiator::VisitAccessSpecDecl(AccessSpecDecl *D) {
 Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
   bool Invalid = false;
 
-  DeclarationNameInfo DNI(D->getDeclName(), D->getLocation());
-  DNI = SemaRef.SubstDeclarationNameInfo(DNI, TemplateArgs);
-  if (!DNI.getName())
-    Invalid = true;
-
   TypeSourceInfo *DI = D->getTypeSourceInfo();
   if (DI->getType()->isInstantiationDependentType() ||
       DI->getType()->isVariablyModifiedType())  {
@@ -841,7 +836,7 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
       BitWidth = InstantiatedBitWidth.getAs<Expr>();
   }
 
-  FieldDecl *Field = SemaRef.CheckFieldDecl(DNI.getName(),
+  FieldDecl *Field = SemaRef.CheckFieldDecl(D->getDeclName(),
                                             DI->getType(), DI,
                                             cast<RecordDecl>(Owner),
                                             D->getLocation(),
