@@ -287,6 +287,7 @@ public:
   }
 
   Decl *TransformDecl(SourceLocation Loc, Decl *D);
+  Decl *TransformDefinition(SourceLocation Loc, Decl *D);
   
   ValueDecl *LookupDecl(NestedNameSpecifierLoc NNS, DeclarationNameInfo DNI);
   ValueDecl *LookupMember(NestedNameSpecifierLoc NNS, DeclarationNameInfo DNI);
@@ -459,6 +460,13 @@ Decl* InjectionContext::TransformDecl(SourceLocation Loc, Decl *D) {
 
   return D;
 }
+
+Decl* InjectionContext::TransformDefinition(SourceLocation Loc, Decl *D) {
+  // Rebuild the by injecting it. This will apply substitutions to the type
+  // and initializer of the declaration.
+  return InjectDecl(D);
+}
+
 
 ExprResult InjectionContext::TransformDeclRefExpr(DeclRefExpr *E) {
   if (Expr *R = GetPlaceholderReplacement(E))
@@ -657,8 +665,10 @@ bool InjectionContext::InjectDeclarator(DeclaratorDecl *D,
 
   // Rebuild the name.
   DNI = TransformDeclarationName(D);
-  if (!DNI.getName())
+  if (D->getDeclName().isEmpty() != DNI.getName().isEmpty()) {
+    DNI = DeclarationNameInfo(D->getDeclName(), D->getLocation());
     Invalid = true;
+  }
 
   // Rebuild the type.
   TSI = TransformType(D->getTypeSourceInfo());

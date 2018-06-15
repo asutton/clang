@@ -65,7 +65,7 @@ struct S {
     for... (auto x : $E.members()) {
       __generate struct {
         int idexpr("x", n) = n;
-        int idexpr("y", n) = 42;
+        // int idexpr("y", n) = 42;
       };
       ++n;
     }

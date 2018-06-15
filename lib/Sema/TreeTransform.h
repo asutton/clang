@@ -7181,7 +7181,6 @@ TreeTransform<Derived>::TransformDeclStmt(DeclStmt *S) {
   SmallVector<Decl *, 4> Decls;
   for (auto *D : S->decls()) {
     Decl *Transformed = getDerived().TransformDefinition(D->getLocation(), D);
-
     if (!Transformed)
       return StmtError();
 
