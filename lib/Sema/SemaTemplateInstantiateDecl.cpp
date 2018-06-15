@@ -796,6 +796,15 @@ Decl *TemplateDeclInstantiator::VisitAccessSpecDecl(AccessSpecDecl *D) {
 Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
   bool Invalid = false;
 
+  // Substitute through the template field name. Because the name can be
+  // an idexpr, we need to make sure that that substitute through operands.
+  // This only fails if the name we some how end up with an empty name,
+  // presuming the name was not originally empty.
+  DeclarationNameInfo DNI(D->getDeclName(), D->getLocation());
+  DNI = SemaRef.SubstDeclarationNameInfo(DNI, TemplateArgs);
+  if (D->getDeclName().isEmpty() != DNI.getName().isEmpty())
+    Invalid = true;
+
   TypeSourceInfo *DI = D->getTypeSourceInfo();
   if (DI->getType()->isInstantiationDependentType() ||
       DI->getType()->isVariablyModifiedType())  {
@@ -836,7 +845,7 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
       BitWidth = InstantiatedBitWidth.getAs<Expr>();
   }
 
-  FieldDecl *Field = SemaRef.CheckFieldDecl(D->getDeclName(),
+  FieldDecl *Field = SemaRef.CheckFieldDecl(DNI.getName(),
                                             DI->getType(), DI,
                                             cast<RecordDecl>(Owner),
                                             D->getLocation(),
