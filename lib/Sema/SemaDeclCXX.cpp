@@ -8394,6 +8394,7 @@ Decl *Sema::ActOnStartNamespaceDef(Scope *NamespcScope,
   bool IsInline = InlineLoc.isValid();
   bool IsInvalid = false;
   bool IsStd = false;
+  bool IsFragment = isa<CXXFragmentDecl>(CurContext);
   bool AddToKnown = false;
   Scope *DeclRegionScope = NamespcScope->getParent();
 
@@ -8439,6 +8440,10 @@ Decl *Sema::ActOnStartNamespaceDef(Scope *NamespcScope,
       // We've seen this namespace for the first time.
       AddToKnown = !IsInline;
     }
+  } else if (IsFragment) {
+    // Anonymous namespace fragments
+    // We don't need to do anything extra here, but we don't want to
+    // process this like an anonymous namespace.
   } else {
     // Anonymous namespaces.
     
@@ -8475,6 +8480,8 @@ Decl *Sema::ActOnStartNamespaceDef(Scope *NamespcScope,
   
   if (II) {
     PushOnScopeChains(Namespc, DeclRegionScope);
+  } else if (IsFragment) {
+    // Don't do anything, but don't like this to an anonymous namespace.
   } else {
     // Link the anonymous namespace into its parent.
     DeclContext *Parent = CurContext->getRedeclContext();

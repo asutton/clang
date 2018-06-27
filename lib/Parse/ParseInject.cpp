@@ -31,15 +31,6 @@ using namespace clang;
 ///
 /// FIXME: The parses are a bit more custom than the usual definitions.
 Decl* Parser::ParseCXXFragment(SmallVectorImpl<Expr *> &Captures) {
-  // Add a new depth for template parameters. This ensures that any
-  // template parameters within the fragment will not be referenced by 
-  // template arguments during an instantiation. They will always be outside
-  // the depth of a template argument list.
-  //
-  // TemplateParameterDepthRAII CurTemplateDepthTracker(TemplateParameterDepth);
-  // ++CurTemplateDepthTracker;
-
-
   // Implicitly capture automatic variables as captured constants.
   Actions.ActOnCXXFragmentCapture(Captures);
 
@@ -87,7 +78,9 @@ Decl *Parser::ParseNamespaceFragment(Decl *Fragment) {
   if (Tok.is(tok::identifier)) {
     Id = Tok.getIdentifierInfo();
     IdLoc = ConsumeToken();
-  } else {
+  } 
+  #if 0
+  else {
     // FIXME: This shouldn't be an error. ActOnStartNamespaceDef will 
     // treat a missing identifier as the anonymous namespace, which this
     // is not. An injection into the anonymous namespace must be written
@@ -98,8 +91,12 @@ Decl *Parser::ParseNamespaceFragment(Decl *Fragment) {
     // Just generate a unique name for the namespace. Its guaranteed not 
     // conflict since we're in a nested scope.
     Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
+
+    // Skip the contents of the namespace.
+    SkipUntil(tok::r_brace);
     return nullptr;
   }
+  #endif
 
   BalancedDelimiterTracker T(*this, tok::l_brace);
   if (T.consumeOpen()) {
@@ -129,7 +126,7 @@ Decl *Parser::ParseNamespaceFragment(Decl *Fragment) {
   Actions.ActOnFinishNamespaceDef(Ns, T.getCloseLocation());
   if (Ns->isInvalidDecl())
     return nullptr;
-  
+
   return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Ns);
 }
 

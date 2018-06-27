@@ -1390,9 +1390,16 @@ static void CreatePlaceholders(Sema &SemaRef, CXXFragmentDecl *Frag,
 /// the list of local variables in scope.
 void Sema::ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures) {
   assert(Captures.empty() && "Captures already specified");
-  SmallVector<VarDecl *, 8> Vars;
-  FindCaptures(*this, CurScope, getCurFunctionDecl(), Vars);
-  ReferenceCaptures(*this, Vars, Captures);
+
+  // Only collect captures within a function.
+  //
+  // FIXME: It might be better to use the scope, but the flags don't appear
+  // to be set right within constexpr declarations, etc.
+  if (isa<FunctionDecl>(CurContext)) {
+    SmallVector<VarDecl *, 8> Vars;
+    FindCaptures(*this, CurScope, getCurFunctionDecl(), Vars);
+    ReferenceCaptures(*this, Vars, Captures);
+  }
 }
 
 /// Called at the start of a source code fragment to establish the fragment
@@ -1415,7 +1422,7 @@ Decl *Sema::ActOnFinishCXXFragment(Scope *S, Decl *Fragment, Decl *Content) {
     FD = cast<CXXFragmentDecl>(Fragment);
     FD->setContent(Content);
   }
-  
+
   if (S)
     PopDeclContext();
   
