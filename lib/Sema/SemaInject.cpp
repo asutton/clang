@@ -306,10 +306,13 @@ public:
 
   TemplateParameterList *InjectTemplateParms(TemplateParameterList *Old);
 
+  void UpdateFunctionParms(FunctionDecl *Old, FunctionDecl *New);
+
   Decl *InjectDecl(Decl *D);
   Decl *InjectEnumDecl(EnumDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
   Decl *InjectTypedefNameDecl(TypedefNameDecl *D);
+  Decl *InjectFunctionDecl(FunctionDecl *D);
   Decl *InjectVarDecl(VarDecl *D);
   Decl *InjectParmVarDecl(ParmVarDecl *D);
   Decl *InjectCXXRecordDecl(CXXRecordDecl *D);
@@ -748,6 +751,69 @@ static bool InjectVariableInitializer(InjectionContext &Cxt,
   return New;
 }
 
+void InjectionContext::UpdateFunctionParms(FunctionDecl* Old, 
+                                           FunctionDecl* New) {
+  // Make sure the parameters are actually bound to the function.
+  TypeSourceInfo *TSI = New->getTypeSourceInfo();
+  FunctionProtoTypeLoc TL = TSI->getTypeLoc().castAs<FunctionProtoTypeLoc>();
+  New->setParams(TL.getParams());
+
+  // Update the parameters their owning functions and register substitutions
+  // as needed. Note that we automatically register substitutions for injected
+  // parameters.
+  unsigned OldIndex = 0;
+  unsigned NewIndex = 0;
+  auto OldParms = Old->parameters();
+  auto NewParms = New->parameters();
+  if (OldParms.size() > 0) {
+    do {
+      ParmVarDecl *OldParm = OldParms[OldIndex++];
+      if (auto *Injected = FindInjectedParameterPack(OldParm)) {
+        for (unsigned I = 0; I < Injected->size(); ++I) {
+          ParmVarDecl *NewParm = NewParms[NewIndex++];
+          NewParm->setOwningFunction(New);
+        }
+      } else {
+        ParmVarDecl *NewParm = NewParms[NewIndex++];
+        NewParm->setOwningFunction(New);
+        AddDeclSubstitution(OldParm, NewParm);
+      }
+    } while (OldIndex < OldParms.size() && NewIndex < NewParms.size());
+  } else {
+    assert(NewParms.size() == 0);
+  }
+  assert(OldIndex == OldParms.size() && NewIndex == NewParms.size());
+}
+
+
+Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  DeclarationNameInfo DNI;
+  TypeSourceInfo* TSI;
+  bool Invalid = InjectDeclarator(D, DNI, TSI);
+
+  // FIXME: Check for redeclaration.
+
+
+  FunctionDecl* Fn = FunctionDecl::Create(
+      getContext(), Owner, D->getLocation(), DNI, TSI->getType(), TSI,
+      D->getStorageClass(), D->hasWrittenPrototype(), D->isConstexpr());
+  AddDeclSubstitution(D, Fn);
+
+  UpdateFunctionParms(D, Fn);
+
+  // Set properties.
+  Fn->setInlineSpecified(D->isInlineSpecified());
+  Fn->setInvalidDecl(Invalid);
+
+  Owner->addDecl(Fn);
+
+  // FIXME: Inject the definition now.
+
+  return Fn;
+}
+
 Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   DeclContext *Owner = getSema().CurContext;
   
@@ -1049,35 +1115,37 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   }
   AddDeclSubstitution(D, Method);
 
-  // Bind the parameters to the method.
-  FunctionProtoTypeLoc TL = TSI->getTypeLoc().castAs<FunctionProtoTypeLoc>();
-  Method->setParams(TL.getParams());
+  UpdateFunctionParms(D, Method);
 
-  // Update the parameters their owning functions and register substitutions
-  // as needed. Note that we automatically register substitutions for injected
-  // parameters.
-  unsigned OldIndex = 0;
-  unsigned NewIndex = 0;
-  auto OldParms = D->parameters();
-  auto NewParms = Method->parameters();
-  if (OldParms.size() > 0) {
-    do {
-      ParmVarDecl *Old = OldParms[OldIndex++];
-      if (SmallVectorImpl<ParmVarDecl *> *Injected = FindInjectedParameterPack(Old)) {
-        for (unsigned I = 0; I < Injected->size(); ++I) {
-          ParmVarDecl *New = NewParms[NewIndex++];
-          New->setOwningFunction(Method);
-        }
-      } else {
-        ParmVarDecl *New = NewParms[NewIndex++];
-        New->setOwningFunction(Method);
-        AddDeclSubstitution(Old, New);
-      }
-    } while (OldIndex < OldParms.size() && NewIndex < NewParms.size());
-  } else {
-    assert(NewParms.size() == 0);
-  }
-  assert(OldIndex == OldParms.size() && NewIndex == NewParms.size());
+  // // Bind the parameters to the method.
+  // FunctionProtoTypeLoc TL = TSI->getTypeLoc().castAs<FunctionProtoTypeLoc>();
+  // Method->setParams(TL.getParams());
+
+  // // Update the parameters their owning functions and register substitutions
+  // // as needed. Note that we automatically register substitutions for injected
+  // // parameters.
+  // unsigned OldIndex = 0;
+  // unsigned NewIndex = 0;
+  // auto OldParms = D->parameters();
+  // auto NewParms = Method->parameters();
+  // if (OldParms.size() > 0) {
+  //   do {
+  //     ParmVarDecl *Old = OldParms[OldIndex++];
+  //     if (SmallVectorImpl<ParmVarDecl *> *Injected = FindInjectedParameterPack(Old)) {
+  //       for (unsigned I = 0; I < Injected->size(); ++I) {
+  //         ParmVarDecl *New = NewParms[NewIndex++];
+  //         New->setOwningFunction(Method);
+  //       }
+  //     } else {
+  //       ParmVarDecl *New = NewParms[NewIndex++];
+  //       New->setOwningFunction(Method);
+  //       AddDeclSubstitution(Old, New);
+  //     }
+  //   } while (OldIndex < OldParms.size() && NewIndex < NewParms.size());
+  // } else {
+  //   assert(NewParms.size() == 0);
+  // }
+  // assert(OldIndex == OldParms.size() && NewIndex == NewParms.size());
 
 
   // FIXME: Propagate attributes
@@ -1259,6 +1327,8 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
   case Decl::Typedef:
   case Decl::TypeAlias:
     return InjectTypedefNameDecl(cast<TypedefNameDecl>(D));
+  case Decl::Function:
+    return InjectFunctionDecl(cast<FunctionDecl>(D));
   case Decl::Var:
     return InjectVarDecl(cast<VarDecl>(D));
   case Decl::ParmVar:
