@@ -335,6 +335,18 @@ public:
     return (getFlags() & Scope::FragmentScope);
   }
 
+  /// Returns true if this scope is nested within a fragment.
+  ///
+  /// \todo It would be better to propagate this like other parent scopes,
+  /// it's its a linear cost, and we might test frequently.
+  bool isInFragmentScope() const {
+    for (const Scope *S = this; S; S = S->getParent()) {
+      if (S->getFlags() & FragmentScope)
+        return true;
+    }
+    return false;
+  }
+
   /// isInCXXInlineMethodScope - Return true if this scope is a C++ inline
   /// method scope or is inside one.
   bool isInCXXInlineMethodScope() const {

@@ -132,9 +132,11 @@ Parser::DeclGroupPtrTy Parser::ParseNamespace(unsigned Context,
   if (getCurScope()->isClassScope() || getCurScope()->isTemplateParamScope() || 
       getCurScope()->isInObjcMethodScope() || getCurScope()->getBlockParent() || 
       getCurScope()->getFnParent()) {
-    Diag(T.getOpenLocation(), diag::err_namespace_nonnamespace_scope);
-    SkipUntil(tok::r_brace);
-    return nullptr;
+    if (!getCurScope()->isInFragmentScope()) {
+      Diag(T.getOpenLocation(), diag::err_namespace_nonnamespace_scope);
+      SkipUntil(tok::r_brace);
+      return nullptr;
+    }
   }
 
   if (ExtraIdent.empty()) {
