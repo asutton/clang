@@ -308,6 +308,7 @@ public:
 
   void UpdateFunctionParms(FunctionDecl *Old, FunctionDecl *New);
 
+  Decl* InjectDeclImpl(Decl* D);
   Decl *InjectDecl(Decl *D);
   Decl *InjectEnumDecl(EnumDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
@@ -809,7 +810,18 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
 
   Owner->addDecl(Fn);
 
-  // FIXME: Inject the definition now.
+  // If the function has a body, inject that also. Note that namespace-scope
+  // function definitions are never deferred. Also, function decls never
+  // appear in class scope (we hope), so we shouldn't be doing this too
+  // early.
+  if (Stmt *OldBody = D->getBody()) {
+    Sema::ContextRAII FnCxt (getSema(), Fn);
+    StmtResult NewBody = TransformStmt(OldBody);
+    if (NewBody.isInvalid())
+      Fn->setInvalidDecl();
+    else
+      Fn->setBody(NewBody.get());
+  }
 
   return Fn;
 }
@@ -882,8 +894,8 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
 
   InjectVariableInitializer(*this, D, Var);
 
-  // FIXME: Diagnose un-used declarations here?
-  
+  // FIXME: Diagnose unused declarations here?
+ 
   return Var;
 }
 
@@ -1117,37 +1129,6 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 
   UpdateFunctionParms(D, Method);
 
-  // // Bind the parameters to the method.
-  // FunctionProtoTypeLoc TL = TSI->getTypeLoc().castAs<FunctionProtoTypeLoc>();
-  // Method->setParams(TL.getParams());
-
-  // // Update the parameters their owning functions and register substitutions
-  // // as needed. Note that we automatically register substitutions for injected
-  // // parameters.
-  // unsigned OldIndex = 0;
-  // unsigned NewIndex = 0;
-  // auto OldParms = D->parameters();
-  // auto NewParms = Method->parameters();
-  // if (OldParms.size() > 0) {
-  //   do {
-  //     ParmVarDecl *Old = OldParms[OldIndex++];
-  //     if (SmallVectorImpl<ParmVarDecl *> *Injected = FindInjectedParameterPack(Old)) {
-  //       for (unsigned I = 0; I < Injected->size(); ++I) {
-  //         ParmVarDecl *New = NewParms[NewIndex++];
-  //         New->setOwningFunction(Method);
-  //       }
-  //     } else {
-  //       ParmVarDecl *New = NewParms[NewIndex++];
-  //       New->setOwningFunction(Method);
-  //       AddDeclSubstitution(Old, New);
-  //     }
-  //   } while (OldIndex < OldParms.size() && NewIndex < NewParms.size());
-  // } else {
-  //   assert(NewParms.size() == 0);
-  // }
-  // assert(OldIndex == OldParms.size() && NewIndex == NewParms.size());
-
-
   // FIXME: Propagate attributes
 
   // FIXME: Check for redeclarations
@@ -1308,16 +1289,7 @@ Decl* InjectionContext::InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
   return Parm;
 }
 
-/// \brief Injects a new version of the declaration. Do not use this to
-/// resolve references to declarations; use ResolveDecl instead.
-Decl *InjectionContext::InjectDecl(Decl *D) {
-  assert(!GetDeclReplacement(D) && "Declaration already injected");
-  
-  // If the declaration does not appear in the context, then it need
-  // not be resolved.
-  if (!IsInInjection(D))
-    return D;
-
+Decl *InjectionContext::InjectDeclImpl(Decl *D) {
   // Inject the declaration.
   switch (D->getKind()) {
   case Decl::Enum:
@@ -1351,9 +1323,32 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
   case Decl::TemplateTypeParm:
     return InjectTemplateTypeParmDecl(cast<TemplateTypeParmDecl>(D));
   default:
-    D->dump();
-    llvm_unreachable("unknown declaration");
+    break;
   }
+  D->dump();
+  llvm_unreachable("unknown declaration");
+}
+
+/// \brief Injects a new version of the declaration. Do not use this to
+/// resolve references to declarations; use ResolveDecl instead.
+Decl *InjectionContext::InjectDecl(Decl *D) {
+  assert(!GetDeclReplacement(D) && "Declaration already injected");
+  
+  // If the declaration does not appear in the context, then it need
+  // not be resolved.
+  if (!IsInInjection(D))
+    return D;
+
+  Decl* R = InjectDeclImpl(D);
+  if (!R)
+    return nullptr;
+
+  // If we injected a top-level declaration, notify the AST consumer,
+  // so that it can be processed for code generation.
+  if (isa<TranslationUnitDecl>(R->getDeclContext()))
+    getSema().Consumer.HandleTopLevelDecl(DeclGroupRef(R));
+
+  return R;
 }
 
 } // namespace clang
