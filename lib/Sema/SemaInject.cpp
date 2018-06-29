@@ -308,8 +308,9 @@ public:
 
   void UpdateFunctionParms(FunctionDecl *Old, FunctionDecl *New);
 
-  Decl* InjectDeclImpl(Decl* D);
+  Decl *InjectDeclImpl(Decl* D);
   Decl *InjectDecl(Decl *D);
+  Decl *InjectNamespaceDecl(NamespaceDecl* D);
   Decl *InjectEnumDecl(EnumDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
   Decl *InjectTypedefNameDecl(TypedefNameDecl *D);
@@ -552,6 +553,32 @@ static bool InjectEnumDefinition(InjectionContext &Cxt,
       Enumerators, /*Scope=*/nullptr, /*AttributeList=*/nullptr);
 
   return !NewEnum->isInvalidDecl();
+}
+
+Decl* InjectionContext::InjectNamespaceDecl(NamespaceDecl *D)
+{
+  DeclContext *Owner = getSema().CurContext;
+
+  // Build the namespace.
+  //
+  // FIXME: Search for a previous declaration of the namespace so that they
+  // can be stitched together (i.e., redo lookup).
+  NamespaceDecl *Ns = NamespaceDecl::Create(
+      getContext(), Owner, D->isInline(), D->getLocation(), D->getLocation(),
+      D->getIdentifier(), /*PrevDecl=*/nullptr);
+  AddDeclSubstitution(D, Ns);
+
+  Owner->addDecl(Ns);
+
+  // Inject the namespace members.
+  Sema::ContextRAII NsCxt(getSema(), Ns);
+  for (Decl *OldMember : D->decls()) {
+    Decl *NewMember = InjectDecl(OldMember);
+    if (!NewMember || NewMember->isInvalidDecl())
+      Ns->setInvalidDecl(true);
+  }
+
+  return Ns;
 }
 
 Decl* InjectionContext::InjectEnumDecl(EnumDecl *D) {
@@ -1292,6 +1319,8 @@ Decl* InjectionContext::InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
 Decl *InjectionContext::InjectDeclImpl(Decl *D) {
   // Inject the declaration.
   switch (D->getKind()) {
+  case Decl::Namespace:
+    return InjectNamespaceDecl(cast<NamespaceDecl>(D));
   case Decl::Enum:
     return InjectEnumDecl(cast<EnumDecl>(D));
   case Decl::EnumConstant:
