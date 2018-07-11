@@ -1181,6 +1181,11 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
     Method->setConstexpr(true);
   }
 
+  // Propagate virtual flags.
+  Method->setVirtualAsWritten(D->isVirtualAsWritten());
+  if (D->isPure())
+    SemaRef.CheckPureMethod(Method, Method->getSourceRange());
+
   // Request to make function virtual. Note that the original may have
   // a definition. When the original is defined, we'll ignore the definition.
   if (Modifiers.addVirtual() || Modifiers.addPureVirtual()) {
