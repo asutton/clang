@@ -16,7 +16,7 @@ constexpr void basic_value(T proto) {
   };
 
   for... (auto v : proto.variables()) {
-    if (!v.has_access()) 
+    if (v.has_default_access()) 
       v.make_private();
     __generate v;
   }
@@ -26,8 +26,8 @@ constexpr void basic_value(T proto) {
     meta::compiler.require(!f.is_virtual(), "a value type may not have a virtual function");
     meta::compiler.require(!f.is_destructor() || f.is_public(), "a value destructor must be public");
 
-    // if (!f.has_access())
-    f.make_public();
+    if (f.has_default_access())
+      f.make_public();
   
     __generate f;
   }

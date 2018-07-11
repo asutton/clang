@@ -111,6 +111,7 @@ namespace clang {
     URT_ReflectDeclarationContext,
     URT_ReflectLexicalContext,
     URT_ReflectTraits, ///< Computed properties of declarations.
+    URT_ReflectDefaultAccess, ///< True if an entity has default access.
     URT_ReflectSpecifiers, ///< Written properties of declarations.
     
     URT_ReflectType,

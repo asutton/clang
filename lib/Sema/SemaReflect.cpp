@@ -794,6 +794,8 @@ struct Reflector {
   ExprResult ReflectTraits(Decl *D);
   ExprResult ReflectTraits(Type *T);
 
+  ExprResult ReflectDefaultAccess(Decl *D);
+
   ExprResult ReflectPointer(Decl *D);
   
   // FIXME: Extend this to work for types. For example, the value (type) of 
@@ -923,6 +925,8 @@ ExprResult Reflector::Reflect(ReflectionTrait RT, Decl *D) {
     return ReflectLexicalContext(D);
   case URT_ReflectTraits:
     return ReflectTraits(D);
+  case URT_ReflectDefaultAccess:
+    return ReflectDefaultAccess(D);
   case URT_ReflectPointer:
     return ReflectPointer(D);
   case URT_ReflectValue:
@@ -1494,6 +1498,32 @@ ExprResult Reflector::ReflectTraits(Decl *D) {
   // FIXME: This needs to be at least 32 bits, 0 extended if greater.
   llvm::APSInt N = C.MakeIntValue(Traits, C.UnsignedIntTy);
   return IntegerLiteral::Create(C, N, C.UnsignedIntTy, KWLoc);
+}
+
+ExprResult Reflector::ReflectDefaultAccess(Decl *D)
+{
+  // FIXME: Improve the diagnostic.
+  if (!isa<CXXRecordDecl>(D->getDeclContext()))
+    S.Diag(KWLoc, diag::err_reflection_not_supported);
+
+  ASTContext &C = S.Context;
+
+  // Search for D in the class body. If we find a member access specifier
+  // before D, then the declaration has explicit access. Otherwise, it inherits
+  // its access from the class.
+  //
+  // FIXME: In a loop, this will have quadratic complexity.
+  llvm::APSInt True = C.MakeIntValue(true, C.BoolTy);
+  llvm::APSInt False = C.MakeIntValue(false, C.BoolTy);
+  for (Decl *Member : D->getDeclContext()->decls()) {
+    if (Member == D) {
+      return IntegerLiteral::Create(C, True, C.BoolTy, KWLoc);
+    }
+    if (isa<AccessSpecDecl>(Member)){
+      return IntegerLiteral::Create(C, False, C.BoolTy, KWLoc);
+    }
+  }
+  llvm_unreachable("Member not in class");
 }
 
 ExprResult Reflector::ReflectTraits(Type *T) {

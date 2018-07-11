@@ -204,8 +204,11 @@ struct named : decl<X, K> {
   static constexpr access_kind access() {
     return decl<X, K>::traits().access;
   }
-  static constexpr bool has_access() {
-    return access() != no_access;
+  static constexpr bool has_default_access() {
+    return __reflect_default_access(X);
+  }
+  static constexpr bool has_explicit_access() {
+    return !has_default_access();
   }
   static constexpr bool is_public() {
     return access() == public_access;
