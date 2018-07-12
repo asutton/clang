@@ -14023,6 +14023,8 @@ static void ProcessInjections(Sema &SemaRef, CXXRecordDecl *D) {
     return;
   if (D->isCXXClassMember()) // Not an outermost class
     return;
+  if (!SemaRef.HasPendingInjections(D))
+    return;  
   SemaRef.InjectPendingDefinitions();
 }
 

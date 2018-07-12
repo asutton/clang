@@ -26,15 +26,10 @@ template<typename T>
 constexpr void gen_void_fn(T fn)
 {
   __generate struct {
-    virtual HRESULT idexpr(fn)(__inject(fn.parameters())) {
-      this->m_impl.idexpr(fn)();
+    virtual HRESULT idexpr(fn)(__inject(fn.parameters()) args) {
+      this->m_impl.idexpr(fn)(args...);
       return HRESULT();
     }
-
-    // template<typename... Args>
-    // HRESULT idexpr(fn)(Args&&... args) {
-    //   this->m_impl.idexpr(fn)();
-    // }
   };
 }
 
@@ -43,7 +38,10 @@ constexpr void gen_non_void_fn(T fn)
 {
   auto ret = fn.return_type();
   __generate struct {
-    virtual HRESULT idexpr(fn)(typename(ret)* retval);
+    virtual HRESULT idexpr(fn)(__inject(fn.parameters()) args, typename(ret)* retval) {
+      *retval = this->m_impl.idexpr(fn)(args...);
+      return HRESULT();
+    }
   };
 }
 
@@ -74,9 +72,9 @@ constexpr void rt_class(T proto)
 
 class(rt_class) Circle {
   int data1, data2;
-  int f(int i, int j) { return i+j; }
   int g(double d) { return (int)d; }
   void h() { return; }
+  int f(int i, int j) { return i+j; }
 };
 
 constexpr {
@@ -86,29 +84,8 @@ constexpr {
 int main() { 
   Circle c;
 
-  c.h();
+  // c.h();
 
   // int ret;
   // c.f(&ret);
 }
-
-
-
-  // Add the wrapper functions under a public umbrella.
-  // __extend(out) struct {
-  // public:
-  // };
-  // for... (auto f : in.member_functions()) {
-  //   auto ret = f.return_type();
-  //   if (ret == $void) {
-  //     __extend(out) class {
-  //       virtual HRESULT idexpr(f)(__inject(f.parameters()));
-  //     };
-  //   } 
-  //   else {
-  //     __extend(out) class {
-  //       virtual HRESULT idexpr(f)(__inject(f.parameters()), typename(ret)* retval);
-  //     };
-  //   }
-  // }
-// }

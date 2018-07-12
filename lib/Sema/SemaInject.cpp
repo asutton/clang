@@ -2346,6 +2346,32 @@ bool Sema::ApplyEffects(SourceLocation POI,
   return Ok;
 }
 
+/// Check if there are any pending definitions of member functions for
+/// this class or any of its nested class definitions. We can simply look
+/// at the most recent injection; if it's D or declared inside D, then
+/// the answer is yes. Otherwise the answer is no.
+///
+/// We need to check for this whenever a class is completed during an
+/// injection. We don't want to prematurely inject definitions.
+///
+/// FIXME: It's likely that this wouldn't be necessarily if we integrated
+/// injection contexts into the template instantiation context; they are
+/// somewhat similar.
+bool Sema::HasPendingInjections(DeclContext *D) {
+  if (PendingClassMemberInjections.empty())
+    return false;
+  InjectionContext *Cxt = PendingClassMemberInjections.back();
+  assert(!Cxt->InjectedDefinitions.empty() && "bad injection queue");
+  InjectedDef& Def = Cxt->InjectedDefinitions.front();
+  DeclContext *DC = Def.Injected->getDeclContext();
+  while (!DC->isFileContext()) {
+    if (DC == D)
+      return true;
+    DC = DC->getParent();
+  }
+  return false;
+}
+
 void Sema::InjectPendingDefinitions() {
   while (!PendingClassMemberInjections.empty()) {
     InjectionContext *Cxt = PendingClassMemberInjections.back();
@@ -2356,7 +2382,7 @@ void Sema::InjectPendingDefinitions() {
 
 void Sema::InjectPendingDefinitions(InjectionContext *Cxt) {
   Cxt->Attach();
-  for (InjectedDef Def : Cxt->InjectedDefinitions)
+  for (InjectedDef& Def : Cxt->InjectedDefinitions)
     InjectPendingDefinition(Cxt, Def.Fragment, Def.Injected);
   delete Cxt;
 }
@@ -2364,7 +2390,9 @@ void Sema::InjectPendingDefinitions(InjectionContext *Cxt) {
 void Sema::InjectPendingDefinition(InjectionContext *Cxt, 
                                    Decl *Frag, 
                                    Decl *New) {
-  ContextRAII ClassCxt (*this, Frag->getDeclContext());
+  // Switch to the class enclosing the newly injected declaration.
+  ContextRAII ClassCxt (*this, New->getDeclContext());
+  
   if (FieldDecl *OldField = dyn_cast<FieldDecl>(Frag)) {
     FieldDecl *NewField = cast<FieldDecl>(New);
     ExprResult Init = Cxt->TransformExpr(OldField->getInClassInitializer());

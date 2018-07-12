@@ -8536,6 +8536,7 @@ public:
                        const APValue &ReflectionVal, 
                        Decl *Injectee, 
                        Decl *Injection);
+  bool HasPendingInjections(DeclContext *D);
   void InjectPendingDefinitions();
   void InjectPendingDefinitions(InjectionContext *Cxt);
   void InjectPendingDefinition(InjectionContext *Cxt, Decl *Frag, Decl *New);
