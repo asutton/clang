@@ -1871,7 +1871,7 @@ public:
   LifetimeReporter(Sema &S) : S(S) {}
 
   void warnPsetOfGlobal(SourceLocation Loc, StringRef VariableName,
-                         std::string ActualPset) const final {
+                        std::string ActualPset) const final {
     S.Diag(Loc, diag::warn_pset_of_global) << VariableName << ActualPset;
   }
 
