@@ -1863,12 +1863,12 @@ public:
 } // namespace clang
 
 namespace clang {
-namespace {
-class LifetimeReporter : public LifetimeReporterBase {
+namespace lifetime {
+class Reporter : public LifetimeReporterBase {
   Sema &S;
 
 public:
-  LifetimeReporter(Sema &S) : S(S) {}
+  Reporter(Sema &S) : S(S) {}
 
   void warnPsetOfGlobal(SourceLocation Loc, StringRef VariableName,
                         std::string ActualPset) const final {
@@ -1887,9 +1887,8 @@ public:
     S.Diag(LocParam1, diag::warn_parameter_alias) << Pointee;
     S.Diag(LocParam2, diag::note_here);
   }
-  void warnParameterDangling(SourceLocation Loc,
-                                     bool indirectly) const final {
-    S.Diag(Loc, diag::warn_parameter_dangling) << indirectly ;
+  void warnParameterDangling(SourceLocation Loc, bool indirectly) const final {
+    S.Diag(Loc, diag::warn_parameter_dangling) << indirectly;
   }
   void notePointeeLeftScope(SourceLocation Loc, std::string Name) const final {
     S.Diag(Loc, diag::note_pointee_left_scope) << Name;
@@ -1909,7 +1908,7 @@ public:
     S.Diag(Loc, DiagID);
   }
 };
-} // namespace
+} // namespace lifetime
 } // namespace clang
 
 //===----------------------------------------------------------------------===//
@@ -2138,11 +2137,11 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
 
   // Check for lifetime safety violations
   if (P.enableLifetimeAnalysis) {
-    LifetimeReporter Reporter{S};
+    lifetime::Reporter Reporter{S};
     if (const auto *FD = dyn_cast<FunctionDecl>(D)) {
-      runLifetimeAnalysis(FD, S.Context, S.SourceMgr, Reporter);
+      lifetime::runAnalysis(FD, S.Context, S.SourceMgr, Reporter);
     } else if (const auto *VD = dyn_cast<VarDecl>(D)) {
-      runLifetimeAnalysis(VD, S.Context, Reporter);
+      lifetime::runAnalysis(VD, S.Context, Reporter);
     }
   }
 
