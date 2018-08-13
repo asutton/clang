@@ -2532,6 +2532,9 @@ static QualType UnwrapTypeForDebugInfo(QualType T, const ASTContext &C) {
       // Decayed and adjusted types use the adjusted type in LLVM and DWARF.
       T = cast<AdjustedType>(T)->getAdjustedType();
       break;
+    case Type::Reflected:
+      T = cast<ReflectedType>(T)->getUnderlyingType();
+      break;
     }
 
     assert(T != LastT && "Type unwrapping failed to unwrap!");
