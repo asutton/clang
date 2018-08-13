@@ -2259,12 +2259,6 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     // Switch the context to the method.    
     Sema::ContextRAII Switch(SemaRef, Method);
 
-    // Add parameters to the local instantiation scope.
-    // if (addInstantiatedParametersToScope(SemaRef, Method, D, Scope, TemplateArgs)) {
-    //   Method->setInvalidDecl(true);
-    //   return Method;
-    // }
-
     // If this is a constructor, instantiate the member initializers.
     if (CXXConstructorDecl *NewCtor = dyn_cast<CXXConstructorDecl>(Method)) {
       CXXConstructorDecl *OldCtor = cast<CXXConstructorDecl>(D);

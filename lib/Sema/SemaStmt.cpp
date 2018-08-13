@@ -3646,11 +3646,16 @@ bool Sema::DeduceFunctionTypeFromReturnExpr(FunctionDecl *FD,
     return true;
   }
 
-  if (FD->isDependentContext()) {
+  if (FD->isDependentContext() && !FD->isInFragment()) {
+    // Except when we're deducing from within a fragment...
+    //
     // C++1y [dcl.spec.auto]p12:
     //   Return type deduction [...] occurs when the definition is
     //   instantiated even if the function body contains a return
     //   statement with a non-type-dependent operand.
+    //
+    // In the case of being in a fragment, we should allow deduction
+    // to proceed as usual.
     assert(AT->isDeduced() && "should have deduced to dependent type");
     return false;
   } 
