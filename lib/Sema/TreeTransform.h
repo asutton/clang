@@ -3568,7 +3568,6 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
     if (IsCall && getDerived().DropCallArgument(Inputs[I])) {
       if (ArgChanged)
         *ArgChanged = true;
-
       break;
     }
 
@@ -3612,11 +3611,10 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
           }
 
           *ArgChanged = true;
-          return false;
+          continue;
         }
 
-        // If we're not injecting code, then transform this in the usual
-        // way.
+        // If we're not injecting code, then transform this in the usual way.
         ExprResult NewPattern = TransformExpr(Pattern);
         if (NewPattern.isInvalid())
           return true;
@@ -3626,24 +3624,7 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
                                                          /*NumExpansions=*/0);
         Outputs.push_back(E);
         *ArgChanged = true;
-        return false;
-
-        #if 0
-        // The pattern is not dependent and holds references to the parameters
-        // to which it expanded. Build references to those expressions.
-        IPT = PatternType->getAs<InjectedParmType>();
-        ArrayRef<ParmVarDecl *> Parms = IPT->getParameters();
-
-        for (ParmVarDecl *Old : Parms) {
-          Decl *D = getDerived().TransformDecl(Old->getLocation(), Old);
-          if (!D)
-            return false;
-          ParmVarDecl *New = cast<ParmVarDecl>(D);
-        }
-        #endif
-  
-        *ArgChanged = true;
-        return false;
+        continue;
       }
 
       SmallVector<UnexpandedParameterPack, 2> Unexpanded;

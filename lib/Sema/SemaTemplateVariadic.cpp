@@ -516,6 +516,12 @@ ExprResult Sema::CheckPackExpansion(Expr *Pattern, SourceLocation EllipsisLoc,
   if (!Pattern)
     return ExprError();
 
+  // If we're expanding something with an injected parameter type, preserve
+  // that in the pack; these get handled a bit differently.
+  QualType Ty = Context.DependentTy;
+  if (isa<InjectedParmType>(Pattern->getType()))
+    Ty = Pattern->getType();
+
   // C++0x [temp.variadic]p5:
   //   The pattern of a pack expansion shall name one or more
   //   parameter packs that are not expanded by a nested pack
@@ -528,7 +534,7 @@ ExprResult Sema::CheckPackExpansion(Expr *Pattern, SourceLocation EllipsisLoc,
   
   // Create the pack expansion expression and source-location information.
   return new (Context)
-    PackExpansionExpr(Context.DependentTy, Pattern, EllipsisLoc, NumExpansions);
+    PackExpansionExpr(Ty, Pattern, EllipsisLoc, NumExpansions);
 }
 
 /// \brief Retrieve the depth and index of a parameter pack.
