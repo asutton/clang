@@ -757,6 +757,7 @@ public:
     bool AddStaticInitBranches;
     bool AddCXXNewAllocator;
     bool AddCXXDefaultInitExprInCtors;
+    bool AddExprWithCleanups;
 
     bool alwaysAdd(const Stmt *stmt) const {
       return alwaysAddMask[stmt->getStmtClass()];
@@ -777,7 +778,7 @@ public:
         PruneTriviallyFalseEdges(true), AddEHEdges(false),
         AddInitializers(false), AddImplicitDtors(false),
         AddTemporaryDtors(false), AddStaticInitBranches(false),
-        AddCXXNewAllocator(false), AddCXXDefaultInitExprInCtors(false) {}
+        AddCXXNewAllocator(false), AddCXXDefaultInitExprInCtors(false), AddExprWithCleanups(false) {}
   };
 
   /// buildCFG - Builds a CFG from an AST.
