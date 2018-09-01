@@ -2380,19 +2380,19 @@ def TypeTagForDatatype : InheritableAttr {
   let Documentation = [TypeTagForDatatypeDocs];
 }
 
-def Owner : DeclOrTypeAttr {
+def Owner : InheritableAttr {
   let Spellings = [CXX11<"gsl", "Owner">];
   let Documentation = [Undocumented]; // FIXME
 }
 
-def Pointer : DeclOrTypeAttr {
+def Pointer : InheritableAttr {
   let Spellings = [CXX11<"gsl", "Pointer">];
   let Documentation = [Undocumented]; // FIXME
 }
 
 def Lifetimeconst : InheritableParamAttr {
   let Spellings = [CXX11<"gsl", "lifetimeconst">];
-  let Subjects = SubjectList<[CXXMethod, ParmVar]>;
+  let Subjects = SubjectList<[ParmVar, Function]>;
   let Documentation = [Undocumented]; // FIXME
 }
 

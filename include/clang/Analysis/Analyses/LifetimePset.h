@@ -12,6 +12,7 @@
 
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/ExprCXX.h"
+#include "llvm/ADT/StringExtras.h"
 #include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
 #include <map>
 #include <sstream>

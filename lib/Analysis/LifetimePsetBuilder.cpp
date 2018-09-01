@@ -217,7 +217,7 @@ public:
   }
 
   void VisitInitListExpr(const InitListExpr *I) {
-    if (I->isSyntacticForm())
+    if (I->getSemanticForm())
       I = I->getSemanticForm();
 
     if (I->getType()->isPointerType()) {
@@ -1013,11 +1013,6 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
     case CFGElement::MemberDtor:
     case CFGElement::TemporaryDtor:
     case CFGElement::Initializer:
-    case CFGElement::ScopeBegin:
-    case CFGElement::ScopeEnd:
-    case CFGElement::LoopExit:
-    case CFGElement::Constructor: // TODO
-    case CFGElement::CXXRecordTypedCall:
       break;
     }
   }

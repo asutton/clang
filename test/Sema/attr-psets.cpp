@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wlifetime -Wlifetime-debug -verify %s
+// RUN: %clang_cc1 -std=c++1z -fcxx-exceptions -fsyntax-only -Wlifetime -Wlifetime-debug -verify %s
 
 // TODO:
 // lifetime annotations

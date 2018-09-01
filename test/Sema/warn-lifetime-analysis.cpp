@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -Wlifetime %s
+// RUN: %clang_cc1 -std=c++1z -fsyntax-only -verify -Wlifetime %s
 namespace std {
 using size_t = decltype(sizeof(int));
 

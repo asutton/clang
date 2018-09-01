@@ -10,6 +10,7 @@
 #include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
+#include <set>
 
 namespace clang {
 namespace lifetime {
@@ -95,14 +96,14 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
   } else
     Decl = T->getAsCXXRecordDecl();
   if (!Decl || !Decl->isInStdNamespace() || !Decl->getIdentifier())
-    return {};
+    return None;
 
   if (StdOwners.count(Decl->getName()))
     return TypeCategory::Owner;
   if (StdPointers.count(Decl->getName()))
     return TypeCategory::Pointer;
 
-  return {};
+  return None;
 }
 
 TypeCategory classifyTypeCategory(QualType QT) {
@@ -191,7 +192,7 @@ bool isNullableType(QualType QT) {
       return true;
     if (Name == "not_null")
       return false;
-    return {};
+    return None;
   };
   QualType Inner = QT;
   if (const auto *TemplSpec = Inner->getAs<TemplateSpecializationType>()) {
