@@ -59,13 +59,9 @@ struct Variable {
 
   bool isBaseEqual(const Variable &O) const { return Var == O.Var; }
 
-  bool hasGlobalStorage() const {
+  bool hasStaticLifetime() const {
     if (const auto *VD = Var.dyn_cast<const VarDecl *>())
       return VD->hasGlobalStorage();
-    return false;
-  }
-
-  bool isMemberVariableOfEnclosingClass() const {
     return isThisPointer() && !FDs.empty();
   }
 
@@ -106,9 +102,7 @@ struct Variable {
 
   // Is the pset of this Variable allowed to contain null?
   bool mightBeNull() const {
-    if (isThisPointer())
-      return false;
-    return isNullableType(getType());
+    return !isThisPointer() && isNullableType(getType());
   }
 
   const VarDecl *asVarDecl() const { return Var.dyn_cast<const VarDecl *>(); }
@@ -398,7 +392,7 @@ public:
   }
 
   void insert(Variable Var, unsigned Order = 0) {
-    if (Var.hasGlobalStorage()) {
+    if (Var.hasStaticLifetime()) {
       ContainsStatic = true;
       return;
     }
@@ -455,7 +449,7 @@ public:
   static PSet singleton(Variable Var, bool Nullable = false,
                         unsigned order = 0) {
     PSet ret;
-    if (Var.hasGlobalStorage())
+    if (Var.hasStaticLifetime())
       ret.ContainsStatic = true;
     else
       ret.Vars.emplace(Var, order);
