@@ -11,8 +11,8 @@
 #define LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIME_H
 
 #include "clang/Basic/SourceLocation.h"
-#include "llvm/ADT/STLExtras.h"
 #include <string>
+#include "llvm/ADT/STLExtras.h"
 
 namespace clang {
 class FunctionDecl;
