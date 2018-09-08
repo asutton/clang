@@ -74,13 +74,6 @@ namespace {
       if (E->getDecl()->isParameterPack())
         Unexpanded.push_back(std::make_pair(E->getDecl(), E->getLocation()));
 
-      #if 0
-      // A reference to variable with injected parameter type is a kind of
-      // unexpanded parameter pack.
-      if (isa<InjectedParmType>(E->getType()))
-        Unexpanded.push_back(std::make_pair(E->getDecl(), E->getLocation()));
-      #endif
-      
       return true;
     }
     

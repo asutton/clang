@@ -3229,6 +3229,11 @@ FunctionDecl *FunctionDecl::getTemplateInstantiationPattern() const {
     return nullptr;
   }
 
+  // A function template within a fragment is explicitly associated with
+  // its prior definition or instantiation.
+  if (InjectedTemplatePattern)
+    return InjectedTemplatePattern;
+
   // If this is a generic lambda call operator specialization, its 
   // instantiation pattern is always its primary template's pattern
   // even if its primary template was instantiated from another 

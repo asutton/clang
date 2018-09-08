@@ -1687,6 +1687,14 @@ private:
   /// declaration name embedded in the DeclaratorDecl base class.
   DeclarationNameLoc DNLoc;
 
+  /// \brief The pattern of a function template being injected. This is
+  /// needed to find the template instantiation pattern when instantiating
+  /// function template definitions in fragments.
+  ///
+  /// \todo This is a hack. It would be ideal if we could embed this
+  /// in the union above.
+  FunctionDecl *InjectedTemplatePattern;
+
   /// \brief Specify that this function declaration is actually a function
   /// template specialization.
   ///
@@ -1740,7 +1748,8 @@ protected:
         IsLateTemplateParsed(false), IsConstexpr(isConstexprSpecified),
         UsesSEHTry(false), HasSkippedBody(false), WillHaveBody(false),
         IsMetaprogram(false), EndRangeLoc(NameInfo.getEndLoc()), 
-        TemplateOrSpecialization(), DNLoc(NameInfo.getInfo()) {}
+        TemplateOrSpecialization(), DNLoc(NameInfo.getInfo()), 
+        InjectedTemplatePattern() {}
 
   typedef Redeclarable<FunctionDecl> redeclarable_base;
   FunctionDecl *getNextRedeclarationImpl() override {
@@ -2302,6 +2311,19 @@ public:
   /// represents.
   void setTemplateSpecializationKind(TemplateSpecializationKind TSK,
                         SourceLocation PointOfInstantiation = SourceLocation());
+
+  /// \brief Set the injected template pattern.
+  void setInjectedTemplatePattern(FunctionDecl *D) {
+    assert(!InjectedTemplatePattern && "already set");
+    assert(isInFragment() && "not a fragment member");
+    assert(getDescribedFunctionTemplate() && "not a template");
+    InjectedTemplatePattern = D;
+  }
+
+  /// \brief Returns the injected template pattern or null.
+  FunctionDecl *getInjectedTemplatePattern() const {
+    return InjectedTemplatePattern;
+  }
 
   /// \brief Retrieve the (first) point of instantiation of a function template
   /// specialization or a member of a class template specialization.
