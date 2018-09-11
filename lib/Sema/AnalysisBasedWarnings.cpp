@@ -26,6 +26,7 @@
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Analysis/Analyses/CFGReachabilityAnalysis.h"
 #include "clang/Analysis/Analyses/Consumed.h"
+#include "clang/Analysis/Analyses/Lifetime.h"
 #include "clang/Analysis/Analyses/ReachableCode.h"
 #include "clang/Analysis/Analyses/ThreadSafety.h"
 #include "clang/Analysis/Analyses/UninitializedValues.h"
@@ -35,6 +36,7 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Sema/Overload.h"
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaInternal.h"
 #include "llvm/ADT/BitVector.h"
@@ -1861,6 +1863,108 @@ public:
 } // namespace consumed
 } // namespace clang
 
+namespace clang {
+namespace lifetime {
+class Reporter : public LifetimeReporterBase {
+  Sema &S;
+  std::set<SourceLocation> WarningLocs;
+  bool IgnoreCurrentWarning = false;
+  
+  bool enableIfNew(SourceLocation Loc) {
+    auto I = WarningLocs.insert(Loc);
+    IgnoreCurrentWarning = !I.second;
+    return !IgnoreCurrentWarning;
+  }
+
+public:
+  Reporter(Sema &S) : S(S) {}
+
+  void warnPsetOfGlobal(SourceLocation Loc, StringRef VariableName,
+                        std::string ActualPset) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_pset_of_global) << VariableName << ActualPset;
+  }
+
+  void warnDerefDangling(SourceLocation Loc, bool possibly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_deref_dangling) << possibly;
+  }
+  void warnDerefNull(SourceLocation Loc, bool possibly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_deref_nullptr) << possibly;
+  }
+  void warnParametersAlias(SourceLocation LocParam1, SourceLocation LocParam2,
+                           const std::string &Pointee) final {
+    if(enableIfNew(LocParam1)) {
+      S.Diag(LocParam1, diag::warn_parameter_alias) << Pointee;
+      S.Diag(LocParam2, diag::note_here);
+    }
+  }
+  void warnParameterDangling(SourceLocation Loc, bool indirectly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_parameter_dangling) << indirectly;
+  }
+  void warnParameterNull(SourceLocation Loc, bool possibly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_parameter_null) << possibly;
+  }
+  void warnReturnDangling(SourceLocation Loc, bool possibly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_return_dangling) << possibly;
+  }
+  void warnReturnNull(SourceLocation Loc, bool possibly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_return_null) << possibly;
+  }
+  void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset, StringRef ExpectedPset) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_return_wrong_pset) << RetPset << ExpectedPset;
+  }
+  void notePointeeLeftScope(SourceLocation Loc, std::string Name) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_pointee_left_scope) << Name;
+  }
+  void noteNeverInitialized(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_never_initialized);
+  }
+  void noteTemporaryDestroyed(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_temporary_destroyed);
+  }
+  void notePointerArithmetic(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_pointer_arithmetic);
+  }
+  void noteForbiddenCast(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_forbidden_cast);
+  }
+  void noteDereferenced(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_dereferenced);
+  }
+  void noteModified(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_modified);
+  }
+  void noteAssigned(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_assigned);
+  }
+  void debugPset(SourceLocation Loc, StringRef Variable,
+                 std::string Pset) final {
+    S.Diag(Loc, diag::warn_pset) << Variable << Pset;
+  }
+
+  void debugTypeCategory(SourceLocation Loc,
+                         TypeCategory Category) final {
+    S.Diag(Loc, diag::warn_lifetime_type_category) << (int)Category;
+  }
+};
+} // namespace lifetime
+} // namespace clang
+
 //===----------------------------------------------------------------------===//
 // AnalysisBasedWarnings - Worker object used by Sema to execute analysis-based
 //  warnings on a function, method, or block.
@@ -1871,6 +1975,7 @@ clang::sema::AnalysisBasedWarnings::Policy::Policy() {
   enableCheckUnreachable = 0;
   enableThreadSafetyAnalysis = 0;
   enableConsumedAnalysis = 0;
+  enableLifetimeAnalysis = 0;
 }
 
 static unsigned isEnabled(DiagnosticsEngine &D, unsigned diag) {
@@ -1903,6 +2008,8 @@ clang::sema::AnalysisBasedWarnings::AnalysisBasedWarnings(Sema &s)
 
   DefaultPolicy.enableConsumedAnalysis =
     isEnabled(D, warn_use_in_invalid_state);
+
+  DefaultPolicy.enableLifetimeAnalysis = isEnabled(D, warn_deref_nullptr);
 }
 
 static void flushDiagnostics(Sema &S, const sema::FunctionScopeInfo *fscope) {
@@ -1963,6 +2070,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   // appropriately.  This is essentially a layering violation.
   if (P.enableCheckUnreachable || P.enableThreadSafetyAnalysis ||
       P.enableConsumedAnalysis) {
+    // TODO check
     // Unreachable code analysis and thread safety require a linearized CFG.
     AC.getCFGBuildOptions().setAllAlwaysAdd();
   }
@@ -2079,6 +2187,21 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
     consumed::ConsumedWarningsHandler WarningHandler(S);
     consumed::ConsumedAnalyzer Analyzer(WarningHandler);
     Analyzer.run(AC);
+  }
+
+  // Check for lifetime safety violations
+  if (P.enableLifetimeAnalysis) {
+    auto isConvertible = [this](QualType From, QualType To) {
+      OpaqueValueExpr Expr(SourceLocation{}, From, VK_RValue);
+      ImplicitConversionSequence ICS = S.TryImplicitConversion(
+        &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
+        /*InOverloadResolution=*/false, /*CStyle=*/false,
+        /*AllowObjCWritebackConversion=*/false);
+      return !ICS.isFailure();
+    };
+    lifetime::Reporter Reporter{S};
+    if (const auto *FD = dyn_cast<FunctionDecl>(D))
+      lifetime::runAnalysis(FD, S.Context, Reporter, isConvertible);
   }
 
   if (!Diags.isIgnored(diag::warn_uninit_var, D->getLocStart()) ||
