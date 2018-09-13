@@ -248,7 +248,7 @@ class NullReason {
   SourceRange Range;
 
 public:
-  enum EReason { ASSIGNED, PARAMETER_NULL } Reason;
+  enum EReason { ASSIGNED, PARAMETER_NULL, DEFAULT_CONSTRUCTED } Reason;
 
   NullReason(SourceRange Range, EReason Reason = ASSIGNED)
       : Range(Range), Reason(Reason) {
@@ -259,6 +259,10 @@ public:
     return {Range, PARAMETER_NULL};
   }
 
+  static NullReason defaultConstructed(SourceRange Range) {
+    return {Range, DEFAULT_CONSTRUCTED};
+  }
+
   void emitNote(LifetimeReporterBase &Reporter) const {
     switch (Reason) {
     case ASSIGNED:
@@ -266,6 +270,9 @@ public:
       break;
     case PARAMETER_NULL:
       Reporter.noteParameterNull(Range.getBegin());
+      break;
+    case DEFAULT_CONSTRUCTED:
+      Reporter.noteNullDefaultConstructed(Range.getBegin());
       break;
     }
   }
