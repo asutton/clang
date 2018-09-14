@@ -2391,8 +2391,14 @@ def Pointer : InheritableAttr {
 }
 
 def Lifetimeconst : InheritableParamAttr {
-  let Spellings = [CXX11<"gsl", "lifetimeconst">];
-  let Subjects = SubjectList<[ParmVar, Function]>;
+  let Spellings = [CXX11<"gsl", "lifetime_const">];
+  let Subjects = SubjectList<[Function, ParmVar]>;
+  let Documentation = [Undocumented]; // FIXME
+}
+
+def Lifetime : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "lifetime">];
+  let Subjects = SubjectList<[Function, ParmVar]>;
   let Documentation = [Undocumented]; // FIXME
 }
 

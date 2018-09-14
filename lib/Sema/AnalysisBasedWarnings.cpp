@@ -1916,6 +1916,10 @@ public:
     if(enableIfNew(Loc))
       S.Diag(Loc, diag::warn_return_null) << possibly;
   }
+  void warnNonStaticThrow(SourceLocation Loc, StringRef ThrownPset) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_non_static_throw) << ThrownPset;
+  }
   void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset, StringRef ExpectedPset) final {
     if(enableIfNew(Loc))
       S.Diag(Loc, diag::warn_return_wrong_pset) << RetPset << ExpectedPset;
@@ -2191,8 +2195,8 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
 
   // Check for lifetime safety violations
   if (P.enableLifetimeAnalysis) {
-    auto isConvertible = [this](QualType From, QualType To) {
-      OpaqueValueExpr Expr(SourceLocation{}, From, VK_RValue);
+    auto isConvertible = [this, D](QualType From, QualType To) {
+      OpaqueValueExpr Expr(D->getLocStart(), From, VK_RValue);
       ImplicitConversionSequence ICS = S.TryImplicitConversion(
         &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
         /*InOverloadResolution=*/false, /*CStyle=*/false,

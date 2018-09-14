@@ -10,7 +10,7 @@
 #ifndef LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIMEPSET_H
 #define LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIMEPSET_H
 
-#include "clang/AST/DeclCXX.h"
+#include "clang/AST/Decl.h"
 #include "clang/AST/ExprCXX.h"
 #include "llvm/ADT/StringExtras.h"
 #include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
@@ -20,13 +20,15 @@
 
 namespace clang {
 namespace lifetime {
-/// A Variable can represent
+/// A Variable can represent a base:
 /// - a local variable: Var contains a non-null VarDecl
 /// - the this pointer: Var contains a null VarDecl
 /// - a life-time extended temporary: Var contains a non-null
 /// MaterializeTemporaryExpr
 /// - a normal temporary: Var contains a null MaterializeTemporaryExpr
 /// plus fields of them (in member FDs).
+/// And a list of dereference and field select operations that applied
+/// consecutively to the base.
 struct Variable {
   Variable(const VarDecl *VD) : Var(VD) {}
   Variable(const MaterializeTemporaryExpr *MT) : Var(MT) {}
@@ -48,49 +50,50 @@ struct Variable {
     if (Var != O.Var)
       return Var < O.Var;
     if (FDs.size() != O.FDs.size())
-      return FDs.size() != O.FDs.size();
+      return FDs.size() < O.FDs.size();
 
-    for (auto i = FDs.begin(), j = O.FDs.begin(); i != FDs.end(); ++i, ++j) {
-      if (*i != *j)
-        return std::less<const FieldDecl *>()(*i, *j);
+    for (auto I = FDs.begin(), J = O.FDs.begin(); I != FDs.end(); ++I, ++J) {
+      if (*I != *J)
+        return std::less<const FieldDecl *>()(*I, *J);
     }
     return false;
   }
 
   bool isBaseEqual(const Variable &O) const { return Var == O.Var; }
 
-  bool hasGlobalStorage() const {
-    auto *VD = Var.dyn_cast<const VarDecl *>();
-    if (!VD)
-      return false;
-    return VD->hasGlobalStorage();
-  }
-
-  bool trackPset() const {
-    if (isThisPointer() || isTemporary())
-      return false;
-    auto Category = classifyTypeCategory(getType());
-    return Category == TypeCategory::Pointer || Category == TypeCategory::Owner;
-  }
-
-  bool isMemberVariableOfEnclosingClass() const {
+  bool hasStaticLifetime() const {
+    if (const auto *VD = Var.dyn_cast<const VarDecl *>())
+      return VD->hasGlobalStorage();
     return isThisPointer() && !FDs.empty();
   }
 
   /// Returns QualType of Variable or empty QualType if it refers to the 'this'.
+  /// TODO: Should we cache the type instead of calculating?
   QualType getType() const {
-    if (FDs.empty()) {
-      if (const auto *VD = Var.dyn_cast<const VarDecl *>())
-        return VD->getType();
-      if (const auto *MT = Var.dyn_cast<const MaterializeTemporaryExpr *>())
-        return MT->getType();
-      return {}; // Refers to 'this' pointer.
-    }
+    QualType Base;
+    if (const auto *VD = Var.dyn_cast<const VarDecl *>())
+      Base = VD->getType();
+    else if (const auto *MT = Var.dyn_cast<const MaterializeTemporaryExpr *>())
+      Base = MT->getType();
+    else
+      assert(!FDs.empty() && "Not yet supported for temporary and this.");
 
-    return FDs.back()->getType();
+    for (auto It = FDs.rbegin(); It != FDs.rend(); ++It) {
+      if (*It) {
+        assert(isThisPointer() || isTemporary() ||
+               (*It)->getParent() == Base->getAsCXXRecordDecl() ||
+               Base->getAsCXXRecordDecl()->isDerivedFrom(
+                   dyn_cast<CXXRecordDecl>((*It)->getParent())));
+        Base = (*It)->getType();
+        break;
+      } else {
+        Base = getPointeeType(Base);
+      }
+    }
+    return Base;
   }
 
-  bool isField() const { return !FDs.empty(); }
+  bool isField() const { return !FDs.empty() && FDs.back(); }
 
   bool isThisPointer() const {
     return Var.is<const VarDecl *>() && !Var.get<const VarDecl *>();
@@ -112,51 +115,45 @@ struct Variable {
                VD;
   }
 
-  // Is the pset of this Variable allowed to contain null?
-  bool mightBeNull() const {
-    if (isThisPointer())
-      return false;
-    return isNullableType(getType());
-  }
-
-  bool isCategoryPointer() const {
-    if (isThisPointer())
-      return true;
-    return classifyTypeCategory(getType()) == TypeCategory::Pointer;
-  }
-
   const VarDecl *asVarDecl() const { return Var.dyn_cast<const VarDecl *>(); }
 
   // Chain of field accesses starting from VD. Types must match.
   void addFieldRef(const FieldDecl *FD) { FDs.push_back(FD); }
 
+  void deref() { FDs.push_back(nullptr); }
+
   std::string getName() const {
-    std::stringstream ss;
+    std::string Ret;
     if (Var.is<const MaterializeTemporaryExpr *>()) {
       auto *MD = Var.get<const MaterializeTemporaryExpr *>();
       if (MD) {
-        ss << "(lifetime-extended temporary through ";
+        Ret = "(lifetime-extended temporary through ";
         if (MD->getExtendingDecl())
-          ss << std::string(MD->getExtendingDecl()->getName()) << ")";
+          Ret += std::string(MD->getExtendingDecl()->getName()) + ")";
         else
-          ss << "(unknown))";
+          Ret += "(unknown))";
       } else {
-        ss << "(temporary)";
+        Ret = "(temporary)";
       }
     } else {
       auto *VD = Var.get<const VarDecl *>();
-      ss << (VD ? std::string(VD->getName()) : "this");
+      Ret = (VD ? std::string(VD->getName()) : "this");
     }
 
-    for (auto *FD : FDs)
-      ss << "." << std::string(FD->getName());
-    return ss.str();
+    for (const auto *FD : FDs) {
+      if (FD)
+        Ret += "." + std::string(FD->getName());
+      else
+        Ret = "(*" + Ret + ")";
+    }
+    return Ret;
   }
 
   llvm::PointerUnion<const VarDecl *, const MaterializeTemporaryExpr *> Var;
 
-  /// Possibly empty list of fields on Var first entry is the field on VD,
-  /// next entry is the field inside there, etc.
+  /// Possibly empty list of fields and deref operations on the base.
+  /// The First entry is the field on base, next entry is the field inside
+  /// there, etc. Null pointers represent a deref operation.
   llvm::SmallVector<const FieldDecl *, 8> FDs;
 };
 
@@ -199,7 +196,7 @@ public:
     case TEMPORARY_LEFT_SCOPE:
       Reporter.noteTemporaryDestroyed(Loc);
       return;
-    case FORBIDDEN_CAST: // TODO: add own diagnostic
+    case FORBIDDEN_CAST:
       Reporter.noteForbiddenCast(Loc);
       return;
     case POINTER_ARITHMETIC:
@@ -293,13 +290,6 @@ public:
     return !ContainsInvalid && !ContainsNull && !ContainsStatic && Vars.empty();
   }
 
-  /// Returns true if this pset contains Variable with the same or a lower order
-  /// i.e. whether invalidating (Variable, order) would invalidate this pset.
-  bool contains(Variable Var, unsigned Order = 0) const {
-    auto I = Vars.find(Var);
-    return I != Vars.end() && I->second >= Order;
-  }
-
   /// Returns true if we look for S and we have S.field in the set.
   bool containsBase(Variable Var, unsigned Order = 0) const {
     auto I = llvm::find_if(
@@ -359,10 +349,6 @@ public:
     // TODO
     // If 'this' includes o'', then 'O' must include o'' or o'. (etc.)
     // If 'this' includes o', then 'O' must include o'.
-    // If 'this' includes o, then 'O' must include o or o' or o'' or some x with
-    // lifetime less than o. If 'O' includes one or more xb1..n, where
-    // xbshortest is the one with shortest lifetime, then a must include static
-    // or xa1..m where all have longer lifetime than xbshortest.
     return true;
   }
 
@@ -381,6 +367,7 @@ public:
       for (size_t j = 0; j < V.second; ++j)
         Entries.back().append("'");
     }
+    std::sort(Entries.begin(), Entries.end());
     return "(" + llvm::join(Entries, ", ") + ")";
   }
 
@@ -418,15 +405,16 @@ public:
   }
 
   void insert(Variable Var, unsigned Order = 0) {
-    if (Var.hasGlobalStorage()) {
+    if (Var.hasStaticLifetime()) {
       ContainsStatic = true;
       return;
     }
 
     // If this would contain o' and o'' it would be invalidated on KILL(o')
     // and KILL(o'') which is the same for a pset only containing o''.
-    if (Vars.count(Var))
-      Order = std::max(Vars[Var], Order);
+    auto It = Vars.find(Var);
+    if (It != Vars.end())
+      Order = std::max(It->second, Order);
 
     Vars[Var] = Order;
   }
@@ -440,10 +428,6 @@ public:
     }
     Vars = NewVars;
   }
-
-  void appendNullReason(NullReason R) { NullReasons.push_back(R); }
-
-  void appendInvalidReason(InvalidationReason R) { InvReasons.push_back(R); }
 
   /// The pointer is dangling
   static PSet invalid(InvalidationReason Reason) {
@@ -478,7 +462,7 @@ public:
   static PSet singleton(Variable Var, bool Nullable = false,
                         unsigned order = 0) {
     PSet ret;
-    if (Var.hasGlobalStorage())
+    if (Var.hasStaticLifetime())
       ret.ContainsStatic = true;
     else
       ret.Vars.emplace(Var, order);
@@ -502,7 +486,6 @@ private:
   std::vector<NullReason> NullReasons;
 };
 
-// TODO optimize (sorted vector?)
 using PSetsMap = std::map<Variable, PSet>;
 
 } // namespace lifetime

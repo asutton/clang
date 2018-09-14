@@ -82,8 +82,10 @@ static bool satisfiesRangeConcept(const CXXRecordDecl *R) {
 // to look up the declarations (pointers) by names upfront and look up the
 // declarations instead of matching strings populated lazily.
 static Optional<TypeCategory> classifyStd(const Type *T) {
+  // MSVC: _Ptr_base is a base class of shared_ptr, and we only see
+  // _Ptr_base when calling get() on a shared_ptr.
   static std::set<StringRef> StdOwners{"stack",    "queue",   "priority_queue",
-                                       "optional", "variant", "any"};
+                                       "optional", "_Ptr_base"};
   static std::set<StringRef> StdPointers{"basic_regex", "reference_wrapper"};
   NamedDecl *Decl;
   if (const auto *TypeDef = T->getAs<TypedefType>()) {
@@ -176,7 +178,7 @@ TypeCategory classifyTypeCategory(QualType QT) {
   // Every closure type of a lambda that captures by reference.
   if (R->isLambda() &&
       std::any_of(R->field_begin(), R->field_end(), [](const FieldDecl *FD) {
-        return FD->getType()->isReferenceType();
+        return classifyTypeCategory(FD->getType()) == TypeCategory::Pointer;
       })) {
     return TypeCategory::Pointer;
   }
@@ -227,6 +229,7 @@ bool isNullableType(QualType QT) {
 }
 
 QualType getPointeeType(QualType QT) {
+  QT = QT.getCanonicalType();
   if (QT->isReferenceType() || QT->isAnyPointerType())
     return QT->getPointeeType();
 
@@ -250,21 +253,14 @@ QualType getPointeeType(QualType QT) {
       if (!Ret.isNull())
         return Ret;
     }
-  }
-  if (auto TST = QT->getAs<TemplateSpecializationType>()) {
-    if (TST->getNumArgs()) {
-      auto &Arg0 = TST->getArg(0);
-      if (Arg0.getKind() == TemplateArgument::Type)
-        return Arg0.getAsType();
+
+    if (auto *T = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
+      auto &Args = T->getTemplateArgs();
+      if (Args.size() > 0 && Args[0].getKind() == TemplateArgument::Type)
+        return Args[0].getAsType();
     }
   }
   return {};
-}
-
-QualType normalizeType(QualType QT, ASTContext &Ctx) {
-  if (QT->isReferenceType())
-    return Ctx.getPointerType(QT->getPointeeType());
-  return QT;
 }
 
 CallTypes getCallTypes(const Expr *CalleeE) {
@@ -303,29 +299,44 @@ CallTypes getCallTypes(const Expr *CalleeE) {
   return CT;
 }
 
-bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee,
-                     unsigned ArgNum) {
+bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum) {
   // Until annotations are widespread, STL specific lifetimeconst
   // methods and params can be enumerated here.
   if (!FD)
     return false;
+
+  // std::begin, std::end free functions.
+  if (FD->isInStdNamespace() && FD->getDeclName().isIdentifier() &&
+      (FD->getName() == "begin" || FD->getName() == "end"))
+    return true;
+
+  if (ArgNum >= 0) {
+    if (static_cast<size_t>(ArgNum) >= FD->param_size())
+      return false;
+    auto Param = FD->parameters()[ArgNum];
+    return Pointee.isConstQualified() || Param->hasAttr<LifetimeconstAttr>();
+  }
+
+  assert(ArgNum == -1);
+  if (FD->hasAttr<LifetimeconstAttr>())
+    return true;
+
   if (const auto *MD = dyn_cast<CXXMethodDecl>(FD)) {
-    if (ArgNum == 0) {
-      if (FD->isOverloadedOperator()) {
-        return MD->isConst() || MD->hasAttr<LifetimeconstAttr>() ||
-               FD->getOverloadedOperator() == OO_Subscript ||
-               FD->getOverloadedOperator() == OO_Star;
-      } else {
-        return FD->getDeclName().isIdentifier() &&
-               (FD->getName() == "at" || FD->getName() == "data" ||
-                FD->getName() == "begin" || FD->getName() == "end");
-      }
+    if (MD->isConst())
+      return true;
+    if (FD->isOverloadedOperator()) {
+      return FD->getOverloadedOperator() == OO_Subscript ||
+             FD->getOverloadedOperator() == OO_Star ||
+             FD->getOverloadedOperator() == OO_Arrow;
+    } else {
+      return FD->getDeclName().isIdentifier() &&
+             (FD->getName() == "at" || FD->getName() == "data" ||
+              FD->getName() == "begin" || FD->getName() == "end" ||
+              FD->getName() == "rbegin" || FD->getName() == "rend" ||
+              FD->getName() == "back" || FD->getName() == "front");
     }
   }
-  if (ArgNum >= FD->param_size())
-    return false;
-  auto Param = FD->parameters()[ArgNum];
-  return Pointee.isConstQualified() || Param->hasAttr<LifetimeconstAttr>();
+  return false;
 }
 } // namespace lifetime
 } // namespace clang
