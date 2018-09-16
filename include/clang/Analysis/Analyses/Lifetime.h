@@ -12,6 +12,7 @@
 
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
+#include "llvm/ADT/StringRef.h"
 #include <string>
 #include "llvm/ADT/STLExtras.h"
 
