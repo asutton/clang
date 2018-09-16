@@ -21,9 +21,9 @@ STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
 namespace clang {
 namespace lifetime {
 
-LookupOperatorTy GlobalLookupOperator;
-LookupMemberFunctionTy GlobalLookupMemberFunction;
-DefineClassTemplateSpecializationTy GlobalDefineClassTemplateSpecialization;
+LookupOperatorTy GlobalLookupOperator = static_cast<FunctionDecl *(*)(const CXXRecordDecl *R, OverloadedOperatorKind Op)>(nullptr);
+LookupMemberFunctionTy GlobalLookupMemberFunction = static_cast<FunctionDecl *(*)(const CXXRecordDecl *R, StringRef Name)>(nullptr);
+DefineClassTemplateSpecializationTy GlobalDefineClassTemplateSpecialization = static_cast<void(*)(ClassTemplateSpecializationDecl *Specialization)>(nullptr);
 
 class LifetimeContext {
   /// Additional information for each CFGBlock.
