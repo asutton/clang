@@ -10,7 +10,9 @@
 #ifndef LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIME_H
 #define LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIME_H
 
+#include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
+#include "llvm/ADT/StringRef.h"
 #include <string>
 #include "llvm/ADT/STLExtras.h"
 
@@ -21,9 +23,25 @@ class SourceManager;
 class VarDecl;
 class Sema;
 class QualType;
+class ClassTemplateSpecializationDecl;
+class CXXRecordDecl;
+class FunctionDecl;
 
 namespace lifetime {
 enum class TypeCategory { Owner, Pointer, Aggregate, Value };
+
+using LookupOperatorTy = llvm::function_ref<FunctionDecl *(
+    const CXXRecordDecl *R, OverloadedOperatorKind Op)>;
+extern LookupOperatorTy GlobalLookupOperator;
+
+using LookupMemberFunctionTy =
+    llvm::function_ref<FunctionDecl *(const CXXRecordDecl *R, StringRef Name)>;
+extern LookupMemberFunctionTy GlobalLookupMemberFunction;
+
+using DefineClassTemplateSpecializationTy =
+    llvm::function_ref<void(ClassTemplateSpecializationDecl *Specialization)>;
+extern DefineClassTemplateSpecializationTy
+    GlobalDefineClassTemplateSpecialization;
 
 using IsConvertibleTy = llvm::function_ref<bool(QualType, QualType)>;
 
@@ -41,7 +59,8 @@ public:
   virtual void warnParameterNull(SourceLocation Loc, bool possibly) = 0;
   virtual void warnReturnDangling(SourceLocation Loc, bool possibly) = 0;
   virtual void warnReturnNull(SourceLocation Loc, bool possibly) = 0;
-  virtual void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset, StringRef ExpectedPset) = 0;
+  virtual void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset,
+                                   StringRef ExpectedPset) = 0;
   virtual void notePointeeLeftScope(SourceLocation Loc, std::string Name) = 0;
   virtual void warnNonStaticThrow(SourceLocation Loc, StringRef ThrownPset) = 0;
 
@@ -52,13 +71,21 @@ public:
   virtual void noteDereferenced(SourceLocation Loc) = 0;
   virtual void noteModified(SourceLocation Loc) = 0;
   virtual void noteAssigned(SourceLocation Loc) = 0;
+  virtual void noteParameterNull(SourceLocation Loc) = 0;
+  virtual void noteNullDefaultConstructed(SourceLocation Loc) = 0;
+  virtual void noteNullComparedToNull(SourceLocation Loc) = 0;
   virtual void debugPset(SourceLocation Loc, StringRef Variable,
                          std::string Pset) = 0;
-  virtual void debugTypeCategory(SourceLocation Loc, TypeCategory Category) = 0;
+  virtual void debugTypeCategory(SourceLocation Loc, TypeCategory Category,
+                                 StringRef Pointee = "") = 0;
 };
 
-void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
-                 LifetimeReporterBase &Reporter, IsConvertibleTy IsConvertible);
+void runAnalysis(
+    const FunctionDecl *Func, ASTContext &Context,
+    LifetimeReporterBase &Reporter, IsConvertibleTy IsConvertible,
+    LookupOperatorTy LookupOperator,
+    LookupMemberFunctionTy LookupMemberFunction,
+    DefineClassTemplateSpecializationTy DefineClassTemplateSpecialization);
 } // namespace lifetime
 } // namespace clang
 

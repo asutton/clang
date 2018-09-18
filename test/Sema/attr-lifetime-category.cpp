@@ -5,7 +5,7 @@
 namespace std {
 struct any {
   any();
-  any(const any&);
+  any(const any &);
   ~any();
 };
 
@@ -73,7 +73,7 @@ struct priority_queue {};
 template <typename... T>
 struct variant {
   variant();
-  variant(const variant&);
+  variant(const variant &);
   ~variant();
 };
 
@@ -87,7 +87,7 @@ struct reference_wrapper {
 template <typename T>
 struct shared_ptr {
   template <typename T2 = T>
-  T2& operator*();
+  T2 &operator*();
   ~shared_ptr();
 };
 } // namespace std
@@ -99,14 +99,28 @@ template <typename T>
 void __lifetime_type_category_arg(T arg) {}
 
 class [[gsl::Owner]] my_owner {
+  int &operator*();
   int i;
 };
 template <class T>
 class [[gsl::Pointer]] my_pointer {
+  T &operator*();
+  int i;
+};
+
+class [[gsl::Owner]] owner_failed_deduce {
+  // TODOexpected-warning@-1 {{cannot deduce deref type, ignoring attribute}}
+  int i;
+};
+
+template <int I, typename T>
+class [[gsl::Owner]] template_owner_failed_deduce {
+  // TODOexpected-warning@-1 {{cannot deduce deref type, ignoring attribute}}
   int i;
 };
 
 struct my_implicit_owner {
+  int operator*();
   int *begin() const;
   int *end() const;
   ~my_implicit_owner();
@@ -117,14 +131,14 @@ struct my_derived_owner : my_implicit_owner {
 
 void owner() {
   // Use decltype to force template instantiation.
-  __lifetime_type_category<my_owner>();                              // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::vector<int>())>();          // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::unique_ptr<int>())>();      // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::shared_ptr<int>())>();      // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::stack<int>())>();           // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::queue<int>())>();           // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::priority_queue<int>())>();  // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::optional<int>())>();        // expected-warning {{Owner}}
+  __lifetime_type_category<my_owner>();                             // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::vector<int>())>();         // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::unique_ptr<int>())>();     // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::shared_ptr<int>())>();     // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::stack<int>())>();          // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::queue<int>())>();          // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::priority_queue<int>())>(); // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::optional<int>())>();       // expected-warning {{Owner}}
   using IntVector = std::vector<int>;
   __lifetime_type_category<decltype(IntVector())>();         // expected-warning {{Owner}}
   __lifetime_type_category<decltype(my_implicit_owner())>(); // expected-warning {{Owner}}
@@ -139,9 +153,6 @@ void pointer() {
   __lifetime_type_category<decltype(std::span<int>())>();                    // expected-warning {{Pointer}}
 
   int i;
-  auto L = [&i]() { return i; };
-  __lifetime_type_category<decltype(L)>(); // expected-warning {{Pointer}}
-
   __lifetime_type_category<int *>();                                    // expected-warning {{Pointer}}
   __lifetime_type_category<int &>();                                    // expected-warning {{Pointer}}
   __lifetime_type_category<decltype(std::regex())>();                   // expected-warning {{Pointer}}
@@ -169,6 +180,7 @@ void aggregate() {
 void value() {
   __lifetime_type_category<decltype(std::variant<int, char *>())>(); // expected-warning {{Value}}
   __lifetime_type_category<decltype(std::any())>();                  // expected-warning {{Value}}
+
   // no public data members
   class C1 {
     C1() { i = 1; }
@@ -188,7 +200,55 @@ void value() {
   int i = 0;
   auto L = [i]() { return i; };
   __lifetime_type_category<decltype(L)>(); // expected-warning {{Value}}
+  auto L2 = [&i]() { return i; };
+  __lifetime_type_category<decltype(L2)>(); // expected-warning {{Value}}
 
   class C3;
   __lifetime_type_category<C3>(); // expected-warning {{Value}}
+
+  __lifetime_type_category<decltype(owner_failed_deduce())>();                   // expected-warning {{Value}}
+  __lifetime_type_category<decltype(template_owner_failed_deduce<3, void>())>(); // expected-warning {{Value}}
 }
+
+namespace classTemplateInstantiation {
+// First template parameter is a non-type to avoid falling back
+// to deducing DerefType from first template parameter.
+template <int I, typename T>
+struct iterator {
+  T &operator*();
+};
+
+template <int I, typename T>
+struct vector {
+  iterator<I, T> begin();
+  iterator<I, T> end();
+  ~vector();
+};
+
+void f() {
+  // Clang would create an ClassTemplateSpecializationDecl for
+  // iterator<0, int>, but create no definition, i.e. we could not see
+  // iterator<0, int>::operator*(), unless that operator is explicitly called
+  // by the program. The lifetime checker now forces and definition of
+  // iterator<0, int> to be able to deduce the DerefType(iterator<0, int>).
+  __lifetime_type_category<decltype(vector<0, int>())>(); // expected-warning {{Owner with pointee int}}
+}
+} // namespace classTemplateInstantiation
+
+namespace functionTemplateInstantiation {
+// First template parameter is a non-type to avoid falling back
+// to deducing DerefType from first template parameter.
+template <int I, typename T>
+struct pointer {
+  template<typename D = T>
+  D& operator*();
+};
+
+void f() {
+  // Clang creates a FunctionTemplateDecl for operator*()
+  // but not specialisation for the default case (D = T)
+  // unless begin() is used in the program. The lifetime checker now forces
+  // and specialisation of operator*() to be able to deduce the DerefType(pointer<0, int>).
+  __lifetime_type_category<decltype(pointer<0, int>())>(); // expected-warning {{Pointer with pointee int}}
+}
+} // namespace functionTemplateInstantiation

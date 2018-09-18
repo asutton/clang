@@ -96,19 +96,19 @@ struct Owner {
 };
 
 struct [[gsl::Pointer]] my_pointer {
-  int operator*();
+  int &operator*();
 };
 
 void deref_uninitialized() {
   int *p;        // expected-note {{it was never initialized here}}
   *p = 3;        // expected-warning {{dereferencing a dangling pointer}}
-  my_pointer p2; // expected-note {{assigned here}}
+  my_pointer p2; // expected-note {{default-constructed Pointers are assumed to be null}}
   *p2;           // expected-warning {{passing a null pointer as argument to a non-null parameter}}
 }
 
 void deref_nullptr() {
-  int *q = nullptr;
-  *q = 3; // expected-warning {{dereferencing a null pointer}}
+  int *q = nullptr; // expected-note {{assigned here}}
+  *q = 3;           // expected-warning {{dereferencing a null pointer}}
 }
 
 void ref_leaves_scope() {
@@ -208,6 +208,39 @@ const int *return_wrong_ptr(const int *p) {
   return q; // expected-warning {{returning a Pointer with points-to set (i) where points-to set ((*p), (null)) is expected}}
 }
 
+void null_notes(int *p) {
+  // expected-note@-1 {{the parameter is assumed to be potentially null. Consider using gsl::not_null<>, a reference instead of a pointer or an assert() to explicitly remove null}}
+  (void)*p; // expected-warning {{dereferencing a possibly null pointer}}
+
+  if (p) { // expected-note {{is compared to null here}}
+    ;
+  } else {
+    (void)*p; // expected-warning {{dereferencing a null pointer}}
+  }
+}
+
+void null_notes_copy(int *p) {
+  // expected-note@-1 {{the parameter is assumed to be potentially null}}
+  int *q = p; // expected-note {{assigned here}}
+  (void)*q;   // expected-warning {{dereferencing a possibly null pointer}}
+}
+
+void null_notes_copy2(int *p) {
+  // expected-note@-1 {{the parameter is assumed to be potentially null}}
+  int *q;
+  q = p;    // expected-note {{assigned here}}
+  (void)*q; // expected-warning {{dereferencing a possibly null pointer}}
+}
+
+namespace supress_further_warnings {
+int *f(int *);
+void test() {
+  int *p; // expected-note {{it was never initialized here}}
+  int *q = f(p); // expected-warning {{passing a dangling pointer as argument}}
+  (void)*q; // further diagnostics are suppressed here
+}
+} // namespace supress_further_warnings
+
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis
 namespace P0936 {
 template <typename T>
@@ -255,7 +288,8 @@ std::string operator+(std::string_view sv1, std::string_view sv2) {
 
 template <typename T>
 T concat(const T &x, const T &y) {
-  return x + y; // expected-warning {{returning a Pointer with points-to set ((temporary)') where points-to set (x, y) is expected}}
+  // TODO: Elide the deref for references?
+  return x + y; // expected-warning {{returning a Pointer with points-to set ((temporary)') where points-to set ((*x), (*y)) is expected}}
 }
 
 void sj4() {

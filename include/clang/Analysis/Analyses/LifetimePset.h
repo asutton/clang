@@ -158,7 +158,7 @@ struct Variable {
 };
 
 /// The reason why a pset became invalid
-/// Invariant: (Reason != POINTEE_LEFT_SCOPE || Pointee) && Loc.isValid()
+/// Invariant: (Reason != POINTEE_LEFT_SCOPE || Pointee) && Range.isValid()
 // TODO: We should use source ranges rather than single locations
 //       for user friendliness.
 class InvalidationReason {
@@ -173,84 +173,128 @@ class InvalidationReason {
   } Reason;
 
   const VarDecl *Pointee;
-  SourceLocation Loc;
+  SourceRange Range;
 
-  InvalidationReason(SourceLocation Loc, EReason Reason,
+  InvalidationReason(SourceRange Range, EReason Reason,
                      const VarDecl *Pointee = nullptr)
-      : Reason(Reason), Pointee(Pointee), Loc(Loc) {
-    assert(Loc.isValid());
+      : Reason(Reason), Pointee(Pointee), Range(Range) {
+    assert(Range.isValid());
   }
 
 public:
-  SourceLocation getLoc() const { return Loc; }
+  SourceLocation getLoc() const { return Range.getBegin(); }
 
   void emitNote(LifetimeReporterBase &Reporter) const {
     switch (Reason) {
     case NOT_INITIALIZED:
-      Reporter.noteNeverInitialized(Loc);
+      Reporter.noteNeverInitialized(getLoc());
       return;
     case POINTEE_LEFT_SCOPE:
       assert(Pointee);
-      Reporter.notePointeeLeftScope(Loc, Pointee->getNameAsString());
+      Reporter.notePointeeLeftScope(getLoc(), Pointee->getNameAsString());
       return;
     case TEMPORARY_LEFT_SCOPE:
-      Reporter.noteTemporaryDestroyed(Loc);
+      Reporter.noteTemporaryDestroyed(getLoc());
       return;
     case FORBIDDEN_CAST:
-      Reporter.noteForbiddenCast(Loc);
+      Reporter.noteForbiddenCast(getLoc());
       return;
     case POINTER_ARITHMETIC:
-      Reporter.notePointerArithmetic(Loc);
+      Reporter.notePointerArithmetic(getLoc());
       return;
     case DEREFERENCED:
-      Reporter.noteDereferenced(Loc);
+      Reporter.noteDereferenced(getLoc());
       return;
     case MODIFIED:
-      Reporter.noteModified(Loc);
+      Reporter.noteModified(getLoc());
       return;
     }
     llvm_unreachable("Invalid InvalidationReason::Reason");
   }
 
-  static InvalidationReason NotInitialized(SourceLocation Loc) {
-    return {Loc, NOT_INITIALIZED};
+  static InvalidationReason NotInitialized(SourceRange Range) {
+    return {Range, NOT_INITIALIZED};
   }
 
-  static InvalidationReason PointeeLeftScope(SourceLocation Loc,
+  static InvalidationReason PointeeLeftScope(SourceRange Range,
                                              const VarDecl *Pointee) {
     assert(Pointee);
-    return {Loc, POINTEE_LEFT_SCOPE, Pointee};
+    return {Range, POINTEE_LEFT_SCOPE, Pointee};
   }
 
-  static InvalidationReason TemporaryLeftScope(SourceLocation Loc) {
-    return {Loc, TEMPORARY_LEFT_SCOPE};
+  static InvalidationReason TemporaryLeftScope(SourceRange Range) {
+    return {Range, TEMPORARY_LEFT_SCOPE};
   }
 
-  static InvalidationReason PointerArithmetic(SourceLocation Loc) {
-    return {Loc, POINTER_ARITHMETIC};
+  static InvalidationReason PointerArithmetic(SourceRange Range) {
+    return {Range, POINTER_ARITHMETIC};
   }
 
-  static InvalidationReason Dereferenced(SourceLocation Loc) {
-    return {Loc, DEREFERENCED};
+  static InvalidationReason Dereferenced(SourceRange Range) {
+    return {Range, DEREFERENCED};
   }
 
-  static InvalidationReason ForbiddenCast(SourceLocation Loc) {
-    return {Loc, FORBIDDEN_CAST};
+  static InvalidationReason ForbiddenCast(SourceRange Range) {
+    return {Range, FORBIDDEN_CAST};
   }
 
-  static InvalidationReason Modified(SourceLocation Loc) {
-    return {Loc, MODIFIED};
+  static InvalidationReason Modified(SourceRange Range) {
+    return {Range, MODIFIED};
   }
 };
 
 /// The reason how null entered a pset.
 class NullReason {
-  SourceLocation Loc;
+  SourceRange Range;
 
 public:
-  NullReason(SourceLocation Loc) : Loc(Loc) { assert(Loc.isValid()); }
+  enum EReason {
+    ASSIGNED,
+    PARAMETER_NULL,
+    DEFAULT_CONSTRUCTED,
+    COMPARED_TO_NULL,
+    NULLPTR_CONSTANT
+  } Reason;
+
+  NullReason(SourceRange Range, EReason Reason) : Range(Range), Reason(Reason) {
+    assert(Range.isValid());
+  }
+
+  static NullReason assigned(SourceRange Range) { return {Range, ASSIGNED}; }
+
+  static NullReason parameterNull(SourceRange Range) {
+    return {Range, PARAMETER_NULL};
+  }
+
+  static NullReason defaultConstructed(SourceRange Range) {
+    return {Range, DEFAULT_CONSTRUCTED};
+  }
+
+  static NullReason comparedToNull(SourceRange Range) {
+    return {Range, COMPARED_TO_NULL};
+  }
+
+  static NullReason nullptrConstant(SourceRange Range) {
+    return {Range, NULLPTR_CONSTANT};
+  }
+
   void emitNote(LifetimeReporterBase &Reporter) const {
-    Reporter.noteAssigned(Loc);
+    switch (Reason) {
+    case ASSIGNED:
+      Reporter.noteAssigned(Range.getBegin());
+      break;
+    case PARAMETER_NULL:
+      Reporter.noteParameterNull(Range.getBegin());
+      break;
+    case DEFAULT_CONSTRUCTED:
+      Reporter.noteNullDefaultConstructed(Range.getBegin());
+      break;
+    case COMPARED_TO_NULL:
+      Reporter.noteNullComparedToNull(Range.getBegin());
+      break;
+    case NULLPTR_CONSTANT:
+      break; // not diagnosed, hopefully obvious
+    }
   }
 };
 
@@ -303,7 +347,18 @@ public:
   bool isNull() const {
     return ContainsNull && !ContainsStatic && !ContainsInvalid && Vars.empty();
   }
+  void addNull(NullReason Reason) {
+    if (ContainsNull)
+      return;
+    ContainsNull = true;
+    NullReasons.push_back(Reason);
+  }
   void removeNull() { ContainsNull = false; }
+
+  void addNullReason(NullReason Reason) {
+    assert(ContainsNull);
+    NullReasons.push_back(Reason);
+  }
 
   bool containsStatic() const { return ContainsStatic; }
   bool isStatic() const {
@@ -451,7 +506,7 @@ public:
   }
 
   /// A pset that contains (static), (null)
-  static PSet staticVar(bool Nullable) {
+  static PSet staticVar(bool Nullable = false) {
     PSet ret;
     ret.ContainsNull = Nullable;
     ret.ContainsStatic = true;
@@ -459,14 +514,12 @@ public:
   }
 
   /// The pset contains one of obj, obj' or obj''
-  static PSet singleton(Variable Var, bool Nullable = false,
-                        unsigned order = 0) {
+  static PSet singleton(Variable Var, unsigned order = 0) {
     PSet ret;
     if (Var.hasStaticLifetime())
       ret.ContainsStatic = true;
     else
       ret.Vars.emplace(Var, order);
-    ret.ContainsNull = Nullable;
     return ret;
   }
 

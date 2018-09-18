@@ -7,11 +7,11 @@
 //
 //===----------------------------------------------------------------------===//
 #include "clang/Analysis/Analyses/Lifetime.h"
+#include "clang/AST/ASTContext.h"
 #include "clang/Analysis/Analyses/LifetimePsetBuilder.h"
 #include "clang/Analysis/Analyses/PostOrderCFGView.h"
-#include "clang/Analysis/CFGStmtMap.h"
 #include "clang/Analysis/CFG.h"
-#include "clang/AST/ASTContext.h"
+#include "clang/Analysis/CFGStmtMap.h"
 #include "llvm/ADT/Statistic.h"
 
 #define DEBUG_TYPE "Lifetime Analysis"
@@ -20,6 +20,10 @@ STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
 
 namespace clang {
 namespace lifetime {
+
+LookupOperatorTy GlobalLookupOperator = static_cast<FunctionDecl *(*)(const CXXRecordDecl *R, OverloadedOperatorKind Op)>(nullptr);
+LookupMemberFunctionTy GlobalLookupMemberFunction = static_cast<FunctionDecl *(*)(const CXXRecordDecl *R, StringRef Name)>(nullptr);
+DefineClassTemplateSpecializationTy GlobalDefineClassTemplateSpecialization = static_cast<void(*)(ClassTemplateSpecializationDecl *Specialization)>(nullptr);
 
 class LifetimeContext {
   /// Additional information for each CFGBlock.
@@ -202,12 +206,18 @@ void LifetimeContext::TraverseBlocks() {
 }
 
 /// Check that the function adheres to the lifetime profile
-void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
-                 LifetimeReporterBase &Reporter,
-                 IsConvertibleTy IsConvertible) {
+void runAnalysis(
+    const FunctionDecl *Func, ASTContext &Context,
+    LifetimeReporterBase &Reporter, IsConvertibleTy IsConvertible,
+    LookupOperatorTy LookupOperator,
+    LookupMemberFunctionTy LookupMemberFunction,
+    DefineClassTemplateSpecializationTy DefineClassTemplateSpecialization) {
   if (!Func->doesThisDeclarationHaveABody())
     return;
 
+  GlobalLookupOperator = LookupOperator;
+  GlobalLookupMemberFunction = LookupMemberFunction;
+  GlobalDefineClassTemplateSpecialization = DefineClassTemplateSpecialization;
   LifetimeContext LC(Context, Reporter, Func, IsConvertible);
   LC.TraverseBlocks();
 }

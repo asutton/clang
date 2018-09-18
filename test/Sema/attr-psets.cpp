@@ -120,7 +120,15 @@ struct D : public S {
 struct [[gsl::Pointer]] my_pointer {
   my_pointer();
   my_pointer &operator=(const my_pointer &);
-  int operator*();
+  int& operator*();
+};
+
+struct [[gsl::Owner]] OwnerOfInt {
+  int& operator*();
+};
+
+struct [[gsl::Pointer]] PointerToInt {
+  int& operator*();
 };
 
 void pointer_exprs() {
@@ -524,9 +532,9 @@ void namespace_scoped_vars(int param_i, const int *param_p) {
   }
 
   int local_i;
-  global_p1 = &local_i; // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {(local_i)}}
-  global_p1 = &param_i; // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {(param_i)}}
-  global_p1 = param_p;  // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {((*param_p), (null))}}
+  global_p1 = &local_i; // expected-warning {{the pset of '&local_i' must be a subset of {(static), (null)}, but is {(local_i)}}
+  global_p1 = &param_i; // expected-warning {{the pset of '&param_i' must be a subset of {(static), (null)}, but is {(param_i)}}
+  global_p1 = param_p;  // expected-warning {{the pset of 'param_p' must be a subset of {(static), (null)}, but is {((*param_p), (null))}}
   const int *local_p = global_p1;
   __lifetime_pset(local_p); // expected-warning {{pset(local_p) = ((static))}}
 
@@ -576,7 +584,15 @@ void function_call3() {
   int *p = &i;
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
   f(p);
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
+}
+
+void function_call4() {
+  PointerToInt f(OwnerOfInt&);
+
+  OwnerOfInt O;
+  auto P = f(O);
+  __lifetime_pset(P); // expected-warning {{(O')}}
 }
 
 void indirect_function_call() {
@@ -768,7 +784,7 @@ void lifetime_const() {
     int *ptr;
 
   public:
-    int operator*();
+    int& operator*();
     int *begin() { return ptr; }
     void reset() {}
     [[gsl::lifetime_const]] void peek() {}
@@ -853,11 +869,9 @@ void deref_based_on_template_param() {
 
 my_pointer global_pointer;
 void f(my_pointer &p) { // expected-note {{it was never initialized here}}
-                        // TODO-remove expected-note@-1 {{it was never initialized here}}
   // p is a out-parameter, so its pset is {invalid}
-  (void)*p;           // expected-warning {{dereferencing a dangling pointer}}
+  (void)*p;           // expected-warning {{passing a dangling pointer as argument}}
   p = global_pointer; // OK, *this is not validated on assignment operator call
-                      // TODO-remove expected-warning@-1 {{dereferencing a dangling pointer}}
 }
 void caller() {
   void f(my_pointer & p);
@@ -913,13 +927,14 @@ int throw_local() {
 template <class T>
 struct [[gsl::Owner]] OwnerPointsToTemplateType {
   T *get();
+  T& operator*();
 };
 
 void ownerPointsToTemplateType() {
   OwnerPointsToTemplateType<int> O;
-  __lifetime_pset(O); // expected-warning {{pset(O) = (O'}}
+  __lifetime_pset(O); // expected-warning {{pset(O) = (O')}}
   int *I = O.get();
-  __lifetime_pset(I); // expected-warning {{pset(I) = (O'}}
+  __lifetime_pset(I); // expected-warning {{pset(I) = (O')}}
 
   // When finding the pointee type of an Owner,
   // look through AutoType to find the ClassTemplateSpecialization.
@@ -959,14 +974,14 @@ auto lambda_capture(const int *param, const int *param2) {
   auto a = [&]() {
     return *param + *alias;
   };
-  __lifetime_pset(a); // expected-warning {{pset(a) = (param, param2)}}
+  __lifetime_pset(a); // TODOexpected-warning {{pset(a) = (param, param2)}}
   int i;
   int *ptr = &i;
   auto b = [=]() {
     return *param + *ptr;
   };
-  __lifetime_pset(b); // expected-warning {{pset(b) = ((*param), (null), i)}}
-  return b;           // expected-warning {{returning a Pointer with points-to set ((*param), (null), i) where points-to set ((*param), (*param2), (null)) is expected}}
+  __lifetime_pset(b); // TODOexpected-warning {{pset(b) = ((*param), (null), i)}}
+  return b;           // TODOexpected-warning {{returning a Pointer with points-to set ((*param), (null), i) where points-to set ((*param), (*param2), (null)) is expected}}
 }
 
 typedef int T;
@@ -992,7 +1007,89 @@ void pruned_branch(bool cond) {
 
   int *non_trivial = cond ? &i : nullptr;
   __lifetime_pset(non_trivial); // expected-warning {{((null), i)}}
+
+  // Pruned branches with lvalues
+  int a, b;
+  int &trivial_r = 0 ? b : a;
+  __lifetime_pset_ref(trivial_r); // expected-warning {{(a)}}
 }
+
+void parameter_psets(int value,
+                     char *const *in,
+                     int &int_ref,
+                     const int &const_int_ref,
+                     std::unique_ptr<int> owner_by_value,
+                     const std::unique_ptr<int> &owner_const_ref,
+                     std::unique_ptr<int> &owner_ref,
+                     my_pointer ptr_by_value,
+                     const my_pointer &ptr_const_ref,
+                     my_pointer &ptr_ref,
+                     my_pointer *ptr_ptr,
+                     const my_pointer *ptr_const_ptr) {
+
+  __lifetime_pset(in); // expected-warning {{((*in), (null))}}
+  assert(in);
+  __lifetime_pset(*in); // expected-warning {{((null), (static))}}
+
+  __lifetime_pset_ref(int_ref);       // expected-warning {{((*int_ref))}}
+  __lifetime_pset_ref(const_int_ref); // expected-warning {{((*const_int_ref))}}
+  __lifetime_pset(owner_by_value);    // expected-warning {{(owner_by_value')}}
+
+  __lifetime_pset_ref(owner_ref); // expected-warning {{((*owner_ref))}}
+  __lifetime_pset(owner_ref);     /// expected-warning {{((*owner_ref)')}}
+
+  __lifetime_pset_ref(owner_const_ref); // expected-warning {{((*owner_const_ref))}}
+  __lifetime_pset(owner_const_ref);     // expected-warning {{((*owner_const_ref)')}}
+
+  __lifetime_pset(ptr_by_value); // expected-warning {{((*ptr_by_value), (null))}}
+
+  __lifetime_pset_ref(ptr_const_ref); // expected-warning {{((*ptr_const_ref))}}
+  __lifetime_pset(ptr_const_ref);     // expected-warning {{((static))}} TODO correct?
+
+  __lifetime_pset_ref(ptr_ref); // expected-warning {{((*ptr_ref))}}
+  // TODO pending clarification if Pointer& is out or in/out:
+  __lifetime_pset(ptr_ref); // expected-warning {{((invalid))}}
+
+  __lifetime_pset(ptr_ptr); // expected-warning {{((*ptr_ptr), (null))}}
+  assert(ptr_ptr);
+  __lifetime_pset(*ptr_ptr); // out: expected-warning {{((invalid))}}
+
+  __lifetime_pset(ptr_const_ptr); // expected-warning {{((*ptr_const_ptr), (null))}}
+  assert(ptr_const_ptr);
+  __lifetime_pset(*ptr_const_ptr); // in: expected-warning {{((null), (static))}}
+}
+
+void foreach_arithmetic() {
+  int t[] = {1, 2, 3, 4, 5};
+  for (int &i : t) {
+    i += 1;
+  }
+}
+
+void enum_casts() {
+  enum EN {
+    TEST,
+  };
+  EN E1, E2;
+  ((int &)E1) |= ((int)E2);
+}
+
+namespace CXXScalarValueInitExpr {
+template <typename a>
+class b {
+public:
+  void c() {
+    // CXXScalarValueInitExpr -> value-initialization
+    int *p = a();
+    __lifetime_pset(p); // expected-warning {{((null))}}
+  }
+};
+
+void d() {
+  b<int *> d;
+  d.c(); // expected-note {{in instantiation}}
+}
+} // namespace CXXScalarValueInitExpr
 
 namespace crashes {
 // This used to crash with missing pset.
@@ -1036,4 +1133,54 @@ class a {
   void operator==(a);
   a m_fn2();
 };
+} // namespace creduce3
+
+namespace creduce4 {
+class a {
+public:
+  void operator=(int);
+  void operator*();
+};
+void b() {
+  a c;   // expected-note {{default-constructed Pointers are assumed to be null}}
+  c = 0; // expected-warning {{passing a null pointer as argument to a non-null parameter}}
 }
+} // namespace creduce4
+
+namespace creduce5 {
+class a {
+  long b;
+  a &operator+=(a);
+};
+a &a::operator+=(a) {
+  b += b;
+  return *this;
+}
+} // namespace creduce5
+
+namespace creduce6 {
+class a {
+protected:
+  static void b();
+};
+class c : a {
+  c() { (void)this->b; }
+};
+} // namespace creduce6
+
+namespace creduce7 {
+int a;
+void b() {
+  int c = ((void)b, a);
+  (void)c;
+}
+} // namespace creduce7
+
+namespace creduce8 {
+// ImplicitValueInitExpr of array type
+class a {
+  char b[];
+  a();
+};
+a::a() : b() {}
+} // namespace creduce8

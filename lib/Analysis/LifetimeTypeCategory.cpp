@@ -12,8 +12,20 @@
 #include "clang/AST/DeclTemplate.h"
 #include <set>
 
+#define CLASSIFY_DEBUG 0
+
 namespace clang {
 namespace lifetime {
+
+static FunctionDecl *lookupOperator(const CXXRecordDecl *R,
+                                    OverloadedOperatorKind Op) {
+  return GlobalLookupOperator(R, Op);
+}
+
+static FunctionDecl *lookupMemberFunction(const CXXRecordDecl *R,
+                                          StringRef Name) {
+  return GlobalLookupMemberFunction(R, Name);
+}
 
 template <typename T>
 static bool hasMethodLike(const CXXRecordDecl *R, T Predicate) {
@@ -74,6 +86,10 @@ static bool satisfiesRangeConcept(const CXXRecordDecl *R) {
          hasMethodWithNameAndArgNum(R, "end", 0) && R->hasTrivialDestructor();
 }
 
+static bool hasDerefOperations(const CXXRecordDecl *R) {
+  return lookupOperator(R, OO_Arrow) || lookupOperator(R, OO_Star);
+}
+
 /// Classifies some well-known std:: types or returns an empty optional.
 /// Checks the type both before and after desugaring.
 // TODO:
@@ -84,7 +100,7 @@ static bool satisfiesRangeConcept(const CXXRecordDecl *R) {
 static Optional<TypeCategory> classifyStd(const Type *T) {
   // MSVC: _Ptr_base is a base class of shared_ptr, and we only see
   // _Ptr_base when calling get() on a shared_ptr.
-  static std::set<StringRef> StdOwners{"stack",    "queue",   "priority_queue",
+  static std::set<StringRef> StdOwners{"stack", "queue", "priority_queue",
                                        "optional", "_Ptr_base"};
   static std::set<StringRef> StdPointers{"basic_regex", "reference_wrapper"};
   NamedDecl *Decl;
@@ -120,9 +136,8 @@ TypeCategory classifyTypeCategory(QualType QT) {
           llvm::errs() << "classifyTypeCategory\n ";
            T->dump(llvm::errs());
            llvm::errs() << "\n";*/
-
   const Type *T = QT.getUnqualifiedType().getTypePtr();
-  const auto *R = T->getAsCXXRecordDecl();
+  auto *R = T->getAsCXXRecordDecl();
 
   if (!R) {
     // raw pointers and references
@@ -134,53 +149,77 @@ TypeCategory classifyTypeCategory(QualType QT) {
     return TypeCategory::Value;
   }
 
+  if (!R->hasDefinition()) {
+    if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R))
+      GlobalDefineClassTemplateSpecialization(CDS);
+  }
+
   if (!R->hasDefinition())
     return TypeCategory::Value;
 
-  if (R->hasAttr<OwnerAttr>())
-    return TypeCategory::Owner;
+  // In case we do not know the pointee type fall back to value.
+  QualType Pointee = getPointeeType(QT);
 
-  if (R->hasAttr<PointerAttr>())
-    return TypeCategory::Pointer;
+#if CLASSIFY_DEBUG
+  llvm::errs() << "classifyTypeCategory " << QT.getAsString() << "\n";
+  llvm::errs() << "  satisfiesContainerRequirements(R): "
+               << satisfiesContainerRequirements(R) << "\n";
+  llvm::errs() << "  hasDerefOperations(R): " << hasDerefOperations(R) << "\n";
+  llvm::errs() << "  satisfiesRangeConcept(R): " << satisfiesRangeConcept(R)
+               << "\n";
+  llvm::errs() << "  hasTrivialDestructor(R): " << R->hasTrivialDestructor()
+               << "\n";
+  llvm::errs() << "  satisfiesIteratorRequirements(R): "
+               << satisfiesIteratorRequirements(R) << "\n";
+  llvm::errs() << "  R->isAggregate(): " << R->isAggregate() << "\n";
+  llvm::errs() << "  R->isLambda(): " << R->isLambda() << "\n";
+  llvm::errs() << "  DerefType: " << Pointee.getAsString() << "\n";
+#endif
+
+  if (R->hasAttr<OwnerAttr>()) {
+    if (Pointee.isNull())
+      return TypeCategory::Value; // TODO diagnose
+    else
+      return TypeCategory::Owner;
+  }
+
+  if (R->hasAttr<PointerAttr>()) {
+    if (Pointee.isNull())
+      return TypeCategory::Value; // TODO diagnose
+    else
+      return TypeCategory::Pointer;
+  }
 
   // Every type that satisfies the standard Container requirements.
-  if (satisfiesContainerRequirements(R))
+  if (!Pointee.isNull() && satisfiesContainerRequirements(R))
     return TypeCategory::Owner;
-
-  // TODO: handle outside class definition 'R& operator*(T a);' .
-  bool hasDerefOperations = hasMethodLike(R, [](const CXXMethodDecl *M) {
-    auto O = M->getDeclName().getCXXOverloadedOperator();
-    return (O == OO_Arrow) || (O == OO_Star && M->param_empty());
-  });
 
   // Every type that provides unary * or -> and has a user-provided destructor.
   // (Example: unique_ptr.)
-  if (hasDerefOperations && !R->hasTrivialDestructor())
+  if (!Pointee.isNull() && hasDerefOperations(R) && !R->hasTrivialDestructor())
     return TypeCategory::Owner;
 
   if (auto Cat = classifyStd(T))
     return *Cat;
 
   //  Every type that satisfies the Ranges TS Range concept.
-  if (satisfiesRangeConcept(R))
+  if (!Pointee.isNull() && satisfiesRangeConcept(R))
     return TypeCategory::Pointer;
 
   // Every type that satisfies the standard Iterator requirements. (Example:
   // regex_iterator.), see https://en.cppreference.com/w/cpp/named_req/Iterator
-  if (satisfiesIteratorRequirements(R))
+  if (!Pointee.isNull() && satisfiesIteratorRequirements(R))
     return TypeCategory::Pointer;
 
   // Every type that provides unary * or -> and does not have a user-provided
   // destructor. (Example: span.)
-  if (hasDerefOperations && !R->hasUserDeclaredDestructor())
+  if (!Pointee.isNull() && hasDerefOperations(R) &&
+      !R->hasUserDeclaredDestructor())
     return TypeCategory::Pointer;
 
   // Every closure type of a lambda that captures by reference.
-  if (R->isLambda() &&
-      std::any_of(R->field_begin(), R->field_end(), [](const FieldDecl *FD) {
-        return classifyTypeCategory(FD->getType()) == TypeCategory::Pointer;
-      })) {
-    return TypeCategory::Pointer;
+  if (R->isLambda()) {
+    return TypeCategory::Value;
   }
 
   // An Aggregate is a type that is not an Indirection
@@ -228,39 +267,97 @@ bool isNullableType(QualType QT) {
          !QT->isReferenceType();
 }
 
-QualType getPointeeType(QualType QT) {
+static QualType getPointeeType(const CXXRecordDecl *R) {
+  assert(R);
+
+  for (auto Op : {OO_Star, OO_Arrow, OO_Subscript}) {
+    if (auto *F = lookupOperator(R, Op)) {
+      auto PointeeType = F->getReturnType();
+      if (PointeeType->isReferenceType() || PointeeType->isAnyPointerType())
+        PointeeType = PointeeType->getPointeeType();
+      return PointeeType.getCanonicalType();
+    }
+  }
+
+  if (auto *F = lookupMemberFunction(R, "begin")) {
+    auto PointeeType = F->getReturnType();
+    if (classifyTypeCategory(PointeeType) != TypeCategory::Pointer) {
+#if CLASSIFY_DEBUG
+      // TODO: diag?
+      llvm::errs() << "begin() function does not return a Pointer!\n";
+      F->dump();
+#endif
+      return {};
+    }
+    PointeeType = getPointeeType(PointeeType);
+    return PointeeType.getCanonicalType();
+  }
+
+  // Heuristic for vector<bool>::reference. Return void, we do not
+  // want it to alias with pointers to bool. TODO: revise.
+  if (auto *F = lookupMemberFunction(R, "flip")) {
+    return F->getReturnType();
+  }
+
+  return {};
+}
+
+static QualType getPointeeTypeImpl(QualType QT) {
   QT = QT.getCanonicalType();
+  // llvm::errs() << "\n\ngetPointeeType " << QT.getAsString() << " asRecord:"
+  // << (intptr_t)QT->getAsCXXRecordDecl() << "\n";
+
   if (QT->isReferenceType() || QT->isAnyPointerType())
     return QT->getPointeeType();
 
-  if (const auto *R = QT->getAsCXXRecordDecl()) {
-    for (auto *M : R->methods()) {
-      auto O = M->getDeclName().getCXXOverloadedOperator();
-      if (O == OO_Arrow || O == OO_Star || O == OO_Subscript) {
-        QT = M->getReturnType();
-        if (QT->isReferenceType() || QT->isAnyPointerType())
-          return QT->getPointeeType();
-        return QT;
-      }
-      // Heuristic for vector<bool>::reference. Return void, we do not
-      // want it to alias with pointers to bool. TODO: revise.
-      if (M->getIdentifier() && M->getName() == "flip")
-        return M->getReturnType();
-    }
-    // Check the bases.
-    for (auto Base : R->bases()) {
-      QualType Ret = getPointeeType(Base.getType());
-      if (!Ret.isNull())
-        return Ret;
-    }
+  auto *R = QT->getAsCXXRecordDecl();
+  if (!R)
+    return {};
 
-    if (auto *T = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
-      auto &Args = T->getTemplateArgs();
-      if (Args.size() > 0 && Args[0].getKind() == TemplateArgument::Type)
-        return Args[0].getAsType();
-    }
+  if (!R->hasDefinition()) {
+    if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R))
+      GlobalDefineClassTemplateSpecialization(CDS);
+  }
+
+  assert(R->hasDefinition());
+
+  auto PointeeType = getPointeeType(R);
+  if (!PointeeType.isNull())
+    return PointeeType;
+
+  if (auto *T = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
+    auto &Args = T->getTemplateArgs();
+    if (Args.size() > 0 && Args[0].getKind() == TemplateArgument::Type)
+      return Args[0].getAsType();
   }
   return {};
+}
+
+QualType getPointeeType(QualType QT) {
+  QT = QT.getCanonicalType();
+  static std::vector<std::pair<QualType, QualType>> M;
+
+  auto I = std::find_if(
+      M.begin(), M.end(),
+      [&](const std::pair<QualType, QualType> &P) { return P.first == QT; });
+
+  if (I != M.end())
+    return I->second;
+
+  // Insert Null before calling getPointeeTypeImpl to stop
+  // a possible classifyTypeCategory -> getPointeeType infinite recursion
+  M.emplace_back(QT, QualType{});
+  size_t Idx = M.size() - 1;
+
+  auto P = getPointeeTypeImpl(QT);
+  if (!P.isNull())
+    P = P.getCanonicalType();
+  M[Idx].second = P;
+#if CLASSIFY_DEBUG
+  llvm::errs() << "DerefType(" << QT.getAsString() << ") = " << P.getAsString()
+               << "\n";
+#endif
+  return P;
 }
 
 CallTypes getCallTypes(const Expr *CalleeE) {

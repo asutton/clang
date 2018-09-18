@@ -3069,6 +3069,9 @@ def note_temporary_destroyed: Note<"temporary was destroyed at the end of the fu
 def note_pointer_arithmetic: Note<"pointer arithmetic is not allowed">;
 def note_dereferenced: Note<"was dereferenced here">;
 def note_null_here: Note<"became nullptr here">;
+def note_null_reason_parameter: Note<"the parameter is assumed to be potentially null. Consider using gsl::not_null<>, a reference instead of a pointer or an assert() to explicitly remove null">;
+def note_null_reason_default_construct: Note<"default-constructed Pointers are assumed to be null">;
+def note_null_reason_compared_to_null: Note<"is compared to null here">;
 def note_forbidden_cast: Note<"used a forbidden cast here">;
 def note_modified: Note<"modified here">;
 def note_assigned: Note<"assigned here">;
@@ -3080,7 +3083,7 @@ def warn_pset : Warning<"pset(%0) = %1">,
   InGroup<LifetimeDebug>, DefaultIgnore;
 def warn_deref_unknown : Warning<"dereferencing a unknown pointer">,
   InGroup<LifetimeDebug>, DefaultIgnore;
-def warn_lifetime_type_category : Warning<"lifetime type category is %select{Owner|Pointer|Aggregate|Value}0">,
+def warn_lifetime_type_category : Warning<"lifetime type category is %select{Owner|Pointer|Aggregate|Value}0 %select{|with pointee %2}1">,
   InGroup<LifetimeDebug>, DefaultIgnore;
     
 // no_sanitize attribute
