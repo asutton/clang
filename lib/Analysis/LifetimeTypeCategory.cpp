@@ -128,7 +128,7 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
   return None;
 }
 
-TypeCategory classifyTypeCategory(QualType QT) {
+static TypeCategory classifyTypeCategoryImpl(QualType QT) {
   /*
           llvm::errs() << "classifyTypeCategory\n ";
            T->dump(llvm::errs());
@@ -226,6 +226,26 @@ TypeCategory classifyTypeCategory(QualType QT) {
 
   // A Value is a type that is neither an Indirection nor an Aggregate.
   return TypeCategory::Value;
+}
+
+TypeCategory classifyTypeCategory(QualType QT) {
+  static std::vector<std::pair<QualType, TypeCategory>> Cache;
+
+  auto I = std::find_if(Cache.begin(), Cache.end(),
+                        [&](const std::pair<QualType, TypeCategory> &P) {
+                          return P.first == QT;
+                        });
+
+  if (I != Cache.end())
+    return I->second;
+
+  auto TC = classifyTypeCategoryImpl(QT);
+  Cache.emplace_back(QT, TC);
+#if CLASSIFY_DEBUG
+  llvm::errs() << "classifyTypeCategory(" << QT.getAsString()
+               << ") = " << (int)TC << "\n";
+#endif
+  return TC;
 }
 
 // TODO: check gsl namespace?
