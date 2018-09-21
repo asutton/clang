@@ -1203,11 +1203,13 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 
   // Propagate Template Attributes
   MemberSpecializationInfo *MemberSpecInfo = D->getMemberSpecializationInfo();
-  FunctionDecl *TemplateFD =
-    static_cast<FunctionDecl *>(MemberSpecInfo->getInstantiatedFrom());
-  TemplateSpecializationKind TemplateSK =
-    MemberSpecInfo->getTemplateSpecializationKind();
-  Method->setInstantiationOfMemberFunction(TemplateFD, TemplateSK);
+  if (MemberSpecInfo) {
+    FunctionDecl *TemplateFD =
+      static_cast<FunctionDecl *>(MemberSpecInfo->getInstantiatedFrom());
+    TemplateSpecializationKind TemplateSK =
+      MemberSpecInfo->getTemplateSpecializationKind();
+    Method->setInstantiationOfMemberFunction(TemplateFD, TemplateSK);
+  }
 
   // FIXME: Propagate attributes
 
