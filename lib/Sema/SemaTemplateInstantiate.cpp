@@ -2033,6 +2033,63 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
     return true;
   Pattern = PatternDef;
 
+  CXXRecordDecl *MetaInstantiation = nullptr;
+  bool HasGenerator = Pattern->getGenerator() != nullptr;
+  if (HasGenerator) {
+    // Since we have a generator set, we're creating a template meta class.
+    // To do this properly, we need to create something that looks (about)
+    // like this:
+    //
+    //    namespace __fake__ { class Proto { ... } };
+    //    class Class {
+    //      using prototype = __fake__::Proto;
+    //      constexpr { gen($Class, $__fake__::Proto); }
+    //    }
+    //
+    // We don't actually need to emit the fake namespace; we just don't
+    // add it to a declaration context.
+    //
+    // To handle this during instantiation, we'll make our outer class
+    // the original Instantiation object, then set the instantiation
+    // target to be the prototype. Thus our meta function will
+    // act on the fully instantiated prototype.
+    //
+    // TODO: There is a lot of shared logic between Sema::ActOnTag,
+    // and this block.
+    MetaInstantiation = Instantiation;
+    MetaInstantiation->setGenerator(Pattern->getGenerator());
+
+    StartDefinition(MetaInstantiation);
+
+    // ASTContext &Context = MetaInstantiation->getASTContext();
+    SourceLocation Loc = MetaInstantiation->getLocation();
+
+    DeclarationNameInfo DNI(MetaInstantiation->getDeclName(),
+                            MetaInstantiation->getLocation());
+    CXXRecordDecl *Proto = CXXRecordDecl::Create(Context,
+                                          MetaInstantiation->getTagKind(),
+                                          MetaInstantiation,
+                                          MetaInstantiation->getLocStart(),
+                                          Loc,
+                                          DNI.getName().getAsIdentifierInfo(),
+                                          nullptr);
+
+    Proto->setImplicit(true);
+    Proto->setFragment(true);
+
+    // Create the nested type alias.
+    QualType ProtoTy = Context.getRecordType(Instantiation);
+    TypeSourceInfo *ProtoTSI = Context.getTrivialTypeSourceInfo(ProtoTy);
+    IdentifierInfo *ProtoId = &Context.Idents.get("prototype");
+    Decl *Alias = TypeAliasDecl::Create(Context, MetaInstantiation, Loc,
+                                        Loc, ProtoId, ProtoTSI);
+    Alias->setImplicit(true);
+    Alias->setAccess(AS_public);
+    MetaInstantiation->addDecl(Alias);
+
+    Instantiation = Proto;
+  }
+
   // \brief Record the point of instantiation.
   if (MemberSpecializationInfo *MSInfo 
         = Instantiation->getMemberSpecializationInfo()) {
@@ -2230,6 +2287,102 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
 
   // Exit the scope of this instantiation.
   SavedContext.pop();
+
+  if (Instantiation->isPrototypeClass()) {
+    // TODO: There is a lot of shared logic between
+    // Sema::ActOnTagFinishDefinition, and this block.
+
+    CXXRecordDecl *Class = cast<CXXRecordDecl>(Instantiation->getDeclContext());
+    Expr *Generator = Class->getGenerator();
+    assert(Generator && "expected metaclass");
+
+    // We've just finished instantiating the definition of something like this:
+    //
+    //    class(M) C { ... };
+    //
+    // And have conceptually transformed that into something like this.
+    //
+    //    namespace __fake__ { class C { ... } };
+    //
+    // Now, we need to build a new version of the class containing a
+    // prototype and its generator.
+    //
+    //    class C {
+    //      using prototype = __fake__::C;
+    //      constexpr { M($prototype); }
+    //    };
+    //
+    // The only remaining step is to build and apply the metaprogram to
+    // generate the enclosing class.
+
+    // FIXME: Are there any properties that Class should inherit from
+    // the prototype? Alignment and layout attributes?
+
+    // Make sure that the final class available in its declaring scope.
+    PushOnScopeChains(Class, CurScope->getParent(), false);
+
+    // Make the new class is the current declaration context for the
+    // purpose of injecting source code.
+    ContextRAII Switch(*this, Class);
+
+    // For the purpose of creating the metaprogram and performing
+    // the final analysis, the Class needs to be scope's entity, not
+    // prototype.
+    // S->setEntity(Class);
+
+    // Use the name of the class for most source locations.
+    //
+    // FIXME: This isn't a particularly good idea.
+    SourceLocation Loc = Instantiation->getLocation();
+
+    // Insert 'using prototype = <proto>'.
+    IdentifierInfo *ProtoId = &Context.Idents.get("prototype");
+    QualType ProtoType(Instantiation->getTypeForDecl(), 0);
+    TypeSourceInfo *ProtoTSI = Context.getTrivialTypeSourceInfo(
+        ProtoType, Loc);
+    Decl *Alias = TypeAliasDecl::Create(
+        Context, Class, Loc, Loc, ProtoId, ProtoTSI);
+    Alias->setImplicit(true);
+    Alias->setAccess(AS_public);
+    Class->addDecl(Alias);
+
+    // Add 'constexpr { M($Class, $Proto); }' to the class.
+    //
+    // FIXME: This is duplicated in SemaInject.
+    unsigned ScopeFlags;
+    Decl *CD = ActOnConstexprDecl(CurScope, Loc, ScopeFlags);
+    CD->setImplicit(true);
+    CD->setAccess(AS_public);
+
+    ActOnStartConstexprDecl(CurScope, CD);
+
+    // Build the expression $prototype (or equivalent).
+    ExprResult Input = ActOnCXXReflectExpr(Loc, ProtoTSI);
+
+    // Build the call to <gen>(<ref>)
+    Expr *Args[] {Input.get()};
+    ExprResult Call = ActOnCallExpr(CurScope, Generator, Loc, Args, Loc);
+    if (Call.isInvalid()) {
+      ActOnConstexprDeclError(nullptr, CD);
+      Class->setInvalidDecl(true);
+    } else {
+      Stmt* Body = new (Context) CompoundStmt(Context, Call.get(), Loc, Loc);
+      ActOnFinishConstexprDecl(CurScope, CD, Body);
+
+      // Finally, re-analyze the fields of the fields the class to
+      // instantiate remaining defaults. This will also complete the
+      // definition.
+      SmallVector<Decl *, 32> Fields;
+      auto&& BraceRange = Pattern->getBraceRange();
+      ActOnFields(nullptr, Class->getLocation(), Class, Fields,
+                  BraceRange.getBegin(), BraceRange.getEnd(), nullptr);
+
+      assert(Class->isCompleteDefinition() && "Generated class not complete");
+
+      // ActOnFinishCXXNonNestedClass(Class);
+      // ActOnFinishDelayedMemberInitializers(Class);
+    }
+  }
 
   if (!Instantiation->isInvalidDecl()) {
     Consumer.HandleTagDeclDefinition(Instantiation);
