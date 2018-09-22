@@ -468,6 +468,7 @@ private:
   CFGBlock *VisitCXXNewExpr(CXXNewExpr *DE, AddStmtChoice asc);
   CFGBlock *VisitCXXDeleteExpr(CXXDeleteExpr *DE, AddStmtChoice asc);
   CFGBlock *VisitCXXForRangeStmt(CXXForRangeStmt *S);
+  CFGBlock *VisitCXXTupleExpansionStmt(CXXTupleExpansionStmt *S);
   CFGBlock *VisitCXXFunctionalCastExpr(CXXFunctionalCastExpr *E,
                                        AddStmtChoice asc);
   CFGBlock *VisitCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *C,
@@ -1652,6 +1653,9 @@ CFGBlock *CFGBuilder::Visit(Stmt * S, AddStmtChoice asc) {
 
     case Stmt::CXXForRangeStmtClass:
       return VisitCXXForRangeStmt(cast<CXXForRangeStmt>(S));
+
+    case Stmt::CXXTupleExpansionStmtClass:
+      return VisitCXXTupleExpansionStmt(cast<CXXTupleExpansionStmt>(S));
 
     case Stmt::DeclStmtClass:
       return VisitDeclStmt(cast<DeclStmt>(S));
@@ -3649,6 +3653,11 @@ CFGBlock *CFGBuilder::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   addStmt(S->getBeginStmt());
   addStmt(S->getEndStmt());
   return addStmt(S->getRangeStmt());
+}
+
+CFGBlock *CFGBuilder::VisitCXXTupleExpansionStmt(CXXTupleExpansionStmt *S) {
+  // FIXME: Implement this.
+  return nullptr;
 }
 
 CFGBlock *CFGBuilder::VisitExprWithCleanups(ExprWithCleanups *E,

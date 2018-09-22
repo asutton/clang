@@ -1516,12 +1516,10 @@ ExprResult Reflector::ReflectDefaultAccess(Decl *D)
   llvm::APSInt True = C.MakeIntValue(true, C.BoolTy);
   llvm::APSInt False = C.MakeIntValue(false, C.BoolTy);
   for (Decl *Member : D->getDeclContext()->decls()) {
-    if (Member == D) {
+    if (Member == D)
       return IntegerLiteral::Create(C, True, C.BoolTy, KWLoc);
-    }
-    if (isa<AccessSpecDecl>(Member)){
+    if (isa<AccessSpecDecl>(Member))
       return IntegerLiteral::Create(C, False, C.BoolTy, KWLoc);
-    }
   }
   llvm_unreachable("Member not in class");
 }

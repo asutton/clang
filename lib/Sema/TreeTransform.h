@@ -4238,6 +4238,24 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
         = getSema().getTemplateArgumentPackExpansionPattern(
               In, Ellipsis, OrigNumExpansions);
 
+      // During source code injection, we can never actually expand a 
+      // parameter pack (for now). We need to retain the argument after
+      // applying transformations.
+      //
+      // FIXME: The underlying argument transformation links to an unknown
+      // template parameter, causing subsequent template instantiation to
+      // fail.
+      if (getDerived().InjectingCode()) {
+        ForgetPartiallySubstitutedPackRAII Forget(getDerived());
+        if (getDerived().TransformTemplateArgument(Pattern, Out, Uneval))
+          return true;
+        Out = getDerived().RebuildPackExpansion(Out, Ellipsis, OrigNumExpansions);
+        if (Out.getArgument().isNull())
+          return true;
+        Outputs.addArgument(Out);
+        continue;
+      }
+
       SmallVector<UnexpandedParameterPack, 2> Unexpanded;
       getSema().collectUnexpandedParameterPacks(Pattern, Unexpanded);
       assert(!Unexpanded.empty() && "Pack expansion without parameter packs?");
@@ -5436,13 +5454,8 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
 #ifndef NDEBUG
   if (PVars) {
     for (unsigned i = 0, e = PVars->size(); i != e; ++i)
-      if (ParmVarDecl *parm = (*PVars)[i]) {
-        if (parm->getFunctionScopeIndex() != i) {
-          llvm::errs() << "FAIL : " << i << ' ' << parm->getFunctionScopeIndex() << '\n';
-          parm->dump();
-        }
+      if (ParmVarDecl *parm = (*PVars)[i])
         assert(parm->getFunctionScopeIndex() == i);
-      }
   }
 #endif
 

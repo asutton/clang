@@ -2084,9 +2084,11 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
   CXXRecordDecl *Record = cast<CXXRecordDecl>(DC);
   CXXMethodDecl *Method = nullptr;
 
-  SourceLocation StartLoc = D->getInnerLocStart();
+  // Substitute through the name.
   DeclarationNameInfo NameInfo
     = SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
+  
+  SourceLocation StartLoc = D->getInnerLocStart();
   if (CXXConstructorDecl *Constructor = dyn_cast<CXXConstructorDecl>(D)) {
     Method = CXXConstructorDecl::Create(SemaRef.Context, Record,
                                         StartLoc, NameInfo, T, TInfo,
@@ -2145,6 +2147,13 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     } else if (D->isOutOfLine())
       FunctionTemplate->setLexicalDeclContext(D->getLexicalDeclContext());
     Method->setDescribedFunctionTemplate(FunctionTemplate);
+
+    // For injected declarations, explicitly associate the original
+    // declaration in case we need to instantiate the definition later,
+    // which we almost certainly will.
+    if (D->isInFragment()) {
+      Method->setInjectedTemplatePattern(D);
+    }
   } else if (FunctionTemplate) {
     // Record this function template specialization.
     ArrayRef<TemplateArgument> Innermost = TemplateArgs.getInnermost();
@@ -2241,43 +2250,21 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     Owner->addDecl(Method);
   }
 
-  // For methods defined in fragments, substitute through the body. Note
-  // that this is NOT the same as instantiating the function definition.
+  // For methods defined in fragments, we need to instantiate the definition
+  // later, so we can resolve names that refer to as-of-yet uninstantiated
+  // members.
   if (Method->isInFragment() && D->hasBody()) {
-    // Fragments are never evaluated. Only during injection would their
-    // bodies be potentially evaluated.
-    EnterExpressionEvaluationContext EvalContext(
-      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);
+    SourceLocation Loc = D->getLocation();
 
-    // Create a merged instantiation scope. 
-    LocalInstantiationScope Scope(SemaRef, true);
-
-    // Perform necessary pre-processing before instantiating the definition.
-    SubstQualifier(D, Method);    
-    SemaRef.ActOnStartOfFunctionDef(nullptr, Method);
-
-    // Switch the context to the method.    
-    Sema::ContextRAII Switch(SemaRef, Method);
-
-    // If this is a constructor, instantiate the member initializers.
-    if (CXXConstructorDecl *NewCtor = dyn_cast<CXXConstructorDecl>(Method)) {
-      CXXConstructorDecl *OldCtor = cast<CXXConstructorDecl>(D);
-      SemaRef.InstantiateMemInitializers(NewCtor, OldCtor, TemplateArgs);
-      
-      // If this is an MS ABI dllexport default constructor, instantiate any
-      // default arguments.
-      if (SemaRef.Context.getTargetInfo().getCXXABI().isMicrosoft() &&
-          NewCtor->isDefaultConstructor()) {
-        InstantiateDefaultCtorDefaultArgs(SemaRef, NewCtor);
-      }
+    if (MemberSpecializationInfo *MSInfo = Method->getMemberSpecializationInfo()) {
+      if (MSInfo->getPointOfInstantiation().isInvalid())
+        MSInfo->setPointOfInstantiation(Loc);
     }
 
-    StmtResult Body = SemaRef.SubstStmt(D->getBody(), TemplateArgs);
-    if (Body.isInvalid())
-      Method->setInvalidDecl();
-
-    // Perform post-processing checks.
-    SemaRef.ActOnFinishFunctionBody(Method, Body.get(), true);
+    // Don't eagerly instantiate member function definitions. We can
+    // do this at the point of injection.
+    SemaRef.PendingLocalImplicitInstantiations.push_back(
+        std::make_pair(Method, Loc));
   }
 
   return Method;
@@ -3942,20 +3929,8 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
       !Function->getClassScopeSpecializationPattern()) 
     return;
 
-  // Find the function body that we'll be substituting. This is normally
-  // available through the instantiated declaration, except in the case where
-  // the function was injected.
-  //
-  // We sometimes get here when injecting a metaprogram; they aren't 
-  // instantiated in the usual way, so we have to be explicit about their
-  // "pattern".
-  const FunctionDecl *PatternDecl;
-  if (!Injection) {
-    PatternDecl = Function->getTemplateInstantiationPattern();
-    assert(PatternDecl && "instantiating a non-template");
-  } else {
-    PatternDecl = Injection;
-  }
+  const FunctionDecl *PatternDecl = Function->getTemplateInstantiationPattern();
+  assert(PatternDecl && "instantiating a non-template");
 
   // const FunctionDecl *PatternDecl = Function->getTemplateInstantiationPattern();
   // assert(PatternDecl && "instantiating a non-template");

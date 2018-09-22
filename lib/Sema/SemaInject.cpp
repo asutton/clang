@@ -128,6 +128,8 @@ struct DeclModifiers
   
   // If true, add the pure virtual specifier.
   bool addPureVirtual() { return Pure; }
+
+  void dump() const;
   
   AccessModifier Access;
   StorageModifier Storage;
@@ -135,6 +137,49 @@ struct DeclModifiers
   bool Virtual;
   bool Pure;
 };
+
+void
+DeclModifiers::dump() const
+{
+  llvm::errs() << "Access: ";
+  switch (Access) {
+  case NoAccess:
+    llvm::errs() << "none\n";
+    break;
+  case Public:
+    llvm::errs() << "public\n";
+    break;
+  case Private:
+    llvm::errs() << "private\n";
+    break;
+  case Protected:
+    llvm::errs() << "protected\n";
+    break;
+  case Default:
+    llvm::errs() << "default\n";
+    break;
+  }
+  llvm::errs() << "Storage: ";
+  switch (Storage) {
+    case NoStorage:
+    llvm::errs() << "none\n";
+    break;
+  case Static:
+    llvm::errs() << "static\n";
+    break;
+  case Automatic:
+    llvm::errs() << "auto\n";
+    break;
+  case ThreadLocal:
+    llvm::errs() << "thread\n";
+    break;
+  }
+
+  llvm::errs() << "Constexpr: " << (Constexpr ? "yes" : "no") << '\n';
+  llvm::errs() << "Virtual: " << (Virtual ? "yes" : "no") << '\n';
+  llvm::errs() << "Pure: " << (Pure ? "yes" : "no") << '\n';
+
+}
 
 class InjectionContext;
 
