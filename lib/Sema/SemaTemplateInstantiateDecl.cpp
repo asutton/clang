@@ -3926,7 +3926,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   // explicit specialization.
   TemplateSpecializationKind TSK = Function->getTemplateSpecializationKind();
   if (TSK == TSK_ExplicitSpecialization &&
-      !Function->getClassScopeSpecializationPattern()) 
+      !Function->getClassScopeSpecializationPattern())
     return;
 
   const FunctionDecl *PatternDecl = Function->getTemplateInstantiationPattern();

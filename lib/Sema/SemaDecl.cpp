@@ -13116,8 +13116,8 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, Expr *Generator,
           return nullptr;
 
         OwnedDecl = false;
-        DeclResult Result = CheckClassTemplate(S, TagSpec, TUK, KWLoc,
-                                               SS, Name, NameLoc, Attr,
+        DeclResult Result = CheckClassTemplate(S, TagSpec, Generator, TUK,
+                                               KWLoc, SS, Name, NameLoc, Attr,
                                                TemplateParams, AS,
                                                ModulePrivateLoc,
                                                /*FriendLoc*/SourceLocation(),
@@ -13809,7 +13809,7 @@ CreateNewDecl:
     //
     // Generate something that looks (about) like this:
     //
-    //    namespace __fake__ { class Proto {... } };
+    //    namespace __fake__ { class Proto { ... } };
     //    class Class {
     //      using prototype = __fake__::Proto;
     //      constexpr { gen($Class, $__fake__::Proto); }
@@ -14149,9 +14149,9 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
       //
       //    class(M) C { ... };
       //
-      // And have conceptually transformed that into something like this. 
+      // And have conceptually transformed that into something like this.
       //
-      //    namespace __fake__ { class C {... } };
+      //    namespace __fake__ { class C { ... } };
       //
       // Now, we need to build a new version of the class containing a
       // prototype and its generator.

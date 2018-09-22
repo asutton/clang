@@ -1197,9 +1197,19 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
                                    D->isInlineSpecified(), D->isConstexpr(), 
                                    D->getLocEnd());
   }
-  AddDeclSubstitution(D, Method);
 
+  AddDeclSubstitution(D, Method);
   UpdateFunctionParms(D, Method);
+
+  // Propagate Template Attributes
+  MemberSpecializationInfo *MemberSpecInfo = D->getMemberSpecializationInfo();
+  if (MemberSpecInfo) {
+    FunctionDecl *TemplateFD =
+      static_cast<FunctionDecl *>(MemberSpecInfo->getInstantiatedFrom());
+    TemplateSpecializationKind TemplateSK =
+      MemberSpecInfo->getTemplateSpecializationKind();
+    Method->setInstantiationOfMemberFunction(TemplateFD, TemplateSK);
+  }
 
   // FIXME: Propagate attributes
 
@@ -1210,7 +1220,7 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   // FIXME: Inherit access as a semantic attribute or trace it through the
   // injection as if parsing?
   Method->setImplicit(D->isImplicit());
-  
+
   // Update the access specifier.
   if (Modifiers.modifyAccess())
     Method->setAccess(Modifiers.getAccess());

@@ -6052,16 +6052,16 @@ public:
       ArrayRef<TemplateParameterList *> ParamLists,
       bool IsFriend, bool &IsMemberSpecialization, bool &Invalid);
 
-  DeclResult CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
-                                SourceLocation KWLoc, CXXScopeSpec &SS,
-                                IdentifierInfo *Name, SourceLocation NameLoc,
-                                AttributeList *Attr,
+  DeclResult CheckClassTemplate(Scope *S, unsigned TagSpec, Expr *Generator,
+                                TagUseKind TUK, SourceLocation KWLoc,
+                                CXXScopeSpec &SS, IdentifierInfo *Name,
+                                SourceLocation NameLoc, AttributeList *Attr,
                                 TemplateParameterList *TemplateParams,
                                 AccessSpecifier AS,
                                 SourceLocation ModulePrivateLoc,
                                 SourceLocation FriendLoc,
                                 unsigned NumOuterTemplateParamLists,
-                            TemplateParameterList **OuterTemplateParamLists,
+                                TemplateParameterList **OuterTemplateParamLists,
                                 SkipBodyInfo *SkipBody = nullptr);
 
   TemplateArgumentLoc getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
