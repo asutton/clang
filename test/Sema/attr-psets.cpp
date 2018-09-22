@@ -120,15 +120,15 @@ struct D : public S {
 struct [[gsl::Pointer]] my_pointer {
   my_pointer();
   my_pointer &operator=(const my_pointer &);
-  int& operator*();
+  int &operator*();
 };
 
 struct [[gsl::Owner]] OwnerOfInt {
-  int& operator*();
+  int &operator*();
 };
 
 struct [[gsl::Pointer]] PointerToInt {
-  int& operator*();
+  int &operator*();
 };
 
 void pointer_exprs() {
@@ -389,6 +389,13 @@ void if_stmt(const int *p, const char *q,
   while (p) {
     __lifetime_pset(p); // expected-warning {{pset(p) = ((*p))}}
   }
+
+  int i;
+  p = &i;
+  __lifetime_pset(p); // expected-warning {{(i}}}
+  if (p) {
+  }
+  __lifetime_pset(p); // expected-warning {{(i}}}
 }
 
 void implicit_else() {
@@ -468,8 +475,11 @@ l1:
     goto l1;
 
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
-  void *ptr = &&l1;
-  __lifetime_pset(ptr); // expected-warning {{pset(ptr) = ((static))}}
+  (void)&&l1;
+
+  void *vptr = &i;
+  p = (int *)vptr;
+  __lifetime_pset(p); // expected-warning {{((invalid))}}
 }
 
 void goto_skipping_decl(bool b) {
@@ -588,7 +598,7 @@ void function_call3() {
 }
 
 void function_call4() {
-  PointerToInt f(OwnerOfInt&);
+  PointerToInt f(OwnerOfInt &);
 
   OwnerOfInt O;
   auto P = f(O);
@@ -784,7 +794,7 @@ void lifetime_const() {
     int *ptr;
 
   public:
-    int& operator*();
+    int &operator*();
     int *begin() { return ptr; }
     void reset() {}
     [[gsl::lifetime_const]] void peek() {}
@@ -927,7 +937,7 @@ int throw_local() {
 template <class T>
 struct [[gsl::Owner]] OwnerPointsToTemplateType {
   T *get();
-  T& operator*();
+  T &operator*();
 };
 
 void ownerPointsToTemplateType() {
@@ -1012,6 +1022,11 @@ void pruned_branch(bool cond) {
   int a, b;
   int &trivial_r = 0 ? b : a;
   __lifetime_pset_ref(trivial_r); // expected-warning {{(a)}}
+
+  void returns_void();
+  0 ? void() : returns_void(); // has not pset, should not crash.
+
+  __lifetime_pset(cond ? OwnerOfInt() : OwnerOfInt()); // expected-warning {{(temporary))}}
 }
 
 void parameter_psets(int value,
@@ -1091,6 +1106,32 @@ void d() {
 }
 } // namespace CXXScalarValueInitExpr
 
+namespace PointerToMember {
+struct Aggregate {
+  int *p1;
+  int *p2;
+};
+
+void f() {
+  Aggregate a;
+  int i;
+  a.p1 = &i; // make a.p1 valid; a.p2 still invalid
+  int *Aggregate::*memptr = &Aggregate::p2;
+  (void)*(a.*memptr); // .* is ignored
+}
+} // namespace PointerToMember
+
+namespace SubstNonTypeTemplateParmExpr {
+template <int *i>
+void f() {
+  (void)*i; // Template parameters have pset (static)
+}
+int g;
+void test() {
+  f<&g>();
+}
+} // namespace SubstNonTypeTemplateParmExpr
+
 namespace crashes {
 // This used to crash with missing pset.
 // It's mainly about knowing if the first argument
@@ -1139,7 +1180,7 @@ namespace creduce4 {
 class a {
 public:
   void operator=(int);
-  void operator*();
+  int &operator*();
 };
 void b() {
   a c;   // expected-note {{default-constructed Pointers are assumed to be null}}
@@ -1184,3 +1225,82 @@ class a {
 };
 a::a() : b() {}
 } // namespace creduce8
+
+namespace creduce9 {
+template <typename a>
+struct b : a {};
+template <typename = b<int>>
+class c {};
+class B {
+  // b<int> is ill-formed, but only used by name
+  // We don't want to see any errors when we internally
+  // try to look at the instantiation.
+  c<> d;
+  B() {}
+};
+} // namespace creduce9
+
+namespace creduce10 {
+// Don't crash when 'begin' is a field instead of a member function
+class a {
+  char begin;
+};
+void b(a) {}
+} // namespace creduce10
+
+namespace creduce11 {
+template <typename a>
+struct b {
+  a operator[](long);
+};
+struct g {};
+class f {
+  b<g> h;
+  // g is an Aggregate temporary, and it needs to have a pset
+  // because it is passed as r-value reference to the implicit operator=.
+  void i() { h[0] = g(); }
+};
+} // namespace creduce11
+
+namespace creduce12 {
+class a {
+public:
+  void operator*();
+  a operator++(int);
+};
+class b {
+public:
+  using c = a;
+  template <class d>
+  void e(c f, d) { *f++; }
+};
+class g {
+  using h = b;
+  h i;
+  void k() {
+    a j;
+    i.e(j, this);
+  }
+};
+} // namespace creduce12
+
+namespace creduce13 {
+template <typename a>
+a b(a &&);
+
+template <typename c>
+struct d : c {};
+
+class e {
+  d<int> operator*();
+};
+
+class h {
+  e begin();
+  void end();
+};
+
+class j {
+  j(h &&k) { b(k); }
+};
+} // namespace creduce13

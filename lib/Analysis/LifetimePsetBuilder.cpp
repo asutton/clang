@@ -103,10 +103,24 @@ public:
     }
   }
 
-  bool IsIgnoredStmt(const Stmt *S) {
+  static bool IsIgnoredStmt(const Stmt *S) {
     const Expr *E = dyn_cast<Expr>(S);
     return E && IgnoreTransparentExprs(E) != E;
   }
+
+  static bool mustSetPset(const Expr *E) { return hasPSet(E) || E->isLValue(); }
+
+  PSet varRefersTo(Variable V, SourceRange Range) {
+    if (V.getType()->isLValueReferenceType()) {
+      auto P = getPSet(V);
+      if (CheckPSetValidity(P, Range))
+        return P;
+      else
+        return PSet();
+    } else {
+      return PSet::singleton(V);
+    }
+  };
 
   void VisitStringLiteral(const StringLiteral *SL) {
     setPSet(SL, PSet::staticVar(false));
@@ -135,18 +149,6 @@ public:
     if (hasPSet(E))
       setPSet(E, getPSet(E->getExpr()));
   }
-
-  PSet varRefersTo(Variable V, SourceRange Range) {
-    if (V.getType()->isLValueReferenceType()) {
-      auto P = getPSet(V);
-      if (CheckPSetValidity(P, Range))
-        return P;
-      else
-        return PSet();
-    } else {
-      return PSet::singleton(V);
-    }
-  };
 
   void VisitDeclRefExpr(const DeclRefExpr *DeclRef) {
     if (isa<FunctionDecl>(DeclRef->getDecl()) ||
@@ -202,7 +204,17 @@ public:
     setPSet(E, PSet::singleton(Variable::thisPointer()));
   }
 
+  void
+  VisitSubstNonTypeTemplateParmExpr(const SubstNonTypeTemplateParmExpr *E) {
+    // Non-type template parameters that are pointers must point to something
+    // static (because only addresses known at compiler time are allowed)
+    if (mustSetPset(E))
+      setPSet(E, PSet::staticVar());
+  }
+
   void VisitAbstractConditionalOperator(const AbstractConditionalOperator *E) {
+    if (!hasPSet(E) && !E->isLValue())
+      return;
     // If the condition is trivially true/false, the corresponding branch
     // will be pruned from the CFG and we will not find a pset of it.
     // With AllowNonExisting, getPSet() will then return (unknown).
@@ -300,6 +312,8 @@ public:
       setPSet(BO, getPSet(BO->getLHS()));
     } else if (BO->isLValue() && BO->getOpcode() == BO_Comma) {
       setPSet(BO, getPSet(BO->getRHS()));
+    } else if (BO->getOpcode() == BO_PtrMemD || BO->getOpcode() == BO_PtrMemI) {
+      setPSet(BO, {}); // TODO, not specified in paper
     }
   }
 
@@ -700,16 +714,26 @@ public:
     E = IgnoreTransparentExprs(E);
     if (E->isLValue()) {
       auto I = RefersTo.find(E);
-      assert(AllowNonExisting || I != RefersTo.end());
-      if (I == RefersTo.end())
+      if (I != RefersTo.end())
+        return I->second;
+      if (AllowNonExisting)
         return {};
-      return I->second;
+#ifndef NDEBUG
+      E->dump();
+      llvm_unreachable("Expression has no entry in RefersTo");
+#endif
+      return {};
     } else {
       auto I = PSetsOfExpr.find(E);
-      assert(AllowNonExisting || I != PSetsOfExpr.end());
-      if (I == PSetsOfExpr.end())
+      if (I != PSetsOfExpr.end())
+        return I->second;
+      if (AllowNonExisting)
         return {};
-      return I->second;
+#ifndef NDEBUG
+      E->dump();
+      llvm_unreachable("Expression has no entry in PSetsOfExpr");
+#endif
+      return {};
     }
   }
 
@@ -968,10 +992,12 @@ void PSetsBuilder::UpdatePSetsFromCondition(
     PSet PS = getPSet(V);
     PSet PSElseBranch = PS;
     if (Positive) {
+      // The variable is non-null in the if-branch and null in the then-branch.
+      PSElseBranch.removeEverythingButNull();
       PS.removeNull();
-      PSElseBranch = PSet::null(NullReason::comparedToNull(Range));
     } else {
-      PS = PSet::null(NullReason::comparedToNull(Range));
+      // The variable is null in the if-branch and non-null in the then-branch.
+      PS.removeEverythingButNull();
       PSElseBranch.removeNull();
     }
     FalseBranchExitPMap = PMap;

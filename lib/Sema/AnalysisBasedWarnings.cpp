@@ -43,6 +43,7 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 #include <algorithm>
@@ -2025,7 +2026,7 @@ clang::sema::AnalysisBasedWarnings::AnalysisBasedWarnings(Sema &s)
   DefaultPolicy.enableConsumedAnalysis =
     isEnabled(D, warn_use_in_invalid_state);
 
-  DefaultPolicy.enableLifetimeAnalysis = isEnabled(D, warn_deref_nullptr);
+  DefaultPolicy.enableLifetimeAnalysis = isEnabled(D, warn_deref_dangling);
 }
 
 static void flushDiagnostics(Sema &S, const sema::FunctionScopeInfo *fscope) {
@@ -2204,10 +2205,28 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
     consumed::ConsumedAnalyzer Analyzer(WarningHandler);
     Analyzer.run(AC);
   }
-
   // Check for lifetime safety violations
   if (P.enableLifetimeAnalysis) {
+
+    struct DiagnosticsSuppressor {
+      DiagnosticsSuppressor(Sema &S) : S(S), PrevDiag(S.Diags.getSuppressAllDiagnostics()) {
+        S.Diags.setSuppressAllDiagnostics(true);
+        PendingLocalImplicitInstantiations = S.PendingLocalImplicitInstantiations;
+        PendingInstantiations = S.PendingInstantiations;
+      }
+      ~DiagnosticsSuppressor() {
+        S.Diags.setSuppressAllDiagnostics(PrevDiag);
+        S.PendingLocalImplicitInstantiations = PendingLocalImplicitInstantiations;
+        S.PendingInstantiations = PendingInstantiations;
+      }
+      Sema& S;
+      bool PrevDiag;
+      std::deque<Sema::PendingImplicitInstantiation> PendingLocalImplicitInstantiations;
+      std::deque<Sema::PendingImplicitInstantiation> PendingInstantiations;
+    };
+
     auto isConvertible = [this, D](QualType From, QualType To) {
+      DiagnosticsSuppressor _(S);
       OpaqueValueExpr Expr(D->getLocStart(), From, VK_RValue);
       ImplicitConversionSequence ICS = S.TryImplicitConversion(
         &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
@@ -2224,13 +2243,11 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       // point. We perform both an operator-name lookup from the local
       // scope and an argument-dependent lookup based on the types of
       // the arguments.
+      DiagnosticsSuppressor _(S);
       UnresolvedSet<16> Functions;
       S.LookupOverloadedOperatorName(Op, S.getScopeForContext(const_cast<CXXRecordDecl*>(R)), QualType(), QualType(),
                                     Functions);
-      DeclarationName OpName = S.Context.DeclarationNames.getCXXOperatorName(Op);
       SourceLocation OpLoc = R->getLocation();
-      // TODO: provide better source location info.
-      //DeclarationNameInfo OpNameInfo(OpName, OpLoc);
 
       // The expression itself does not matter, we just need to fake the right QualType.
       // We are looking for an operator overload that takes an lvalue of class type.
@@ -2253,13 +2270,6 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       // Add operator candidates that are member functions. Instantiates templates.
       S.AddMemberOperatorCandidates(Op, OpLoc, ArgsArray, CandidateSet);
 
-      // Add candidates from ADL.  Instantiates templates.
-      S.AddArgumentDependentLookupCandidates(OpName, OpLoc, ArgsArray,
-                                            /*ExplicitTemplateArgs*/nullptr,
-                                            CandidateSet);
-      // Add builtin operator candidates.
-      //bool HadMultipleCandidates = (CandidateSet.size() > 1);
-
       // Perform overload resolution.
       OverloadCandidateSet::iterator Best;
       if(CandidateSet.BestViableFunction(S, OpLoc, Best) != OR_Success)
@@ -2270,13 +2280,17 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
 
     /// Find a member function on R with the given name that takes no arguments. Instantiates templates.
     auto lookupMemberFunction = [this](const CXXRecordDecl* R, StringRef Name) -> FunctionDecl* {
+      // Don't diagnose if we fail here because the template is ill-formed.
+      DiagnosticsSuppressor _(S);
       SourceLocation Loc = R->getLocation();
       LookupResult Res(S, DeclarationNameInfo(DeclarationName(&S.Context.Idents.get(Name)), Loc), Sema::LookupMemberName);
       S.LookupQualifiedName(Res, const_cast<CXXRecordDecl*>(R));
 
       UnresolvedSet<16> Functions;
-      for(auto* D : Res)
-        Functions.addDecl(D);
+      for(auto* D : Res) {
+        if (isa<FunctionTemplateDecl>(D) || isa<FunctionDecl>(D))
+          Functions.addDecl(D);
+      }
 
       // The expression itself does not matter, we just need to fake the right QualType.
       // A member function takes the object as first argument.
@@ -2285,6 +2299,9 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       ArrayRef<Expr *> ArgsArray(Args, 1);
 
       OverloadCandidateSet CandidateSet(Loc, OverloadCandidateSet::CSK_Normal);
+
+
+
       S.AddFunctionCandidates(Functions, ArgsArray, CandidateSet);
 
       OverloadCandidateSet::iterator Best;
@@ -2297,6 +2314,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
     /// Tries to add the definition to a template specialization
     /// \post Specialization->hasDefinition() == true if possible
     auto tryInstantiateClassTemplateSpecialization = [this](ClassTemplateSpecializationDecl* Specialization) {
+      DiagnosticsSuppressor _(S);
       S.InstantiateClassTemplateSpecialization(Specialization->getLocation(), Specialization, TSK_ImplicitInstantiation, /*Complain=*/false);
     };
 

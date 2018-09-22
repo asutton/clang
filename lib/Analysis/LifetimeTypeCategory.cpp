@@ -90,6 +90,17 @@ static bool hasDerefOperations(const CXXRecordDecl *R) {
   return lookupOperator(R, OO_Arrow) || lookupOperator(R, OO_Star);
 }
 
+/// Determines if D is std::vector<bool>::reference
+static bool IsVectorBoolReference(const CXXRecordDecl *D) {
+  assert(D);
+  static std::set<StringRef> StdVectorBoolReference{
+      "__bit_reference" /* for libc++ */, "_Bit_reference" /* for libstdc++ */,
+      "_Vb_reference" /* for MSVC */};
+  if (!D->isInStdNamespace() || !D->getIdentifier())
+    return false;
+  return StdVectorBoolReference.count(D->getName());
+}
+
 /// Classifies some well-known std:: types or returns an empty optional.
 /// Checks the type both before and after desugaring.
 // TODO:
@@ -103,23 +114,7 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
   static std::set<StringRef> StdOwners{"stack", "queue", "priority_queue",
                                        "optional", "_Ptr_base"};
   static std::set<StringRef> StdPointers{"basic_regex", "reference_wrapper"};
-  NamedDecl *Decl;
-  if (const auto *TypeDef = T->getAs<TypedefType>()) {
-    if (auto TypeCat = classifyStd(TypeDef->desugar().getTypePtr()))
-      return TypeCat;
-    Decl = TypeDef->getDecl();
-    if (Decl->getName() == "reference") {
-      const auto *RD = dyn_cast<CXXRecordDecl>(Decl->getDeclContext());
-      if (satisfiesContainerRequirements(RD) && RD->isInStdNamespace()) {
-        // Lazily populate the list of pointers with the name of the
-        // implementation defined proxy classes.
-        if ((Decl = TypeDef->desugar()->getAsCXXRecordDecl()))
-          StdPointers.insert(Decl->getName());
-        return TypeCategory::Pointer;
-      }
-    }
-  } else
-    Decl = T->getAsCXXRecordDecl();
+  auto *Decl = T->getAsCXXRecordDecl();
   if (!Decl || !Decl->isInStdNamespace() || !Decl->getIdentifier())
     return None;
 
@@ -127,11 +122,14 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
     return TypeCategory::Owner;
   if (StdPointers.count(Decl->getName()))
     return TypeCategory::Pointer;
+  if (IsVectorBoolReference(Decl))
+    return TypeCategory::Pointer;
 
   return None;
 }
 
-TypeCategory classifyTypeCategory(QualType QT) {
+static TypeCategory classifyTypeCategoryImpl(QualType QT) {
+  assert(!QT.isNull());
   /*
           llvm::errs() << "classifyTypeCategory\n ";
            T->dump(llvm::errs());
@@ -140,6 +138,9 @@ TypeCategory classifyTypeCategory(QualType QT) {
   auto *R = T->getAsCXXRecordDecl();
 
   if (!R) {
+    if (T->isVoidPointerType())
+      return TypeCategory::Value;
+
     // raw pointers and references
     // Arrays are Pointers, because they implicitly convert into them
     // and we don't track implicit conversions.
@@ -213,8 +214,7 @@ TypeCategory classifyTypeCategory(QualType QT) {
 
   // Every type that provides unary * or -> and does not have a user-provided
   // destructor. (Example: span.)
-  if (!Pointee.isNull() && hasDerefOperations(R) &&
-      !R->hasUserDeclaredDestructor())
+  if (!Pointee.isNull() && hasDerefOperations(R) && R->hasTrivialDestructor())
     return TypeCategory::Pointer;
 
   // Every closure type of a lambda that captures by reference.
@@ -230,6 +230,26 @@ TypeCategory classifyTypeCategory(QualType QT) {
 
   // A Value is a type that is neither an Indirection nor an Aggregate.
   return TypeCategory::Value;
+}
+
+TypeCategory classifyTypeCategory(QualType QT) {
+  static std::vector<std::pair<QualType, TypeCategory>> Cache;
+
+  auto I = std::find_if(Cache.begin(), Cache.end(),
+                        [&](const std::pair<QualType, TypeCategory> &P) {
+                          return P.first == QT;
+                        });
+
+  if (I != Cache.end())
+    return I->second;
+
+  auto TC = classifyTypeCategoryImpl(QT);
+  Cache.emplace_back(QT, TC);
+#if CLASSIFY_DEBUG
+  llvm::errs() << "classifyTypeCategory(" << QT.getAsString()
+               << ") = " << (int)TC << "\n";
+#endif
+  return TC;
 }
 
 // TODO: check gsl namespace?
@@ -293,12 +313,6 @@ static QualType getPointeeType(const CXXRecordDecl *R) {
     return PointeeType.getCanonicalType();
   }
 
-  // Heuristic for vector<bool>::reference. Return void, we do not
-  // want it to alias with pointers to bool. TODO: revise.
-  if (auto *F = lookupMemberFunction(R, "flip")) {
-    return F->getReturnType();
-  }
-
   return {};
 }
 
@@ -313,6 +327,10 @@ static QualType getPointeeTypeImpl(QualType QT) {
   auto *R = QT->getAsCXXRecordDecl();
   if (!R)
     return {};
+
+  // std::vector<bool> contains std::vector<bool>::references
+  if (IsVectorBoolReference(R))
+    return QT;
 
   if (!R->hasDefinition()) {
     if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R))
@@ -350,8 +368,11 @@ QualType getPointeeType(QualType QT) {
   size_t Idx = M.size() - 1;
 
   auto P = getPointeeTypeImpl(QT);
-  if (!P.isNull())
+  if (!P.isNull()) {
     P = P.getCanonicalType();
+    if (P->isVoidType())
+      P = {};
+  }
   M[Idx].second = P;
 #if CLASSIFY_DEBUG
   llvm::errs() << "DerefType(" << QT.getAsString() << ") = " << P.getAsString()
