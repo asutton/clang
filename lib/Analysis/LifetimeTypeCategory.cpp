@@ -156,7 +156,7 @@ Optional<TypeClassification> getBaseClassification(const CXXRecordDecl *R) {
   }
 
   if (!HasOwnerBase && !HasPointerBase)
-    return {};
+    return None;
 
   if (HasOwnerBase && HasPointerBase)
     return TypeClassification(TypeCategory::Value);
