@@ -14923,9 +14923,11 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
   RecordDecl *Record = dyn_cast<RecordDecl>(EnclosingDecl);
 
   bool ApplyDefaults = true;
-  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
-    if (Class->isPrototypeClass())
-      ApplyDefaults = false;
+  if (Record) {
+    if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
+      if (Class->isPrototypeClass())
+        ApplyDefaults = false;
+    }
   }
 
   // Start counting up the number of named members; make sure to include
