@@ -14167,6 +14167,9 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
       // FIXME: Are there any properties that Class should inherit from
       // the prototype? Alignment and layout attributes?
 
+      // Propagate access level
+      Class->setAccess(Proto->getAccess());
+
       // Make sure that the final class available in its declaring scope.
       PushOnScopeChains(Class, CurScope->getParent(), false);
 

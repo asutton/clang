@@ -2330,6 +2330,9 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
     // prototype.
     // S->setEntity(Class);
 
+    // Propagate access level
+    Class->setAccess(Instantiation->getAccess());
+
     // Use the name of the class for most source locations.
     //
     // FIXME: This isn't a particularly good idea.
