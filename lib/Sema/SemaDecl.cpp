@@ -14099,7 +14099,7 @@ void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
          "Broken injected-class-name");
 }
 
-void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
+void Sema::ActOnTagFinishDefinition(Scope *S, Decl *&TagD,
                                     SourceRange BraceRange) {
   AdjustDeclIfTemplate(TagD);
   TagDecl *Tag = cast<TagDecl>(TagD);
@@ -14231,7 +14231,7 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
         assert(Class->isCompleteDefinition() && "Generated class not complete");
 
         // Replace the closed tag with this class.
-        Tag = Class;
+        TagD = Tag = Class;
       }
     }
   }
