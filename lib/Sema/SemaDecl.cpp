@@ -14171,7 +14171,9 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *&TagD,
       Class->setAccess(Proto->getAccess());
 
       // Make sure that the final class available in its declaring scope.
-      PushOnScopeChains(Class, CurScope->getParent(), false);
+      bool IsAnonymousClass = Class->getName().empty();
+      if (!IsAnonymousClass)
+        PushOnScopeChains(Class, CurScope->getParent(), false);
 
       // Make the new class is the current declaration context for the
       // purpose of injecting source code.
