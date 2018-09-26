@@ -342,18 +342,41 @@ public:
   }
 
   void VisitReturnStmt(const ReturnStmt *R) {
-    if (const Expr *RetVal = R->getRetValue()) {
-      if (!isPointer(RetVal))
-        return;
-      auto RetPSet = getPSet(RetVal);
-      if (RetPSet.containsInvalid()) {
-        Reporter.warnReturnDangling(R->getReturnLoc(), false);
-        RetPSet.explainWhyInvalid(Reporter);
-      } else if (!RetPSet.isSubstitutableFor(PSetOfAllParams)) {
-        Reporter.warnReturnWrongPset(R->getReturnLoc(), RetPSet.str(),
-                                     PSetOfAllParams.str());
+    const Expr *RetVal = R->getRetValue();
+    if (!RetVal)
+      return;
+
+    if (!isPointer(RetVal))
+      return;
+
+    auto RetPSet = getPSet(RetVal);
+    if (RetVal->isLValue())
+      RetPSet = getPSet(RetVal);
+
+    // TODO: Would be nicer if the LifetimeEnds CFG nodes would appear before
+    // the ReturnStmt node
+    for (auto &V : RetPSet.vars()) {
+      auto &Var = V.first;
+      if (Var.isTemporary() || Var.isLifetimeExtendedTemporary()) {
+        RetPSet = PSet::invalid(
+            InvalidationReason::TemporaryLeftScope(R->getSourceRange()));
+        break;
+      } else if (auto *VD = Var.asVarDecl()) {
+        // Allow to return a pointer to *p (then p is a parameter).
+        if (VD->hasLocalStorage() && !Var.isDeref()) {
+          RetPSet = PSet::invalid(
+              InvalidationReason::PointeeLeftScope(R->getSourceRange(), VD));
+          break;
+        }
       }
     }
+    if (RetPSet.containsInvalid()) {
+      Reporter.warnReturnDangling(R->getReturnLoc(), false);
+      RetPSet.explainWhyInvalid(Reporter);
+    } /* else if (!RetPSet.isSubstitutableFor(PSetOfAllParams)) {
+       Reporter.warnReturnWrongPset(R->getReturnLoc(), RetPSet.str(),
+                                    PSetOfAllParams.str());
+     }*/
   }
 
   void VisitCXXConstructExpr(const CXXConstructExpr *E) {
@@ -829,19 +852,19 @@ PSet PSetsBuilder::getPSet(Variable P) {
   if (I != PMap.end())
     return I->second;
 
-  if (auto VD = P.asVarDecl()) {
-    // To handle self-assignment during initialization
-    if (!isa<ParmVarDecl>(VD))
-      return PSet::invalid(
-          InvalidationReason::NotInitialized(VD->getLocation()));
-  }
-
   // Assume that the unseen pointer fields are valid. We will always have
   // unseen fields since we do not track the fields of owners and values.
   // Until proper aggregate support is implemented, this might be triggered
   // unintentionally.
   if (P.isField())
     return PSet::staticVar(false);
+
+  if (auto VD = P.asVarDecl()) {
+    // To handle self-assignment during initialization
+    if (!isa<ParmVarDecl>(VD))
+      return PSet::invalid(
+          InvalidationReason::NotInitialized(VD->getLocation()));
+  }
 
 #ifndef NDEBUG
   llvm::errs() << "PSetsBuilder::getPSet: did not find pset for " << P.getName()
@@ -1048,27 +1071,23 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
   case 3: {
     auto Args = Callee->getTemplateSpecializationArgs();
     auto QType = Args->get(0).getAsType();
-    TypeCategory TC = classifyTypeCategory(QType);
-    if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
-      auto PointeeType = getPointeeType(QType);
-      assert(!PointeeType.isNull());
-      Reporter.debugTypeCategory(Range.getBegin(), TC,
-                                 PointeeType.getAsString());
+    auto Class = classifyTypeCategory(QType);
+    if (Class.TC == TypeCategory::Pointer || Class.TC == TypeCategory::Owner) {
+      Reporter.debugTypeCategory(Range.getBegin(), Class.TC,
+                                 Class.PointeeType.getAsString());
     } else {
-      Reporter.debugTypeCategory(Range.getBegin(), TC);
+      Reporter.debugTypeCategory(Range.getBegin(), Class.TC);
     }
     return true;
   }
   case 4: {
     auto QType = CallE->getArg(0)->getType();
-    TypeCategory TC = classifyTypeCategory(QType);
-    if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
-      auto PointeeType = getPointeeType(QType);
-      assert(!PointeeType.isNull());
-      Reporter.debugTypeCategory(Range.getBegin(), TC,
-                                 PointeeType.getAsString());
+    auto Class = classifyTypeCategory(QType);
+    if (Class.TC == TypeCategory::Pointer || Class.TC == TypeCategory::Owner) {
+      Reporter.debugTypeCategory(Range.getBegin(), Class.TC,
+                                 Class.PointeeType.getAsString());
     } else {
-      Reporter.debugTypeCategory(Range.getBegin(), TC);
+      Reporter.debugTypeCategory(Range.getBegin(), Class.TC);
     }
     return true;
   }

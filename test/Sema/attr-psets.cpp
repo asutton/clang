@@ -6,6 +6,9 @@ bool __lifetime_pset(const T &) { return true; }
 template <typename T>
 bool __lifetime_pset_ref(const T &) { return true; }
 
+template <typename T>
+void __lifetime_type_category() {}
+
 namespace std {
 template <typename T>
 typename T::iterator begin(T &);
@@ -18,7 +21,7 @@ struct vector_iterator {
 template <typename T>
 struct vector {
   using iterator = vector_iterator<T>;
-  vector(unsigned);
+  vector(unsigned = 0);
   iterator begin();
   iterator end();
   T &operator[](unsigned);
@@ -95,7 +98,7 @@ struct S {
     __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
     S s2;
     p = s2.mp;
-    __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
+    __lifetime_pset(p); // TODO expected-warning {{pset(p) = ((static))}}
     const S &s3 = S();
     p = s3.mp;
     __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
@@ -1132,6 +1135,21 @@ void test() {
 }
 } // namespace SubstNonTypeTemplateParmExpr
 
+namespace Aggregates {
+struct UnscannedEntry {
+  std::vector<int> V1;
+  std::vector<int> V2;
+};
+std::vector<int> get();
+
+void f() {
+  UnscannedEntry E;
+  __lifetime_type_category<UnscannedEntry>(); // expected-warning {{Aggregate}}
+  // We don't handle Aggregates yet
+  __lifetime_pset(E.V1); // expected-warning {{((static)}}
+}
+} // namespace Aggregates
+
 namespace crashes {
 // This used to crash with missing pset.
 // It's mainly about knowing if the first argument
@@ -1304,3 +1322,25 @@ class j {
   j(h &&k) { b(k); }
 };
 } // namespace creduce13
+
+namespace creduce14 {
+// With this bug, c was classified as Aggregate,
+// but a<int> as Pointer (due to the correct methods
+// and PointeeType from template parameter.)
+// The d.b() crashed, because b expected *this to have a
+// pset, but the Aggregate d in fn1 does not have one.
+// Now c is also classified as Pointer.
+template <typename>
+class a {
+public:
+  void begin();
+  void end();
+  void b();
+};
+
+class c : public a<int> {};
+
+void fn1(c d) { // expected-note {{potentially null}}
+  d.b();        // expected-warning {{passing a possibly null pointer}}
+}
+} // namespace creduce14
