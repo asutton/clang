@@ -357,7 +357,7 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
       continue;
     }
 
-    if (D->getAccess() != CurrentAccess) {
+    if (D->getAccess() != CurrentAccess && D->getAccess() != AS_none) {
       CurrentAccess = D->getAccess();
       Indentation -= Policy.Indentation;
       this->Indent();

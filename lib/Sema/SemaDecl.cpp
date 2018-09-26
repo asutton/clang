@@ -14099,7 +14099,7 @@ void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
          "Broken injected-class-name");
 }
 
-void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
+void Sema::ActOnTagFinishDefinition(Scope *S, Decl *&TagD,
                                     SourceRange BraceRange) {
   AdjustDeclIfTemplate(TagD);
   TagDecl *Tag = cast<TagDecl>(TagD);
@@ -14167,8 +14167,13 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
       // FIXME: Are there any properties that Class should inherit from
       // the prototype? Alignment and layout attributes?
 
+      // Propagate access level
+      Class->setAccess(Proto->getAccess());
+
       // Make sure that the final class available in its declaring scope.
-      PushOnScopeChains(Class, CurScope->getParent(), false);
+      bool IsAnonymousClass = Class->getName().empty();
+      if (!IsAnonymousClass)
+        PushOnScopeChains(Class, CurScope->getParent(), false);
 
       // Make the new class is the current declaration context for the
       // purpose of injecting source code.
@@ -14228,7 +14233,7 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
         assert(Class->isCompleteDefinition() && "Generated class not complete");
 
         // Replace the closed tag with this class.
-        Tag = Class;
+        TagD = Tag = Class;
       }
     }
   }
@@ -14923,9 +14928,11 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
   RecordDecl *Record = dyn_cast<RecordDecl>(EnclosingDecl);
 
   bool ApplyDefaults = true;
-  if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
-    if (Class->isPrototypeClass())
-      ApplyDefaults = false;
+  if (Record) {
+    if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Record)) {
+      if (Class->isPrototypeClass())
+        ApplyDefaults = false;
+    }
   }
 
   // Start counting up the number of named members; make sure to include
