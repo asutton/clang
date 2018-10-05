@@ -1720,12 +1720,6 @@ Decl *ASTNodeImporter::VisitRecordDecl(RecordDecl *D) {
   if (!D2) {
     CXXRecordDecl *D2CXX = nullptr;
     if (CXXRecordDecl *DCXX = llvm::dyn_cast<CXXRecordDecl>(D)) {
-      Expr *FromGenerator = DCXX->getGenerator();
-      Expr *ToGenerator = Importer.Import(FromGenerator);
-      if (!ToGenerator && FromGenerator)
-        return nullptr;
-      D2CXX->setGenerator(ToGenerator);
-
       if (DCXX->isLambda()) {
         TypeSourceInfo *TInfo = Importer.Import(DCXX->getLambdaTypeInfo());
         D2CXX = CXXRecordDecl::CreateLambda(Importer.getToContext(),
@@ -1737,22 +1731,29 @@ Decl *ASTNodeImporter::VisitRecordDecl(RecordDecl *D) {
         if (DCXX->getLambdaContextDecl() && !CDecl)
           return nullptr;
         D2CXX->setLambdaMangling(DCXX->getLambdaManglingNumber(), CDecl);
-      } else if (DCXX->isInjectedClassName()) {                                                 
-        // We have to be careful to do a similar dance to the one in                            
-        // Sema::ActOnStartCXXMemberDeclarations                                                
-        CXXRecordDecl *const PrevDecl = nullptr;                                                
-        const bool DelayTypeCreation = true;                                                    
-        D2CXX = CXXRecordDecl::Create(                                                          
-            Importer.getToContext(), D->getTagKind(), DC, StartLoc, Loc,                        
-            Name.getAsIdentifierInfo(), PrevDecl, DelayTypeCreation);                           
-        Importer.getToContext().getTypeDeclType(                                                
-            D2CXX, llvm::dyn_cast<CXXRecordDecl>(DC));                                          
+      } else if (DCXX->isInjectedClassName()) {
+        // We have to be careful to do a similar dance to the one in
+        // Sema::ActOnStartCXXMemberDeclarations
+        CXXRecordDecl *const PrevDecl = nullptr;
+        const bool DelayTypeCreation = true;
+        D2CXX = CXXRecordDecl::Create(
+            Importer.getToContext(), D->getTagKind(), DC, StartLoc, Loc,
+            Name.getAsIdentifierInfo(), PrevDecl, DelayTypeCreation);
+        Importer.getToContext().getTypeDeclType(
+            D2CXX, llvm::dyn_cast<CXXRecordDecl>(DC));
       } else {
         D2CXX = CXXRecordDecl::Create(Importer.getToContext(),
                                       D->getTagKind(),
                                       DC, StartLoc, Loc,
                                       Name.getAsIdentifierInfo());
       }
+
+      Expr *FromGenerator = DCXX->getGenerator();
+      Expr *ToGenerator = Importer.Import(FromGenerator);
+      if (!ToGenerator && FromGenerator)
+        return nullptr;
+      D2CXX->setGenerator(ToGenerator);
+
       D2 = D2CXX;
       D2->setAccess(D->getAccess());
     } else {

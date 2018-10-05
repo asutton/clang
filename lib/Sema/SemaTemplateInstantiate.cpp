@@ -2319,7 +2319,9 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
     // the prototype? Alignment and layout attributes?
 
     // Make sure that the final class available in its declaring scope.
-    PushOnScopeChains(Class, CurScope->getParent(), false);
+    bool IsAnonymousClass = Class->getName().empty();
+    if (!IsAnonymousClass)
+      PushOnScopeChains(Class, CurScope->getParent(), false);
 
     // Make the new class is the current declaration context for the
     // purpose of injecting source code.
@@ -2329,6 +2331,9 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
     // the final analysis, the Class needs to be scope's entity, not
     // prototype.
     // S->setEntity(Class);
+
+    // Propagate access level
+    Class->setAccess(Instantiation->getAccess());
 
     // Use the name of the class for most source locations.
     //
@@ -2953,13 +2958,20 @@ Sema::InstantiateClassTemplateSpecializationMembers(
                           TSK);
 }
 
+using DeclMappingList = SmallVector<std::pair<Decl *, Decl *>, 8>;
+
 StmtResult
-Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
+Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs,
+                const DeclMappingList &ExistingMappings) {
   if (!S)
     return S;
 
   TemplateInstantiator Instantiator(*this, TemplateArgs, SourceLocation(),
                                     DeclarationName());
+
+  for (const auto& Mapping : ExistingMappings)
+    Instantiator.transformedLocalDecl(Mapping.first, Mapping.second);
+
   return Instantiator.TransformStmt(S);
 }
 

@@ -11,11 +11,14 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
 #include <set>
+#include <map>
 
 #define CLASSIFY_DEBUG 0
 
 namespace clang {
 namespace lifetime {
+
+static QualType getPointeeType(const Type *T);
 
 static FunctionDecl *lookupOperator(const CXXRecordDecl *R,
                                     OverloadedOperatorKind Op) {
@@ -128,13 +131,48 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
   return None;
 }
 
-static TypeCategory classifyTypeCategoryImpl(QualType QT) {
-  assert(!QT.isNull());
-  /*
-          llvm::errs() << "classifyTypeCategory\n ";
-           T->dump(llvm::errs());
-           llvm::errs() << "\n";*/
-  const Type *T = QT.getUnqualifiedType().getTypePtr();
+/// Checks if all bases agree to the same TypeClassification,
+/// and if they do, returns it.
+Optional<TypeClassification> getBaseClassification(const CXXRecordDecl *R) {
+  QualType PointeeType;
+  bool HasOwnerBase = false;
+  bool HasPointerBase = false;
+  bool PointeesDisagree = false;
+
+  for (const CXXBaseSpecifier &B : R->bases()) {
+    auto C = classifyTypeCategory(B.getType());
+    if (C.TC == TypeCategory::Owner) {
+      HasOwnerBase = true;
+    } else if (C.TC == TypeCategory::Pointer) {
+      HasPointerBase = true;
+    } else {
+      continue;
+    }
+    if (PointeeType.isNull())
+      PointeeType = C.PointeeType;
+    else if (PointeeType != C.PointeeType) {
+      PointeesDisagree = true;
+    }
+  }
+
+  if (!HasOwnerBase && !HasPointerBase)
+    return None;
+
+  if (HasOwnerBase && HasPointerBase)
+    return TypeClassification(TypeCategory::Value);
+
+  if (PointeesDisagree)
+    return TypeClassification(TypeCategory::Value);
+
+  assert(HasOwnerBase ^ HasPointerBase);
+  if (HasPointerBase)
+    return TypeClassification(TypeCategory::Pointer, PointeeType);
+  else
+    return TypeClassification(TypeCategory::Owner, PointeeType);
+}
+
+static TypeClassification classifyTypeCategoryImpl(const Type *T) {
+  assert(T);
   auto *R = T->getAsCXXRecordDecl();
 
   if (!R) {
@@ -145,7 +183,7 @@ static TypeCategory classifyTypeCategoryImpl(QualType QT) {
     // Arrays are Pointers, because they implicitly convert into them
     // and we don't track implicit conversions.
     if (T->isArrayType() || T->isPointerType() || T->isReferenceType())
-      return TypeCategory::Pointer;
+      return {TypeCategory::Pointer, getPointeeType(T)};
 
     return TypeCategory::Value;
   }
@@ -159,10 +197,11 @@ static TypeCategory classifyTypeCategoryImpl(QualType QT) {
     return TypeCategory::Value;
 
   // In case we do not know the pointee type fall back to value.
-  QualType Pointee = getPointeeType(QT);
+  QualType Pointee = getPointeeType(T);
 
 #if CLASSIFY_DEBUG
-  llvm::errs() << "classifyTypeCategory " << QT.getAsString() << "\n";
+  llvm::errs() << "classifyTypeCategory " << QualType(T, 0).getAsString()
+               << "\n";
   llvm::errs() << "  satisfiesContainerRequirements(R): "
                << satisfiesContainerRequirements(R) << "\n";
   llvm::errs() << "  hasDerefOperations(R): " << hasDerefOperations(R) << "\n";
@@ -181,46 +220,49 @@ static TypeCategory classifyTypeCategoryImpl(QualType QT) {
     if (Pointee.isNull())
       return TypeCategory::Value; // TODO diagnose
     else
-      return TypeCategory::Owner;
+      return {TypeCategory::Owner, Pointee};
   }
 
   if (R->hasAttr<PointerAttr>()) {
     if (Pointee.isNull())
       return TypeCategory::Value; // TODO diagnose
     else
-      return TypeCategory::Pointer;
+      return {TypeCategory::Pointer, Pointee};
   }
+
+  if (auto Cat = classifyStd(T))
+    return {*Cat, Pointee};
 
   // Every type that satisfies the standard Container requirements.
   if (!Pointee.isNull() && satisfiesContainerRequirements(R))
-    return TypeCategory::Owner;
+    return {TypeCategory::Owner, Pointee};
 
   // Every type that provides unary * or -> and has a user-provided destructor.
   // (Example: unique_ptr.)
   if (!Pointee.isNull() && hasDerefOperations(R) && !R->hasTrivialDestructor())
-    return TypeCategory::Owner;
-
-  if (auto Cat = classifyStd(T))
-    return *Cat;
+    return {TypeCategory::Owner, Pointee};
 
   //  Every type that satisfies the Ranges TS Range concept.
   if (!Pointee.isNull() && satisfiesRangeConcept(R))
-    return TypeCategory::Pointer;
+    return {TypeCategory::Pointer, Pointee};
 
   // Every type that satisfies the standard Iterator requirements. (Example:
   // regex_iterator.), see https://en.cppreference.com/w/cpp/named_req/Iterator
   if (!Pointee.isNull() && satisfiesIteratorRequirements(R))
-    return TypeCategory::Pointer;
+    return {TypeCategory::Pointer, Pointee};
 
   // Every type that provides unary * or -> and does not have a user-provided
   // destructor. (Example: span.)
   if (!Pointee.isNull() && hasDerefOperations(R) && R->hasTrivialDestructor())
-    return TypeCategory::Pointer;
+    return {TypeCategory::Pointer, Pointee};
 
   // Every closure type of a lambda that captures by reference.
   if (R->isLambda()) {
     return TypeCategory::Value;
   }
+
+  if (auto C = getBaseClassification(R))
+    return *C;
 
   // An Aggregate is a type that is not an Indirection
   // and is a class type with public data members
@@ -232,22 +274,18 @@ static TypeCategory classifyTypeCategoryImpl(QualType QT) {
   return TypeCategory::Value;
 }
 
-TypeCategory classifyTypeCategory(QualType QT) {
-  static std::vector<std::pair<QualType, TypeCategory>> Cache;
+TypeClassification classifyTypeCategory(const Type *T) {
+  static std::map<const Type *, TypeClassification> Cache;
 
-  auto I = std::find_if(Cache.begin(), Cache.end(),
-                        [&](const std::pair<QualType, TypeCategory> &P) {
-                          return P.first == QT;
-                        });
-
+  auto I = Cache.find(T);
   if (I != Cache.end())
     return I->second;
 
-  auto TC = classifyTypeCategoryImpl(QT);
-  Cache.emplace_back(QT, TC);
+  auto TC = classifyTypeCategoryImpl(T);
+  Cache.emplace(T, TC);
 #if CLASSIFY_DEBUG
-  llvm::errs() << "classifyTypeCategory(" << QT.getAsString()
-               << ") = " << (int)TC << "\n";
+  llvm::errs() << "classifyTypeCategory(" << QualType(T, 0).getAsString()
+               << ") = " << TC.str() << "\n";
 #endif
   return TC;
 }
@@ -316,21 +354,26 @@ static QualType getPointeeType(const CXXRecordDecl *R) {
   return {};
 }
 
-static QualType getPointeeTypeImpl(QualType QT) {
-  QT = QT.getCanonicalType();
+static QualType getPointeeTypeImpl(const Type *T) {
   // llvm::errs() << "\n\ngetPointeeType " << QT.getAsString() << " asRecord:"
   // << (intptr_t)QT->getAsCXXRecordDecl() << "\n";
 
-  if (QT->isReferenceType() || QT->isAnyPointerType())
-    return QT->getPointeeType();
+  if (T->isReferenceType() || T->isAnyPointerType())
+    return T->getPointeeType();
 
-  auto *R = QT->getAsCXXRecordDecl();
+  if (T->isArrayType()) {
+    // TODO: use AstContext.getAsArrayType() to correctly promote qualifiers
+    auto *AT = dyn_cast<ArrayType>(T);
+    return AT->getElementType();
+  }
+
+  auto *R = T->getAsCXXRecordDecl();
   if (!R)
     return {};
 
   // std::vector<bool> contains std::vector<bool>::references
   if (IsVectorBoolReference(R))
-    return QT;
+    return QualType(T, 0);
 
   if (!R->hasDefinition()) {
     if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R))
@@ -351,32 +394,31 @@ static QualType getPointeeTypeImpl(QualType QT) {
   return {};
 }
 
-QualType getPointeeType(QualType QT) {
-  QT = QT.getCanonicalType();
-  static std::vector<std::pair<QualType, QualType>> M;
+/// WARNING: This overload does not consider base classes.
+/// Use classifyTypeCategory(T).PointeeType to consider base classes.
+static QualType getPointeeType(const Type *T) {
+  assert(T);
+  T = T->getCanonicalTypeUnqualified().getTypePtr();
+  static std::map<const Type *, QualType> M;
 
-  auto I = std::find_if(
-      M.begin(), M.end(),
-      [&](const std::pair<QualType, QualType> &P) { return P.first == QT; });
-
+  auto I = M.find(T);
   if (I != M.end())
     return I->second;
 
   // Insert Null before calling getPointeeTypeImpl to stop
   // a possible classifyTypeCategory -> getPointeeType infinite recursion
-  M.emplace_back(QT, QualType{});
-  size_t Idx = M.size() - 1;
+  M[T] = QualType{};
 
-  auto P = getPointeeTypeImpl(QT);
+  auto P = getPointeeTypeImpl(T);
   if (!P.isNull()) {
     P = P.getCanonicalType();
     if (P->isVoidType())
       P = {};
   }
-  M[Idx].second = P;
+  M[T] = P;
 #if CLASSIFY_DEBUG
-  llvm::errs() << "DerefType(" << QT.getAsString() << ") = " << P.getAsString()
-               << "\n";
+  llvm::errs() << "DerefType(" << QualType(T, 0).getAsString()
+               << ") = " << P.getAsString() << "\n";
 #endif
   return P;
 }

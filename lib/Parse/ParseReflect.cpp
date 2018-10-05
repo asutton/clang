@@ -327,7 +327,7 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
     Diag(Tok, diag::err_expected_either) << tok::colon << tok::l_brace;
     return nullptr;
   }
-  
+
   Decl *Metaclass = Actions.ActOnMetaclass(getCurScope(), DLoc, IdLoc, II);
   CXXRecordDecl *MetaclassDef = nullptr;
 
@@ -346,7 +346,12 @@ Parser::DeclGroupPtrTy Parser::ParseMetaclassDefinition() {
                                       "parsing metaclass body");
 
   // Parse the body of the metaclass.
-  ParseCXXMemberSpecification(DLoc, AttrFixItLoc, Attrs, TagType, MetaclassDef);
+  {
+    Decl *MetaclassDefTmp = static_cast<Decl *>(MetaclassDef);
+    ParseCXXMemberSpecification(DLoc, AttrFixItLoc, Attrs, TagType,
+                                MetaclassDefTmp);
+    MetaclassDef = cast<CXXRecordDecl>(MetaclassDefTmp);
+  }
 
   if (MetaclassDef->isInvalidDecl()) {
     Actions.ActOnMetaclassDefinitionError(getCurScope(), Metaclass);
