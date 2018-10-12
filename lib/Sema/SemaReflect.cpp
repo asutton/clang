@@ -2606,3 +2606,30 @@ bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
   return Notes.empty();
 }
 
+ExprResult Sema::ActOnCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
+                                         SourceLocation KWLoc, 
+                                         SourceLocation LParenLoc, 
+                                         SourceLocation RParenLoc) {
+  return BuildCXXConcatenateExpr(Parts, KWLoc);
+}
+
+ExprResult Sema::BuildCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
+                                         SourceLocation KWLoc) {
+  // Convert operands to rvalues.
+  SmallVector<Expr*, 4> Converted;
+  for (Expr *E : Parts) {
+    // Decay string literals.
+    if (isa<StringLiteral>(E))
+      E = DefaultFunctionArrayLvalueConversion(E).get();
+
+    // FIXME: What do we do with reflections?
+
+    Converted.push_back(E);
+    E->dump();
+  }
+
+  // The type of the expression is 'const char*'.
+  QualType T = Context.getPointerType(Context.getConstType(Context.CharTy));
+
+  return new (Context) CXXConcatenateExpr(Context, T, KWLoc, Converted);
+}

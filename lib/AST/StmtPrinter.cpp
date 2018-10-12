@@ -2587,6 +2587,16 @@ void StmtPrinter::VisitCXXFragmentExpr(CXXFragmentExpr *Node) {
   Node->getFragment()->getContent()->print(OS, Policy);
 }
 
+void StmtPrinter::VisitCXXConcatenateExpr(CXXConcatenateExpr *Node) {
+  OS << "__concatenate" << '(';
+  for (auto I = Node->children().begin(); I != Node->children().end(); ++I) {
+    PrintStmt(*I);
+    if (std::next(I) == Node->children().end())
+      OS << ',';
+  }
+  OS << ')';
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {

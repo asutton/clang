@@ -1507,3 +1507,16 @@ ReflectionPair ReflectedConstruct::Explode(std::uintptr_t N) {
   void *P = (void *)(N & Helper::PointerMask);
   return {K, P};
 }
+
+CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx, 
+                                       QualType T, SourceLocation L, 
+                                       ArrayRef<Expr *> Parts)
+  : Expr(CXXConcatenateExprClass, T, VK_RValue, OK_Ordinary, 
+         false, AnyValueDependentExprs(Parts),
+         AnyInstantiationDependentExprs(Parts), 
+         false),
+    Loc(L), NumOperands(Parts.size()), Operands()
+{
+  Operands = new (Ctx) Stmt*[NumOperands];
+  std::copy(Parts.begin(), Parts.end(), Operands);
+}

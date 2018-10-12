@@ -1538,6 +1538,12 @@ public:
     return getSema().BuildCXXFragmentExpr(Loc, Captures, Fragment);
   }
 
+  /// \brief Build a new concatenation expression.
+  ExprResult RebuildCXXConcatenateExpr(SourceLocation Loc, 
+                                       SmallVectorImpl<Expr *> &Parts) {
+    return getSema().BuildCXXConcatenateExpr(Parts, Loc);
+  }
+
   /// \brief Build a new Objective-C \@try statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -7580,6 +7586,18 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
   }
 
   return getDerived().RebuildCXXFragmentExpr(Loc, Captures, F);
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXConcatenateExpr(CXXConcatenateExpr *E) {
+  SmallVector<Expr *, 4> Parts;
+  for (Stmt *S : E->children()) {
+    ExprResult Part = TransformExpr(cast<Expr>(S));
+    if (Part.isInvalid())
+      return ExprError();
+  }
+  return RebuildCXXConcatenateExpr(E->getLocStart(), Parts);
 }
 
 // Objective-C Statements.

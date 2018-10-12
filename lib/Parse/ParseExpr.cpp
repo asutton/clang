@@ -1431,6 +1431,11 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     Res = ParseCompilerErrorExpression();
     break;
 
+  // [Meta] primary-expression: '__concatenate' '(' constant-expression-list ')'
+  case tok::kw___concatenate:
+    Res = ParseCXXConcatenateExpression();
+    break;
+
   case tok::at: {
     SourceLocation AtLoc = ConsumeToken();
     return ParseObjCAtExpression(AtLoc);

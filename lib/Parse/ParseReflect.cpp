@@ -466,3 +466,36 @@ Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
   return Actions.ConvertDeclToDeclGroup(D);
 }
 
+/// \brief Parse a concatenation expression.
+///
+///   primary-expression:
+///      '__concatenate' '(' constant-argument-list ')'
+///
+/// Each argument in the constant-argument-list must be a constant expression.
+///
+/// Returns true if parsing or semantic analysis fail.
+ExprResult Parser::ParseCXXConcatenateExpression() {
+  assert(Tok.is(tok::kw___concatenate));
+  SourceLocation KeyLoc = ConsumeToken();
+
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "idexpr"))
+    return true;
+  SmallVector<Expr *, 4> Parts;
+  while (true) {
+    ExprResult Result = ParseConstantExpression();
+    if (Result.isInvalid())
+      return true;
+    Parts.push_back(Result.get());
+    if (Tok.is(tok::r_paren))
+      break;
+    if (ExpectAndConsume(tok::comma))
+      return true;
+  }
+  if (T.consumeClose())
+    return true;
+
+  return Actions.ActOnCXXConcatenateExpr(Parts, KeyLoc, 
+                                         T.getOpenLocation(),
+                                         T.getCloseLocation());
+}

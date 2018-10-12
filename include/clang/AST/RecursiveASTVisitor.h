@@ -2561,6 +2561,7 @@ DEF_TRAVERSE_STMT(AtomicExpr, {})
 DEF_TRAVERSE_STMT(CXXConstantExpr, {})
 DEF_TRAVERSE_STMT(CXXDependentIdExpr, {})
 DEF_TRAVERSE_STMT(CXXFragmentExpr, {})
+DEF_TRAVERSE_STMT(CXXConcatenateExpr, {})
 
 // For coroutines expressions, traverse either the operand
 // as written or the implied calls, depending on what the

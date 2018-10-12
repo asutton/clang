@@ -1773,6 +1773,10 @@ void StmtProfiler::VisitCXXFragmentExpr(const CXXFragmentExpr *E) {
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitOpaqueValueExpr(const OpaqueValueExpr *E) {
   VisitExpr(E);  
 }

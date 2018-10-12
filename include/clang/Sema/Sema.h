@@ -1657,7 +1657,7 @@ public:
     ExprResult Expr;
     TemplateName Template;
     ParsedType Type;
-    const IdentifierInfo *Keyword;
+    // const IdentifierInfo *Keyword;
 
     explicit NameClassification(NameClassificationKind Kind) : Kind(Kind) {}
 
@@ -1667,7 +1667,7 @@ public:
     NameClassification(ParsedType Type) : Kind(NC_Type), Type(Type) {}
 
     NameClassification(const IdentifierInfo *Keyword)
-      : Kind(NC_Keyword), Keyword(Keyword) { }
+      : Kind(NC_Keyword)/*, Keyword(Keyword)*/ { }
 
     static NameClassification Error() {
       return NameClassification(NC_Error);
@@ -8543,6 +8543,14 @@ public:
   void InjectPendingDefinitions();
   void InjectPendingDefinitions(InjectionContext *Cxt);
   void InjectPendingDefinition(InjectionContext *Cxt, Decl *Frag, Decl *New);
+
+  ExprResult ActOnCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
+                                     SourceLocation KWLoc,
+                                     SourceLocation LParenLoc,
+                                     SourceLocation RParenLoc);
+
+  ExprResult BuildCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
+                                     SourceLocation KWLoc);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

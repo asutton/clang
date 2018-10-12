@@ -542,7 +542,7 @@ KEYWORD(__fragment                  , KEYALL)
 KEYWORD(__inject                    , KEYALL)
 KEYWORD(__extend                    , KEYALL)
 KEYWORD(__generate                  , KEYALL)
-
+KEYWORD(__concatenate               , KEYCXX)
 
 // Apple Extension.
 KEYWORD(__private_extern__          , KEYALL)

@@ -4457,6 +4457,17 @@ static bool HandleConstructorCall(const Expr *E, const LValue &This,
                                Info, Result);
 }
 
+// Creates a string literal. This is morally equivalent to creating
+// a global string. During codegen, that's exactly how this is interpreted.
+static StringLiteral *
+MakeString(ASTContext& Ctx, StringRef Str, SourceLocation Loc) {
+  QualType StrTy = Ctx.getConstantArrayType(Ctx.CharTy.withConst(), 
+                                            llvm::APInt(32, Str.size() + 1), 
+                                            ArrayType::Normal, 0);
+  return StringLiteral::Create(Ctx, Str, StringLiteral::Ascii, false, StrTy, Loc);
+}
+
+
 //===----------------------------------------------------------------------===//
 // Generic Evaluation
 //===----------------------------------------------------------------------===//
@@ -4972,6 +4983,55 @@ public:
     if (!Evaluate(Result, Info, E->getInitializer())) 
       return false;
     return DerivedSuccess(Result, E);
+  }
+
+  bool VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
+    SmallString<256> Buf;
+    llvm::raw_svector_ostream OS(Buf);
+    SmallVector<APValue, 4> Args;
+    for (Stmt const *S : E->children()) {
+      Expr const* P = cast<Expr>(S);
+      Args.emplace_back();
+      APValue &Part = Args.back();
+      if (!Evaluate(Part, Info, P))
+        return false;
+
+      llvm::outs() << "HERE\n";
+      P->getType()->dump();
+
+      if (Part.isLValue()) {
+        // FIXME: We really only get here for string literals, but we
+        // should be looking at the type.
+        const StringLiteral *Str;
+        APValue::LValueBase Base = Part.getLValueBase();
+        if (Base.is<const Expr *>()) {
+          const Expr *BaseExpr = Base.get<const Expr *>();
+          // FIXME: This should probably never happen.
+          if (!isa<StringLiteral>(BaseExpr))
+            return Error(P);
+          Str = cast<StringLiteral>(BaseExpr);
+        } else {
+          // FIXME: Actually make this work.
+          // const ValueDecl *D = Base.get<const ValueDecl *>();
+          return Error(P);
+        }
+
+        // Strip quotes from the literal.
+        SmallString<256> StrBuf;
+        llvm::raw_svector_ostream StrOS(StrBuf);
+        Str->outputString(StrOS);
+        std::string ActualStr(StrBuf.str(), 1, StrBuf.size() - 2);
+        OS << ActualStr;
+      }  
+    }
+
+    StringLiteral *Str = MakeString(Info.Ctx, Buf, E->getLocStart());
+    Str->dump();
+    APValue Val;
+    if (!Evaluate(Val, Info, Str))
+      return false;
+    Val.dump();
+    return DerivedSuccess(Val, E);
   }
 
   /// Visit a value which is evaluated, but whose value is ignored.
@@ -10475,6 +10535,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CompilerErrorExprClass:
   case Expr::CXXDependentIdExprClass:
   case Expr::CXXFragmentExprClass:
+  case Expr::CXXConcatenateExprClass:
     return ICEDiag(IK_NotICE, E->getLocStart());
 
   case Expr::InitListExprClass: {

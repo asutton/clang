@@ -2642,6 +2642,8 @@ private:
   Decl *ParseClassFragment(Decl *Fragment);
   Decl *ParseEnumFragment(Decl *Fragment);
 
+  ExprResult ParseCXXConcatenateExpression();
+
   static void LateClassFragmentParserCallback(void *Parser, void *CXt, void *Class);
 
 public:

@@ -970,6 +970,10 @@ void ASTStmtReader::VisitCXXFragmentExpr(CXXFragmentExpr *E) {
   llvm_unreachable("not implemented");
 }
 
+void ASTStmtReader::VisitCXXConcatenateExpr(CXXConcatenateExpr *E) {
+  llvm_unreachable("not implemented");
+}
+
 //===----------------------------------------------------------------------===//
 // Objective-C Expressions and Statements
 

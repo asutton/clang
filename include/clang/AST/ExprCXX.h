@@ -4668,6 +4668,51 @@ public:
   }
 };
 
+
+/// Represents the expression __concatenate(...)
+class CXXConcatenateExpr : public Expr {
+  /// \brief The location of the introducer token.
+  SourceLocation Loc;
+
+  /// \brief The number operands of the expression.
+  std::size_t NumOperands;
+
+  /// \brief The operands of the expression.
+  Stmt** Operands;
+
+public:
+  CXXConcatenateExpr(ASTContext &Ctx, QualType T, SourceLocation Loc, 
+                     ArrayRef<Expr *> Parts);
+
+  explicit CXXConcatenateExpr(EmptyShell Empty)
+      : Expr(CXXConcatenateExprClass, Empty), Loc(), NumOperands(), 
+        Operands() {}
+
+  /// \brief The number of captured declarations.
+  std::size_t getNumOperands() const { return NumOperands; }
+
+  /// \brief The Ith capture of the injection statement.
+  const Expr *getOperand(std::size_t I) const { return (Expr *)Operands[I]; }
+  Expr *getOperand(std::size_t I) { return (Expr *)Operands[I]; }
+  
+  child_range children() { 
+    return child_range(Operands, Operands + NumOperands);
+  }
+
+  const_child_range children() const { 
+    return const_child_range(Operands, Operands + NumOperands);
+  }
+
+  /// \brief The location of the introducer token.
+  SourceLocation getIntroLoc() const { return Loc; }
+
+  SourceLocation getLocStart() const { return Loc; }
+  SourceLocation getLocEnd() const { return Loc; }
+  
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXConcatenateExprClass;
+  }
+};
 } // end namespace clang
 
 #endif

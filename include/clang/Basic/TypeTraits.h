@@ -126,7 +126,6 @@ namespace clang {
     URT_ReflectNumBases,
     BRT_ReflectBase,
 
-
     BRT_ModifyAccess,  ///< Second operand indicates access level.
     BRT_ModifyVirtual, ///< Second operand is \c true to indicate pure virtual.
     URT_ModifyConstexpr
