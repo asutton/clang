@@ -62,7 +62,7 @@ enum StorageModifier { NoStorage, Static, Automatic, ThreadLocal };
 struct DeclModifiers
 {
   DeclModifiers()
-    : Access(), Storage(), Constexpr(), Virtual(), Pure()
+    : Access(), Storage(), Constexpr(), Virtual(), Pure(), Name()
   { }
 
   // This is the traits layout in the library:
@@ -73,6 +73,8 @@ struct DeclModifiers
   //    bool make_constexpr : 1;
   //    bool make_virtual : 1;
   //    bool make_pure : 1;
+  //
+  // Note that we don't currently use the linkage spec.
   DeclModifiers(const APValue& Traits)
     : Access((AccessModifier)Traits.getStructField(1).getInt().getExtValue()),
       Storage((StorageModifier)Traits.getStructField(2).getInt().getExtValue()),
@@ -121,13 +123,28 @@ struct DeclModifiers
   }
 
   // If true, add the constexpr specifier.
-  bool addConstexpr() { return Constexpr; }
+  bool addConstexpr() const { return Constexpr; }
   
   // If true, add the virtual specifier.
-  bool addVirtual() { return Virtual; }
+  bool addVirtual() const { return Virtual; }
   
   // If true, add the pure virtual specifier.
-  bool addPureVirtual() { return Pure; }
+  bool addPureVirtual() const { return Pure; }
+
+  /// True if a rename is requested.
+  bool hasRename() const {
+    return !Name.isUninit();
+  }
+
+  /// Returns the string that will serve as the new name.
+  std::string getNewName() const {
+    assert(Name.isLValue());
+    APValue::LValueBase Base = Name.getLValueBase();
+    const Expr *E = Base.get<const Expr *>();
+    assert(isa<StringLiteral>(E));
+    const StringLiteral *StrLit = cast<StringLiteral>(E);
+    return StrLit->getString();
+  }
 
   void dump() const;
   
@@ -136,6 +153,7 @@ struct DeclModifiers
   bool Constexpr;
   bool Virtual;
   bool Pure;
+  APValue Name;
 };
 
 void
@@ -179,6 +197,8 @@ DeclModifiers::dump() const
   llvm::errs() << "Virtual: " << (Virtual ? "yes" : "no") << '\n';
   llvm::errs() << "Pure: " << (Pure ? "yes" : "no") << '\n';
 
+  // FIXME: Actually fetch the name from the value.
+  llvm::errs() << "Renamed? " << (Name.isUninit() ? "no" : "yes");
 }
 
 class InjectionContext;
@@ -308,6 +328,31 @@ public:
   /// Sets the declaration modifiers.
   void setModifiers(const APValue& Traits) { Modifiers = DeclModifiers(Traits); }
 
+  /// Sets the modified name of the declaration. If Name represents the null
+  /// pointer, then this has no effect.
+  void setName(const APValue& Name) { 
+  if (!Name.isNullPointer())
+    Modifiers.Name = Name;
+  }
+
+  /// True if a rename is requested.
+  bool hasRename() const { return Modifiers.hasRename(); }
+
+  DeclarationName applyRename() {
+    std::string Str = Modifiers.getNewName();
+    IdentifierInfo *II = &SemaRef.Context.Idents.get(Str);
+
+    // Reset the rename, so that it applies once, at the top level
+    // of the injection (hopefully).
+    //
+    // FIXME: This is a sign of some fragility. We'd like the rename to
+    // associate only with the fragment/decl we're replaying. This is
+    // true of other modifiers also.
+    Modifiers.Name = APValue();
+    
+    return DeclarationName(II);
+  }
+
   /// Suppresses modifiers for nested declarations.
   struct SuppressModifiersRAII
   {
@@ -329,6 +374,13 @@ public:
   DeclarationNameInfo TransformDeclarationName(NamedDecl *ND) {
     DeclarationNameInfo DNI(ND->getDeclName(), ND->getLocation());
     return TransformDeclarationNameInfo(DNI);
+  }
+
+  DeclarationNameInfo TransformDeclarationNameInfo(DeclarationNameInfo DNI) {
+    if (hasRename())
+      DNI = DeclarationNameInfo(applyRename(), DNI.getLoc());
+
+    return Base::TransformDeclarationNameInfo(DNI);
   }
 
   Decl *TransformDecl(SourceLocation Loc, Decl *D);
@@ -2146,7 +2198,7 @@ static bool InvalidInjection(Sema& S, SourceLocation POI, int SK,
 }
 
 // FIXME: This is not particularly good. It would be nice if we didn't have
-// to search for ths field.s
+// to search for this field.
 static const APValue& GetModifications(const APValue &V, QualType T,
                                        DeclarationName N)
 {
@@ -2294,6 +2346,11 @@ bool Sema::CopyDeclaration(SourceLocation POI,
   DeclarationName Name(&Context.Idents.get("mods"));
   const APValue &Traits = GetModifications(ReflectionVal, ReflectionTy, Name);
   Cxt->setModifiers(Traits);
+
+  // Do the same for the rename member.
+  DeclarationName Rename(&Context.Idents.get("rename"));
+  const APValue &NameVal = GetModifications(ReflectionVal, ReflectionTy, Rename);
+  Cxt->setName(NameVal);
 
   // llvm::outs() << "BEFORE CLONE\n";
   // Injection->dump();

@@ -2613,23 +2613,60 @@ ExprResult Sema::ActOnCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
   return BuildCXXConcatenateExpr(Parts, KWLoc);
 }
 
+static bool IsConstCharPtr(Sema &SemaRef, QualType T) {
+  if (const PointerType *Ptr = dyn_cast<PointerType>(T))
+    T = Ptr->getPointeeType();
+  return T.isConstQualified() && T->isCharType();
+}
+
+static bool CheckConcatenateOperand(Sema &SemaRef, QualType T) {
+  if (IsConstCharPtr(SemaRef, T))
+    return true;
+  if (T->isIntegerType())
+    return true;
+  
+  return false;
+}
+
+static bool CheckConcatenateOperand(Sema &SemaRef, Expr *E) {
+  QualType T = E->getType();
+  if (CheckConcatenateOperand (SemaRef, T))
+    return true;
+  
+  // FIXME: This is the wrong diagnostic.
+  SemaRef.Diag(E->getLocStart(), diag::err_idexpr_invalid_operand_type) << T;
+  return false;
+}
+
 ExprResult Sema::BuildCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
                                          SourceLocation KWLoc) {
+  // The type of the expression is 'const char*'.
+  QualType T = Context.getPointerType(Context.getConstType(Context.CharTy));
+
+  // Look for dependent arguments.
+  for (Expr *E : Parts) {
+    if (E->isTypeDependent() || E->isValueDependent())
+      return new (Context) CXXConcatenateExpr(Context, T, KWLoc, Parts);
+  }
+
   // Convert operands to rvalues.
   SmallVector<Expr*, 4> Converted;
   for (Expr *E : Parts) {
-    // Decay string literals.
-    if (isa<StringLiteral>(E))
-      E = DefaultFunctionArrayLvalueConversion(E).get();
+    // Decay arrays first.
+    ExprResult R = DefaultFunctionArrayLvalueConversion(E);
+    if (R.isInvalid())
+      return ExprError();
+    E = R.get();
 
-    // FIXME: What do we do with reflections?
+    // Check that the operand (type) is acceptable.
+    if (!CheckConcatenateOperand(*this, E))
+      return ExprError();
+
+    // TODO: Perform a tentative evaluation to see if this
+    // is a constant expression or no?
 
     Converted.push_back(E);
-    E->dump();
   }
-
-  // The type of the expression is 'const char*'.
-  QualType T = Context.getPointerType(Context.getConstType(Context.CharTy));
 
   return new (Context) CXXConcatenateExpr(Context, T, KWLoc, Converted);
 }

@@ -7596,6 +7596,7 @@ TreeTransform<Derived>::TransformCXXConcatenateExpr(CXXConcatenateExpr *E) {
     ExprResult Part = TransformExpr(cast<Expr>(S));
     if (Part.isInvalid())
       return ExprError();
+    Parts.push_back(Part.get());
   }
   return RebuildCXXConcatenateExpr(E->getLocStart(), Parts);
 }

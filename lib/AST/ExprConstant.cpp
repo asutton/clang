@@ -4991,13 +4991,12 @@ public:
     SmallVector<APValue, 4> Args;
     for (Stmt const *S : E->children()) {
       Expr const* P = cast<Expr>(S);
+
+      // Evaluate the expression.
       Args.emplace_back();
       APValue &Part = Args.back();
       if (!Evaluate(Part, Info, P))
         return false;
-
-      llvm::outs() << "HERE\n";
-      P->getType()->dump();
 
       if (Part.isLValue()) {
         // FIXME: We really only get here for string literals, but we
@@ -5022,15 +5021,16 @@ public:
         Str->outputString(StrOS);
         std::string ActualStr(StrBuf.str(), 1, StrBuf.size() - 2);
         OS << ActualStr;
-      }  
+      } else if (Part.isInt()) {
+        // FIXME: respect the signedness of the type.
+        OS << Part.getInt();
+      }
     }
 
     StringLiteral *Str = MakeString(Info.Ctx, Buf, E->getLocStart());
-    Str->dump();
     APValue Val;
     if (!Evaluate(Val, Info, Str))
       return false;
-    Val.dump();
     return DerivedSuccess(Val, E);
   }
 
